@@ -87,6 +87,11 @@ export default function ProjectDetail() {
   // Delete flag dialog state
   const [flagToDelete, setFlagToDelete] = useState<FeatureFlag | null>(null);
   const [isDeletingFlag, setIsDeletingFlag] = useState(false);
+  
+  // Edit flag value dialog state
+  const [editingFlagEnv, setEditingFlagEnv] = useState<{flag: FeatureFlag, env: FeatureFlag['environments'][0]} | null>(null);
+  const [editValue, setEditValue] = useState('');
+  const [isSavingValue, setIsSavingValue] = useState(false);
 
   // Validate IDs early
   const validOrgId = isValidObjectId(orgId) ? orgId : null;
@@ -183,6 +188,29 @@ export default function ProjectDetail() {
       console.error('Failed to delete flag:', error);
     } finally {
       setIsDeletingFlag(false);
+    }
+  };
+
+  const openEditValueDialog = (flag: FeatureFlag, env: FeatureFlag['environments'][0]) => {
+    setEditingFlagEnv({ flag, env });
+    setEditValue(env.defaultValue || '');
+  };
+
+  const handleSaveValue = async () => {
+    if (!editingFlagEnv || !validProjectId) return;
+    setIsSavingValue(true);
+    try {
+      await api.patch(`/feature-flags/${editingFlagEnv.flag.id}/environments/${editingFlagEnv.env.environmentId}`, {
+        defaultValue: editValue,
+      });
+      // Refresh flags
+      const flagsRes = await api.get(`/feature-flags/project/${validProjectId}`);
+      setFeatureFlags(flagsRes.data);
+      setEditingFlagEnv(null);
+    } catch (error) {
+      console.error('Failed to save flag value:', error);
+    } finally {
+      setIsSavingValue(false);
     }
   };
 
@@ -418,8 +446,16 @@ export default function ProjectDetail() {
                           />
                         </button>
                       </div>
-                      <div className="mt-2 text-sm text-muted-foreground">
+                      <div className="mt-2 text-sm text-muted-foreground flex items-center gap-2">
                         Value: <code className="bg-background px-1 rounded">{env.defaultValue}</code>
+                        {flag.flagType !== 'BOOLEAN' && (
+                          <button
+                            onClick={() => openEditValueDialog(flag, env)}
+                            className="text-xs text-primary-600 hover:text-primary-700 underline"
+                          >
+                            Edit
+                          </button>
+                        )}
                       </div>
                     </div>
                   ))}
@@ -446,6 +482,56 @@ export default function ProjectDetail() {
             </Button>
             <Button variant="destructive" onClick={handleDeleteFlag} disabled={isDeletingFlag}>
               {isDeletingFlag ? 'Deleting...' : 'Delete'}
+            </Button>
+          </DialogFooter>
+        </DialogContent>
+      </Dialog>
+
+      {/* Edit Flag Value Dialog */}
+      <Dialog open={!!editingFlagEnv} onOpenChange={() => setEditingFlagEnv(null)}>
+        <DialogContent>
+          <DialogHeader>
+            <DialogTitle>Edit Flag Value</DialogTitle>
+            <DialogDescription>
+              Update the value for <strong>{editingFlagEnv?.flag.name}</strong> in {editingFlagEnv?.env.environmentName}
+            </DialogDescription>
+          </DialogHeader>
+          <div className="space-y-4 py-4">
+            <div className="space-y-2">
+              <Label htmlFor="flagValue">Value ({editingFlagEnv?.flag.flagType})</Label>
+              {editingFlagEnv?.flag.flagType === 'JSON' ? (
+                <textarea
+                  id="flagValue"
+                  value={editValue}
+                  onChange={(e) => setEditValue(e.target.value)}
+                  className="w-full min-h-[100px] rounded-md border border-input bg-background px-3 py-2 font-mono text-sm"
+                  placeholder='{"enabled": true}'
+                />
+              ) : editingFlagEnv?.flag.flagType === 'NUMBER' ? (
+                <Input
+                  id="flagValue"
+                  type="number"
+                  value={editValue}
+                  onChange={(e) => setEditValue(e.target.value)}
+                  placeholder="0"
+                />
+              ) : (
+                <Input
+                  id="flagValue"
+                  type="text"
+                  value={editValue}
+                  onChange={(e) => setEditValue(e.target.value)}
+                  placeholder="Enter value"
+                />
+              )}
+            </div>
+          </div>
+          <DialogFooter>
+            <Button variant="outline" onClick={() => setEditingFlagEnv(null)} disabled={isSavingValue}>
+              Cancel
+            </Button>
+            <Button onClick={handleSaveValue} disabled={isSavingValue}>
+              {isSavingValue ? 'Saving...' : 'Save Value'}
             </Button>
           </DialogFooter>
         </DialogContent>

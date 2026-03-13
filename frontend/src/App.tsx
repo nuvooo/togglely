@@ -13,6 +13,8 @@ import OrganizationMembers from './pages/organizations/OrganizationMembers';
 import CreateOrganization from './pages/organizations/CreateOrganization';
 import ProjectDetail from './pages/ProjectDetail';
 import ProjectSettings from './pages/projects/ProjectSettings';
+import FeatureFlags from './pages/FeatureFlags';
+import FeatureFlagDetail from './pages/FeatureFlagDetail';
 import ApiKeys from './pages/ApiKeys';
 import Settings from './pages/Settings';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -43,6 +45,10 @@ function App() {
         <Route path="organizations/:orgId/projects/:projectId" element={<ProjectDetail />} />
         <Route path="projects/:projectId" element={<ProjectDetail />} />
         <Route path="projects/:projectId/settings" element={<ProjectSettings />} />
+        
+        {/* Feature Flags */}
+        <Route path="feature-flags" element={<FeatureFlags />} />
+        <Route path="feature-flags/:id" element={<FeatureFlagDetail />} />
         
         {/* API Keys */}
         <Route path="api-keys" element={<ApiKeys />} />

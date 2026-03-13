@@ -469,7 +469,14 @@ export default function FeatureFlags() {
                       <select
                         id="flag-type"
                         value={newFlagData.type}
-                        onChange={(e) => setNewFlagData({ ...newFlagData, type: e.target.value as FeatureFlag['type'], defaultValue: 'false' })}
+                        onChange={(e) => {
+                          const newType = e.target.value as FeatureFlag['type'];
+                          let defaultValue = 'false';
+                          if (newType === 'STRING') defaultValue = '';
+                          else if (newType === 'NUMBER') defaultValue = '0';
+                          else if (newType === 'JSON') defaultValue = '{}';
+                          setNewFlagData({ ...newFlagData, type: newType, defaultValue });
+                        }}
                         className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
                         disabled={isCreating}
                       >

@@ -66,6 +66,9 @@ export default function FeatureFlagDetail() {
   const [isSaving, setIsSaving] = useState(false);
   const [activeTab, setActiveTab] = useState<'overview' | 'targeting' | 'history'>('overview');
   const [showNewRuleForm, setShowNewRuleForm] = useState(false);
+  const [isEditing, setIsEditing] = useState(false);
+  const [editName, setEditName] = useState('');
+  const [editDescription, setEditDescription] = useState('');
   const [newRule, setNewRule] = useState({
     name: '',
     attribute: '',
@@ -387,16 +390,76 @@ export default function FeatureFlagDetail() {
               <TrashIcon className="-ml-0.5 mr-1.5 h-5 w-5" />
               Delete
             </button>
-            <Link
-              to={`/feature-flags/${id}/edit`}
+            <button
+              onClick={() => {
+                setEditName(flag?.name || '');
+                setEditDescription(flag?.description || '');
+                setIsEditing(true);
+              }}
               className="inline-flex items-center rounded-md bg-primary-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-700"
             >
               Edit Flag
-            </Link>
+            </button>
           </div>
         </div>
-        {flag.description && (
+        {flag.description && !isEditing && (
           <p className="mt-4 text-sm text-gray-600 max-w-3xl">{flag.description}</p>
+        )}
+        
+        {/* Edit Form */}
+        {isEditing && flag && (
+          <div className="mt-4 bg-gray-50 p-4 rounded-lg border border-gray-200">
+            <div className="space-y-4">
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Flag Name</label>
+                <input
+                  type="text"
+                  value={editName}
+                  onChange={(e) => setEditName(e.target.value)}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                />
+              </div>
+              <div>
+                <label className="block text-sm font-medium text-gray-700">Description</label>
+                <textarea
+                  value={editDescription}
+                  onChange={(e) => setEditDescription(e.target.value)}
+                  rows={2}
+                  className="mt-1 block w-full rounded-md border-gray-300 shadow-sm focus:border-primary-500 focus:ring-primary-500 sm:text-sm"
+                />
+              </div>
+              <div className="flex justify-end space-x-3">
+                <button
+                  onClick={() => setIsEditing(false)}
+                  className="rounded-md bg-white px-3 py-2 text-sm font-semibold text-gray-900 shadow-sm ring-1 ring-inset ring-gray-300 hover:bg-gray-50"
+                >
+                  Cancel
+                </button>
+                <button
+                  onClick={async () => {
+                    if (!flagId) return;
+                    setIsSaving(true);
+                    try {
+                      await api.patch(`/feature-flags/${flagId}`, {
+                        name: editName,
+                        description: editDescription,
+                      });
+                      setFlag({ ...flag, name: editName, description: editDescription });
+                      setIsEditing(false);
+                    } catch (error) {
+                      console.error('Failed to update flag:', error);
+                    } finally {
+                      setIsSaving(false);
+                    }
+                  }}
+                  disabled={isSaving || !editName}
+                  className="rounded-md bg-primary-600 px-3 py-2 text-sm font-semibold text-white shadow-sm hover:bg-primary-700 disabled:opacity-50"
+                >
+                  {isSaving ? 'Saving...' : 'Save Changes'}
+                </button>
+              </div>
+            </div>
+          </div>
         )}
       </div>
 
