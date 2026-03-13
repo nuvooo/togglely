@@ -45,6 +45,7 @@ export const getMyProjects = async (req: AuthenticatedRequest, res: Response, ne
       key: p.key,
       slug: p.key,
       description: p.description,
+      type: p.type,
       organizationId: p.organizationId,
       organizationName: p.organization.name,
       flagCount: p._count.featureFlags,
@@ -78,6 +79,7 @@ export const getProjects = async (req: AuthenticatedRequest, res: Response, next
       key: p.key,
       slug: p.key,
       description: p.description,
+      type: p.type,
       flagCount: p._count.featureFlags,
       environmentCount: p._count.environments,
       createdAt: p.createdAt
@@ -126,6 +128,7 @@ export const getProject = async (req: AuthenticatedRequest, res: Response, next:
       key: project.key,
       slug: project.key,
       description: project.description,
+      type: project.type,
       organizationId: project.organizationId,
       organizationName: project.organization.name,
       environments: project.environments,
@@ -181,7 +184,7 @@ export const createProject = async (req: AuthenticatedRequest, res: Response, ne
 export const updateProject = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId } = req.params;
-    const { name, description } = req.body;
+    const { name, description, type } = req.body;
     const userId = req.user!.userId;
 
     const project = await prisma.project.findUnique({

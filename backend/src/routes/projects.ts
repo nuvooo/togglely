@@ -39,6 +39,7 @@ router.patch(
   [
     body('name').optional().trim().notEmpty(),
     body('description').optional().trim(),
+    body('type').optional().isIn(['SINGLE', 'MULTI']),
     validate
   ],
   updateProject
