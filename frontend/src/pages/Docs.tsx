@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link } from 'react-router-dom';
 import { 
   FlagIcon,
@@ -92,6 +92,59 @@ const config = await flagify.getJSONFlag('ui-config');`,
 export default function Docs() {
   const [activeSection, setActiveSection] = useState('introduction');
   const [expandedSections, setExpandedSections] = useState<string[]>(['Getting Started']);
+  const observerRef = useRef<IntersectionObserver | null>(null);
+
+  useEffect(() => {
+    // Get all section IDs from sidebar navigation
+    const sectionIds = sidebarNavigation.flatMap(section => 
+      section.items.map(item => item.href.replace('#', ''))
+    );
+
+    // Create IntersectionObserver
+    observerRef.current = new IntersectionObserver(
+      (entries) => {
+        // Find the most visible section
+        const visibleEntries = entries.filter(entry => entry.isIntersecting);
+        if (visibleEntries.length > 0) {
+          // Use the one with highest intersection ratio
+          const mostVisible = visibleEntries.reduce((prev, current) =>
+            prev.intersectionRatio > current.intersectionRatio ? prev : current
+          );
+          setActiveSection(mostVisible.target.id);
+        }
+      },
+      {
+        rootMargin: '-20% 0px -60% 0px', // Trigger when section is near top
+        threshold: [0, 0.25, 0.5, 0.75, 1]
+      }
+    );
+
+    // Observe all sections
+    sectionIds.forEach(id => {
+      const element = document.getElementById(id);
+      if (element && observerRef.current) {
+        observerRef.current.observe(element);
+      }
+    });
+
+    return () => {
+      if (observerRef.current) {
+        observerRef.current.disconnect();
+      }
+    };
+  }, []);
+
+  // Auto-expand section when it becomes active
+  useEffect(() => {
+    sidebarNavigation.forEach(section => {
+      const hasActiveItem = section.items.some(item => 
+        item.href.replace('#', '') === activeSection
+      );
+      if (hasActiveItem && !expandedSections.includes(section.title)) {
+        setExpandedSections(prev => [...prev, section.title]);
+      }
+    });
+  }, [activeSection]);
 
   const toggleSection = (title: string) => {
     setExpandedSections(prev => 
@@ -173,8 +226,7 @@ export default function Docs() {
                         <li key={item.name}>
                           <a
                             href={item.href}
-                            onClick={() => setActiveSection(item.href.replace('#', ''))}
-                            className={`block py-1 pl-4 text-sm ${
+                            className={`block py-1 pl-4 text-sm transition-colors ${
                               activeSection === item.href.replace('#', '')
                                 ? 'text-primary-600 font-medium border-l-2 border-primary-600 -ml-[2px]'
                                 : 'text-gray-600 hover:text-gray-900'
