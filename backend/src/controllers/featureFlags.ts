@@ -390,12 +390,12 @@ export const toggleFlag = async (req: AuthenticatedRequest, res: Response, next:
     const { environmentId, enabled } = req.body;
     const userId = req.user!.userId;
 
-    // Find flag environment by flagId and environmentId (brandId can be null)
+    // Find flag environment by flagId and environmentId
+    // Filter for non-brand specific environments (brandId is null or undefined)
     const flagEnvs = await prisma.flagEnvironment.findMany({
       where: {
         flagId,
-        environmentId,
-        brandId: null
+        environmentId
       },
       include: {
         flag: true,
@@ -403,11 +403,14 @@ export const toggleFlag = async (req: AuthenticatedRequest, res: Response, next:
       }
     });
 
-    if (flagEnvs.length === 0) {
+    // Filter for environments without a brand (single-tenant projects)
+    const nonBrandEnvs = flagEnvs.filter(fe => !fe.brandId);
+    
+    if (nonBrandEnvs.length === 0) {
       return res.status(404).json({ error: 'Flag environment not found' });
     }
 
-    const flagEnv = flagEnvs[0];
+    const flagEnv = nonBrandEnvs[0];
 
     const updated = await prisma.flagEnvironment.update({
       where: { id: flagEnv.id },
@@ -440,23 +443,25 @@ export const updateFlagValue = async (req: AuthenticatedRequest, res: Response, 
     const { environmentId, defaultValue } = req.body;
     const userId = req.user!.userId;
 
-    // Find flag environment by flagId and environmentId (brandId can be null)
+    // Find flag environment by flagId and environmentId
     const flagEnvs = await prisma.flagEnvironment.findMany({
       where: {
         flagId,
-        environmentId,
-        brandId: null
+        environmentId
       },
       include: {
         flag: true
       }
     });
 
-    if (flagEnvs.length === 0) {
+    // Filter for environments without a brand (single-tenant projects)
+    const nonBrandEnvs = flagEnvs.filter(fe => !fe.brandId);
+    
+    if (nonBrandEnvs.length === 0) {
       return res.status(404).json({ error: 'Flag environment not found' });
     }
 
-    const flagEnv = flagEnvs[0];
+    const flagEnv = nonBrandEnvs[0];
 
     const updated = await prisma.flagEnvironment.update({
       where: { id: flagEnv.id },
@@ -526,21 +531,23 @@ export const updateFlagEnvironment = async (req: AuthenticatedRequest, res: Resp
       return sendInvalidIdError(res, 'Environment ID');
     }
 
-    // Find flag environment
+    // Find flag environment (single-tenant: no brand)
     const flagEnvs = await prisma.flagEnvironment.findMany({
       where: {
         flagId,
-        environmentId,
-        brandId: null
+        environmentId
       },
       include: { flag: true }
     });
 
-    if (flagEnvs.length === 0) {
+    // Filter for environments without a brand
+    const nonBrandEnvs = flagEnvs.filter(fe => !fe.brandId);
+    
+    if (nonBrandEnvs.length === 0) {
       return res.status(404).json({ error: 'Flag environment not found' });
     }
 
-    const flagEnv = flagEnvs[0];
+    const flagEnv = nonBrandEnvs[0];
 
     const updated = await prisma.flagEnvironment.update({
       where: { id: flagEnv.id },
@@ -570,20 +577,22 @@ export const createTargetingRule = async (req: AuthenticatedRequest, res: Respon
       return sendInvalidIdError(res, 'Environment ID');
     }
 
-    // Find flag environment
+    // Find flag environment (single-tenant: no brand)
     const flagEnvs = await prisma.flagEnvironment.findMany({
       where: {
         flagId,
-        environmentId,
-        brandId: null
+        environmentId
       }
     });
 
-    if (flagEnvs.length === 0) {
+    // Filter for environments without a brand
+    const nonBrandEnvs = flagEnvs.filter(fe => !fe.brandId);
+    
+    if (nonBrandEnvs.length === 0) {
       return res.status(404).json({ error: 'Flag environment not found' });
     }
 
-    const flagEnv = flagEnvs[0];
+    const flagEnv = nonBrandEnvs[0];
 
     const rule = await prisma.targetingRule.create({
       data: {
