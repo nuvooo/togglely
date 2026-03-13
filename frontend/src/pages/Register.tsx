@@ -7,7 +7,7 @@ import { Input } from '@/components/ui/input';
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import { Checkbox } from '@/components/ui/checkbox';
-import { FlagIcon, Loader2, CheckCircle, Building2 } from 'lucide-react';
+import { FlagIcon, Loader2, CheckCircle } from 'lucide-react';
 
 export default function Register() {
   const { t } = useTranslation();
@@ -16,7 +16,7 @@ export default function Register() {
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
-  const [organizationName, setOrganizationName] = useState('');
+
   const [agreeTerms, setAgreeTerms] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -41,7 +41,7 @@ export default function Register() {
     }
 
     try {
-      await register(firstName, lastName, email, password, organizationName);
+      await register(firstName, lastName, email, password);
       navigate('/');
     } catch (err: any) {
       setError(err.response?.data?.error || 'Registration failed');
@@ -130,24 +130,6 @@ export default function Register() {
                   placeholder={t('register.email-placeholder')}
                   value={email}
                   onChange={(e) => setEmail(e.target.value)}
-                  required
-                  className="h-11"
-                />
-              </div>
-
-              <div className="space-y-2">
-                <Label htmlFor="organizationName">
-                  <span className="flex items-center gap-2">
-                    <Building2 className="w-4 h-4" />
-                    {t('register.organization-label')}
-                  </span>
-                </Label>
-                <Input
-                  id="organizationName"
-                  type="text"
-                  placeholder={t('register.organization-placeholder')}
-                  value={organizationName}
-                  onChange={(e) => setOrganizationName(e.target.value)}
                   required
                   className="h-11"
                 />

@@ -13,7 +13,6 @@ router.post(
     body('password').isLength({ min: 8 }),
     body('firstName').trim().notEmpty(),
     body('lastName').trim().notEmpty(),
-    body('organizationName').trim().notEmpty(),
     validate
   ],
   register
