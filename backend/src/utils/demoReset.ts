@@ -77,11 +77,11 @@ export async function resetDemoData() {
         // Delete Projects
         await prisma.project.deleteMany({ where: { organizationId: { in: orgIds } } });
         
+        // First delete memberships (FK constraint), then organizations
+        await prisma.organizationMember.deleteMany({ where: { organizationId: { in: orgIds } } });
+        
         // Final: Delete the Organizations themselves
         await prisma.organization.deleteMany({ where: { id: { in: orgIds } } });
-        
-        // Also delete memberships
-        await prisma.organizationMember.deleteMany({ where: { organizationId: { in: orgIds } } });
       }
 
       // 4. Re-create the seed data
