@@ -141,7 +141,7 @@ export const getProject = async (req: AuthenticatedRequest, res: Response, next:
 export const createProject = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { orgId } = req.params;
-    const { name, key, description } = req.body;
+    const { name, key, description, type = 'SINGLE' } = req.body;
     const userId = req.user!.userId;
 
     const project = await prisma.project.create({
@@ -149,6 +149,7 @@ export const createProject = async (req: AuthenticatedRequest, res: Response, ne
         name,
         key,
         description,
+        type,
         organizationId: orgId
       }
     });
@@ -157,7 +158,6 @@ export const createProject = async (req: AuthenticatedRequest, res: Response, ne
     await prisma.environment.createMany({
       data: [
         { name: 'Development', key: 'development', projectId: project.id, organizationId: orgId },
-        { name: 'Staging', key: 'staging', projectId: project.id, organizationId: orgId },
         { name: 'Production', key: 'production', projectId: project.id, organizationId: orgId }
       ]
     });
@@ -196,7 +196,8 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response, ne
       where: { id: projectId },
       data: {
         ...(name && { name }),
-        ...(description !== undefined && { description })
+        ...(description !== undefined && { description }),
+        ...(req.body.type && { type: req.body.type })
       }
     });
 

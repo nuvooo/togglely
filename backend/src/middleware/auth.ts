@@ -107,6 +107,52 @@ export const requireOrgMember = async (
   }
 };
 
+export const requireProjectMember = async (
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> => {
+  try {
+    const { projectId } = req.params;
+    const userId = req.user?.userId;
+
+    if (!userId) {
+      res.status(401).json({ error: 'Authentication required' });
+      return;
+    }
+
+    // Get project to find organization
+    const project = await prisma.project.findUnique({
+      where: { id: projectId },
+      select: { organizationId: true }
+    });
+
+    if (!project) {
+      res.status(404).json({ error: 'Project not found' });
+      return;
+    }
+
+    // Check if user is member of the organization
+    const membership = await prisma.organizationMember.findUnique({
+      where: {
+        userId_organizationId: {
+          userId,
+          organizationId: project.organizationId
+        }
+      }
+    });
+
+    if (!membership) {
+      res.status(403).json({ error: 'Not a member of this project' });
+      return;
+    }
+
+    next();
+  } catch (error) {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+};
+
 export const requireOrgRole = (roles: string[]) => {
   return async (
     req: AuthenticatedRequest,

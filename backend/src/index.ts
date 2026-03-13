@@ -10,6 +10,7 @@ import { passwordResetRouter } from './routes/passwordReset';
 import { organizationsRouter } from './routes/organizations';
 import { projectsRouter } from './routes/projects';
 import { environmentsRouter } from './routes/environments';
+import { brandsRouter } from './routes/brands';
 import { featureFlagsRouter } from './routes/featureFlags';
 import { sdkRouter } from './routes/sdk';
 import { apiKeysRouter } from './routes/apiKeys';
@@ -64,6 +65,7 @@ app.get('/health', (req, res) => {
 app.use('/api/auth', authRouter);
 app.use('/api/password-reset', passwordResetRouter);
 app.use('/api/organizations', organizationsRouter);
+app.use('/api/brands', brandsRouter);
 app.use('/api/projects', projectsRouter);
 app.use('/api/environments', environmentsRouter);
 app.use('/api/feature-flags', featureFlagsRouter);

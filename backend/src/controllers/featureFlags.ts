@@ -390,12 +390,12 @@ export const toggleFlag = async (req: AuthenticatedRequest, res: Response, next:
     const { environmentId, enabled } = req.body;
     const userId = req.user!.userId;
 
-    const flagEnv = await prisma.flagEnvironment.findUnique({
+    // Find flag environment by flagId and environmentId (brandId can be null)
+    const flagEnvs = await prisma.flagEnvironment.findMany({
       where: {
-        flagId_environmentId: {
-          flagId,
-          environmentId
-        }
+        flagId,
+        environmentId,
+        brandId: null
       },
       include: {
         flag: true,
@@ -403,17 +403,14 @@ export const toggleFlag = async (req: AuthenticatedRequest, res: Response, next:
       }
     });
 
-    if (!flagEnv) {
+    if (flagEnvs.length === 0) {
       return res.status(404).json({ error: 'Flag environment not found' });
     }
 
+    const flagEnv = flagEnvs[0];
+
     const updated = await prisma.flagEnvironment.update({
-      where: {
-        flagId_environmentId: {
-          flagId,
-          environmentId
-        }
-      },
+      where: { id: flagEnv.id },
       data: { enabled }
     });
 
@@ -443,29 +440,26 @@ export const updateFlagValue = async (req: AuthenticatedRequest, res: Response, 
     const { environmentId, defaultValue } = req.body;
     const userId = req.user!.userId;
 
-    const flagEnv = await prisma.flagEnvironment.findUnique({
+    // Find flag environment by flagId and environmentId (brandId can be null)
+    const flagEnvs = await prisma.flagEnvironment.findMany({
       where: {
-        flagId_environmentId: {
-          flagId,
-          environmentId
-        }
+        flagId,
+        environmentId,
+        brandId: null
       },
       include: {
         flag: true
       }
     });
 
-    if (!flagEnv) {
+    if (flagEnvs.length === 0) {
       return res.status(404).json({ error: 'Flag environment not found' });
     }
 
+    const flagEnv = flagEnvs[0];
+
     const updated = await prisma.flagEnvironment.update({
-      where: {
-        flagId_environmentId: {
-          flagId,
-          environmentId
-        }
-      },
+      where: { id: flagEnv.id },
       data: { defaultValue }
     });
 
@@ -532,27 +526,24 @@ export const updateFlagEnvironment = async (req: AuthenticatedRequest, res: Resp
       return sendInvalidIdError(res, 'Environment ID');
     }
 
-    const flagEnv = await prisma.flagEnvironment.findUnique({
+    // Find flag environment
+    const flagEnvs = await prisma.flagEnvironment.findMany({
       where: {
-        flagId_environmentId: {
-          flagId,
-          environmentId
-        }
+        flagId,
+        environmentId,
+        brandId: null
       },
       include: { flag: true }
     });
 
-    if (!flagEnv) {
+    if (flagEnvs.length === 0) {
       return res.status(404).json({ error: 'Flag environment not found' });
     }
 
+    const flagEnv = flagEnvs[0];
+
     const updated = await prisma.flagEnvironment.update({
-      where: {
-        flagId_environmentId: {
-          flagId,
-          environmentId
-        }
-      },
+      where: { id: flagEnv.id },
       data: {
         ...(enabled !== undefined && { enabled }),
         ...(defaultValue !== undefined && { defaultValue })
@@ -579,18 +570,20 @@ export const createTargetingRule = async (req: AuthenticatedRequest, res: Respon
       return sendInvalidIdError(res, 'Environment ID');
     }
 
-    const flagEnv = await prisma.flagEnvironment.findUnique({
+    // Find flag environment
+    const flagEnvs = await prisma.flagEnvironment.findMany({
       where: {
-        flagId_environmentId: {
-          flagId,
-          environmentId
-        }
+        flagId,
+        environmentId,
+        brandId: null
       }
     });
 
-    if (!flagEnv) {
+    if (flagEnvs.length === 0) {
       return res.status(404).json({ error: 'Flag environment not found' });
     }
+
+    const flagEnv = flagEnvs[0];
 
     const rule = await prisma.targetingRule.create({
       data: {
@@ -673,3 +666,4 @@ export const deleteTargetingRule = async (req: AuthenticatedRequest, res: Respon
     next(error);
   }
 };
+

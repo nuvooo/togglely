@@ -74,24 +74,49 @@ enum OrganizationRole {
   VIEWER
 }
 
+enum ProjectType {
+  SINGLE
+  MULTI
+}
+
 model Project {
-  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  id             String      @id @default(auto()) @map("_id") @db.ObjectId
   name           String
   key            String
   description    String?
-  organizationId String   @db.ObjectId
-  createdAt      DateTime @default(now())
-  updatedAt      DateTime @updatedAt
+  type           ProjectType @default(SINGLE)
+  organizationId String      @db.ObjectId
+  createdAt      DateTime    @default(now())
+  updatedAt      DateTime    @updatedAt
 
   // Relations
   organization Organization @relation(fields: [organizationId], references: [id])
   environments Environment[]
   featureFlags FeatureFlag[]
+  brands       Brand[]
   auditLogs    AuditLog[]
 
   @@unique([organizationId, key])
   @@index([organizationId])
   @@map("projects")
+}
+
+model Brand {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  key         String
+  description String?
+  projectId   String   @db.ObjectId
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  project          Project           @relation(fields: [projectId], references: [id])
+  flagEnvironments FlagEnvironment[]
+
+  @@unique([projectId, key])
+  @@index([projectId])
+  @@map("brands")
 }
 
 model Environment {
@@ -152,6 +177,7 @@ model FlagEnvironment {
   id            String   @id @default(auto()) @map("_id") @db.ObjectId
   flagId        String   @db.ObjectId
   environmentId String   @db.ObjectId
+  brandId       String?  @db.ObjectId
   enabled       Boolean  @default(false)
   defaultValue  String   @default("false")
   createdAt     DateTime @default(now())
@@ -160,11 +186,13 @@ model FlagEnvironment {
   // Relations
   flag           FeatureFlag     @relation(fields: [flagId], references: [id])
   environment    Environment     @relation(fields: [environmentId], references: [id])
+  brand          Brand?          @relation(fields: [brandId], references: [id])
   targetingRules TargetingRule[]
 
-  @@unique([flagId, environmentId])
+  @@unique([flagId, environmentId, brandId])
   @@index([flagId])
   @@index([environmentId])
+  @@index([brandId])
   @@map("flag_environments")
 }
 
