@@ -36,6 +36,7 @@ export interface CreateOrganizationData {
 export interface CreateProjectData {
   name: string;
   key: string;
+  type?: 'SINGLE' | 'MULTI';
 }
 
 interface OrganizationStats {

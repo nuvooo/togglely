@@ -54,6 +54,7 @@ export default function OrganizationDetail() {
   const [showCreateProjectDialog, setShowCreateProjectDialog] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectKey, setNewProjectKey] = useState('');
+  const [newProjectType, setNewProjectType] = useState<'SINGLE' | 'MULTI'>('SINGLE');
   const [isCreatingProject, setIsCreatingProject] = useState(false);
   const [projectToDelete, setProjectToDelete] = useState<string | null>(null);
   const [isDeletingProject, setIsDeletingProject] = useState(false);
@@ -87,10 +88,11 @@ export default function OrganizationDetail() {
     if (!orgId) return;
     setIsCreatingProject(true);
     try {
-      await createProject(orgId, { name: newProjectName, key: newProjectKey });
+      await createProject(orgId, { name: newProjectName, key: newProjectKey, type: newProjectType });
       setShowCreateProjectDialog(false);
       setNewProjectName('');
       setNewProjectKey('');
+      setNewProjectType('SINGLE');
     } catch (error) {
       console.error('Failed to create project:', error);
     } finally {
@@ -209,6 +211,21 @@ export default function OrganizationDetail() {
                         className="pl-10 font-mono"
                       />
                     </div>
+                  </div>
+                  <div className="space-y-2">
+                    <Label htmlFor="projectType">Project Type</Label>
+                    <select
+                      id="projectType"
+                      value={newProjectType}
+                      onChange={(e) => setNewProjectType(e.target.value as 'SINGLE' | 'MULTI')}
+                      className="w-full rounded-md border border-input bg-background px-3 py-2"
+                    >
+                      <option value="SINGLE">Single - One brand per project</option>
+                      <option value="MULTI">Multi-Tenant - Multiple brands per project</option>
+                    </select>
+                    <p className="text-xs text-muted-foreground">
+                      Multi-tenant projects allow you to manage feature flags for multiple brands independently.
+                    </p>
                   </div>
                 </div>
                 <DialogFooter>
