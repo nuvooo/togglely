@@ -1,0 +1,84 @@
+import express from 'express';
+import cors from 'cors';
+import helmet from 'helmet';
+import morgan from 'morgan';
+import dotenv from 'dotenv';
+import rateLimit from 'express-rate-limit';
+
+import { authRouter } from './routes/auth';
+import { organizationsRouter } from './routes/organizations';
+import { projectsRouter } from './routes/projects';
+import { environmentsRouter } from './routes/environments';
+import { featureFlagsRouter } from './routes/featureFlags';
+import { sdkRouter } from './routes/sdk';
+import { apiKeysRouter } from './routes/apiKeys';
+import { auditLogsRouter } from './routes/auditLogs';
+import { errorHandler } from './middleware/errorHandler';
+import { initRedis } from './utils/redis';
+
+dotenv.config();
+
+const app = express();
+const PORT = process.env.PORT || 4000;
+
+// Initialize Redis
+initRedis();
+
+// Security middleware
+app.use(helmet());
+app.use(cors({
+  origin: process.env.FRONTEND_URL || 'http://localhost:3000',
+  credentials: true
+}));
+
+// Rate limiting
+const limiter = rateLimit({
+  windowMs: 15 * 60 * 1000, // 15 minutes
+  max: 100, // limit each IP to 100 requests per windowMs
+  message: { error: 'Too many requests, please try again later.' }
+});
+app.use('/api/', limiter);
+
+// SDK rate limiting - higher limits
+const sdkLimiter = rateLimit({
+  windowMs: 1 * 60 * 1000, // 1 minute
+  max: 10000, // 10k requests per minute for SDK
+  message: { error: 'Rate limit exceeded' }
+});
+app.use('/sdk/', sdkLimiter);
+
+// Body parsing
+app.use(express.json({ limit: '10mb' }));
+app.use(express.urlencoded({ extended: true }));
+
+// Logging
+app.use(morgan('combined'));
+
+// Health check
+app.get('/health', (req, res) => {
+  res.json({ status: 'ok', timestamp: new Date().toISOString() });
+});
+
+// API routes
+app.use('/api/auth', authRouter);
+app.use('/api/organizations', organizationsRouter);
+app.use('/api/projects', projectsRouter);
+app.use('/api/environments', environmentsRouter);
+app.use('/api/feature-flags', featureFlagsRouter);
+app.use('/api/api-keys', apiKeysRouter);
+app.use('/api/audit-logs', auditLogsRouter);
+
+// SDK routes (for client applications)
+app.use('/sdk', sdkRouter);
+
+// Error handling
+app.use(errorHandler);
+
+// 404 handler
+app.use((req, res) => {
+  res.status(404).json({ error: 'Not found' });
+});
+
+app.listen(PORT, () => {
+  console.log(`🚀 Flagify API running on port ${PORT}`);
+});

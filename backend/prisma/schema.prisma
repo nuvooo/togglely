@@ -1,0 +1,275 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "mongodb"
+  url      = env("DATABASE_URL")
+}
+
+model User {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  email     String   @unique
+  password  String
+  firstName String
+  lastName  String
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Relations
+  memberships    OrganizationMember[]
+  apiKeys        ApiKey[]
+  auditLogs      AuditLog[]
+  createdFlags   FeatureFlag[] @relation("CreatedFlags")
+  updatedFlags   FeatureFlag[] @relation("UpdatedFlags")
+
+  @@map("users")
+}
+
+model Organization {
+  id          String   @id @default(auto()) @map("_id") @db.ObjectId
+  name        String
+  slug        String   @unique
+  description String?
+  isActive    Boolean  @default(true)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  // Relations
+  members      OrganizationMember[]
+  projects     Project[]
+  apiKeys      ApiKey[]
+  auditLogs    AuditLog[]
+  environments Environment[]
+  featureFlags FeatureFlag[]
+
+  @@map("organizations")
+}
+
+model OrganizationMember {
+  id             String           @id @default(auto()) @map("_id") @db.ObjectId
+  userId         String           @db.ObjectId
+  organizationId String           @db.ObjectId
+  role           OrganizationRole @default(MEMBER)
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
+
+  // Relations
+  user         User         @relation(fields: [userId], references: [id])
+  organization Organization @relation(fields: [organizationId], references: [id])
+
+  @@unique([userId, organizationId])
+  @@index([userId])
+  @@index([organizationId])
+  @@map("organization_members")
+}
+
+enum OrganizationRole {
+  OWNER
+  ADMIN
+  MEMBER
+  VIEWER
+}
+
+model Project {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  name           String
+  key            String
+  description    String?
+  organizationId String   @db.ObjectId
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id])
+  environments Environment[]
+  featureFlags FeatureFlag[]
+  auditLogs    AuditLog[]
+
+  @@unique([organizationId, key])
+  @@index([organizationId])
+  @@map("projects")
+}
+
+model Environment {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  name           String
+  key            String
+  projectId      String   @db.ObjectId
+  organizationId String   @db.ObjectId
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  project          Project           @relation(fields: [projectId], references: [id])
+  organization     Organization      @relation(fields: [organizationId], references: [id])
+  flagEnvironments FlagEnvironment[]
+
+  @@unique([projectId, key])
+  @@index([projectId])
+  @@index([organizationId])
+  @@map("environments")
+}
+
+model FeatureFlag {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  name           String
+  key            String
+  description    String?
+  flagType       FlagType @default(BOOLEAN)
+  organizationId String   @db.ObjectId
+  projectId      String   @db.ObjectId
+  createdById    String   @db.ObjectId
+  updatedById    String?  @db.ObjectId
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  // Relations
+  organization     Organization      @relation(fields: [organizationId], references: [id])
+  project          Project           @relation(fields: [projectId], references: [id])
+  createdBy        User              @relation("CreatedFlags", fields: [createdById], references: [id])
+  updatedBy        User?             @relation("UpdatedFlags", fields: [updatedById], references: [id])
+  flagEnvironments FlagEnvironment[]
+
+  @@unique([projectId, key])
+  @@index([organizationId])
+  @@index([projectId])
+  @@index([createdById])
+  @@map("feature_flags")
+}
+
+enum FlagType {
+  BOOLEAN
+  STRING
+  NUMBER
+  JSON
+}
+
+model FlagEnvironment {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  flagId        String   @db.ObjectId
+  environmentId String   @db.ObjectId
+  enabled       Boolean  @default(false)
+  defaultValue  String   @default("false")
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  flag           FeatureFlag     @relation(fields: [flagId], references: [id])
+  environment    Environment     @relation(fields: [environmentId], references: [id])
+  targetingRules TargetingRule[]
+
+  @@unique([flagId, environmentId])
+  @@index([flagId])
+  @@index([environmentId])
+  @@map("flag_environments")
+}
+
+model TargetingRule {
+  id         String       @id @default(auto()) @map("_id") @db.ObjectId
+  flagEnvId  String       @db.ObjectId
+  name       String?
+  operator   RuleOperator @default(AND)
+  serveValue String
+  isDefault  Boolean      @default(false)
+  priority   Int          @default(0)
+  createdAt  DateTime     @default(now())
+  updatedAt  DateTime     @updatedAt
+
+  // Relations
+  flagEnvironment FlagEnvironment @relation(fields: [flagEnvId], references: [id])
+  conditions      RuleCondition[]
+
+  @@index([flagEnvId])
+  @@map("targeting_rules")
+}
+
+enum RuleOperator {
+  AND
+  OR
+}
+
+model RuleCondition {
+  id        String            @id @default(auto()) @map("_id") @db.ObjectId
+  ruleId    String            @db.ObjectId
+  attribute String
+  operator  ConditionOperator
+  value     String
+  createdAt DateTime          @default(now())
+
+  // Relations
+  rule TargetingRule @relation(fields: [ruleId], references: [id])
+
+  @@index([ruleId])
+  @@map("rule_conditions")
+}
+
+enum ConditionOperator {
+  EQUALS
+  NOT_EQUALS
+  CONTAINS
+  NOT_CONTAINS
+  GREATER_THAN
+  LESS_THAN
+  IN
+  NOT_IN
+  STARTS_WITH
+  ENDS_WITH
+  MATCHES_REGEX
+}
+
+model ApiKey {
+  id            String     @id @default(auto()) @map("_id") @db.ObjectId
+  name          String
+  key           String     @unique
+  type          ApiKeyType @default(SERVER)
+  organizationId String    @db.ObjectId
+  userId        String?    @db.ObjectId
+  environmentId String?
+  lastUsedAt    DateTime?
+  expiresAt     DateTime?
+  isActive      Boolean    @default(true)
+  createdAt     DateTime   @default(now())
+  updatedAt     DateTime   @updatedAt
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id])
+  user         User?        @relation(fields: [userId], references: [id])
+
+  @@index([organizationId])
+  @@index([userId])
+  @@map("api_keys")
+}
+
+enum ApiKeyType {
+  SERVER
+  CLIENT
+  SDK
+}
+
+model AuditLog {
+  id             String   @id @default(auto()) @map("_id") @db.ObjectId
+  action         String
+  entityType     String
+  entityId       String
+  organizationId String   @db.ObjectId
+  projectId      String?  @db.ObjectId
+  userId         String?  @db.ObjectId
+  oldValues      Json?
+  newValues      Json?
+  ipAddress      String?
+  userAgent      String?
+  createdAt      DateTime @default(now())
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id])
+  project      Project?     @relation(fields: [projectId], references: [id])
+  user         User?        @relation(fields: [userId], references: [id])
+
+  @@index([organizationId])
+  @@index([projectId])
+  @@index([userId])
+  @@index([createdAt])
+  @@map("audit_logs")
+}

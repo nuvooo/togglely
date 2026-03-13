@@ -1,0 +1,9 @@
+{
+  "devDependencies": {
+    "@cypress/code-coverage": "^4.0.1",
+    "cypress": "^15.11.0",
+    "cypress-vite": "^1.8.0",
+    "istanbul-lib-coverage": "^3.2.2",
+    "nyc": "^18.0.0"
+  }
+}

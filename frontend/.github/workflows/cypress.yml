@@ -1,0 +1,107 @@
+name: Cypress Tests with Coverage
+
+on:
+  push:
+    branches: [ main, develop ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  cypress-run:
+    runs-on: ubuntu-latest
+    
+    services:
+      mongodb:
+        image: mongo:7
+        ports:
+          - 27017:27017
+        options: >-
+          --health-cmd "echo 'db.runCommand(\"ping\").ok' | mongosh localhost:27017/test --quiet"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+      
+      redis:
+        image: redis:7-alpine
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v4
+
+    - name: Setup Node.js
+      uses: actions/setup-node@v4
+      with:
+        node-version: '20'
+        cache: 'npm'
+
+    - name: Install Frontend Dependencies
+      working-directory: ./frontend
+      run: npm ci
+
+    - name: Install Backend Dependencies
+      working-directory: ./backend
+      run: npm ci
+
+    - name: Setup Backend Database
+      working-directory: ./backend
+      run: npx prisma db push --accept-data-loss
+      env:
+        DATABASE_URL: mongodb://localhost:27017/flagify_test
+
+    - name: Start Backend
+      working-directory: ./backend
+      run: npm start &
+      env:
+        DATABASE_URL: mongodb://localhost:27017/flagify_test
+        REDIS_URL: redis://localhost:6379
+        JWT_SECRET: test-secret
+        PORT: 4000
+
+    - name: Wait for Backend
+      run: npx wait-on http://localhost:4000/health --timeout 60000
+
+    - name: Start Frontend
+      working-directory: ./frontend
+      run: npm run dev &
+      env:
+        VITE_API_URL: http://localhost:4000/api
+
+    - name: Wait for Frontend
+      run: npx wait-on http://localhost:3000 --timeout 60000
+
+    - name: Run Cypress Tests
+      working-directory: ./frontend
+      run: npx cypress run --browser chrome
+
+    - name: Check Coverage Threshold
+      working-directory: ./frontend
+      run: |
+        if [ -f "coverage/coverage-summary.json" ]; then
+          LINES=$(cat coverage/coverage-summary.json | jq '.total.lines.pct')
+          echo "📈 Line Coverage: ${LINES}%"
+          if (( $(echo "$LINES < 80" | bc -l) )); then
+            echo "❌ Coverage below 80%"
+            exit 1
+          fi
+        fi
+
+    - name: Upload Coverage Report
+      uses: actions/upload-artifact@v4
+      if: always()
+      with:
+        name: coverage-report
+        path: frontend/coverage/
+
+    - name: Upload Cypress Screenshots
+      uses: actions/upload-artifact@v4
+      if: failure()
+      with:
+        name: cypress-screenshots
+        path: frontend/cypress/screenshots/
