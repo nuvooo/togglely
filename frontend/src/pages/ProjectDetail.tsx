@@ -490,10 +490,12 @@ export default function ProjectDetail() {
                                 className="flex items-center justify-between p-2 rounded bg-white dark:bg-gray-800 border border-gray-100 dark:border-gray-700"
                               >
                                 <div className="flex items-center gap-2">
-                                  <span className="text-sm font-medium">{brand.brandName}</span>
-                                  {brand.isCustom && (
-                                    <Badge variant="outline" className="text-xs">Custom</Badge>
-                                  )}
+                                  <Badge 
+                                    variant={brand.isCustom ? "default" : "outline"} 
+                                    className="text-xs"
+                                  >
+                                    {brand.brandName}
+                                  </Badge>
                                 </div>
                                 <button
                                   onClick={() => handleToggleBrandFlag(flag, brand, env.environmentId)}
