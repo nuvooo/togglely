@@ -1,6 +1,6 @@
-# Flagify Setup Script
+# Togglely Setup Script
 
-Write-Host "🚀 Setting up Flagify..." -ForegroundColor Cyan
+Write-Host "🚀 Setting up Togglely..." -ForegroundColor Cyan
 
 # Check if Docker is installed
 try {
@@ -29,7 +29,7 @@ if (-not (Test-Path .env)) {
 Write-Host ""
 Write-Host "🎉 Setup complete!" -ForegroundColor Green
 Write-Host ""
-Write-Host "To start Flagify, run:" -ForegroundColor Cyan
+Write-Host "To start Togglely, run:" -ForegroundColor Cyan
 Write-Host "  docker-compose up -d" -ForegroundColor White
 Write-Host ""
 Write-Host "The application will be available at:" -ForegroundColor Cyan
@@ -37,5 +37,5 @@ Write-Host "  Frontend: http://localhost:3000" -ForegroundColor White
 Write-Host "  Backend API: http://localhost:4000" -ForegroundColor White
 Write-Host ""
 Write-Host "Demo credentials:" -ForegroundColor Cyan
-Write-Host "  Email: demo@flagify.io" -ForegroundColor White
+Write-Host "  Email: demo@togglely.io" -ForegroundColor White
 Write-Host "  Password: demo1234" -ForegroundColor White

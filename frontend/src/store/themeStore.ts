@@ -51,7 +51,7 @@ export const useThemeStore = create<ThemeState>()(
       },
     }),
     {
-      name: 'flagify-theme',
+      name: 'togglely-theme',
       onRehydrateStorage: () => (state) => {
         if (state) {
           const resolved = applyTheme(state.theme);
@@ -65,7 +65,7 @@ export const useThemeStore = create<ThemeState>()(
 // Initialize theme immediately on script load (prevents flash)
 if (typeof window !== 'undefined') {
   // Try to get theme from localStorage immediately
-  const stored = localStorage.getItem('flagify-theme');
+  const stored = localStorage.getItem('togglely-theme');
   let theme: Theme = 'system';
   
   if (stored) {

@@ -204,7 +204,7 @@ export default function ApiKeys() {
         <div>
           <h1 className="text-3xl font-bold tracking-tight">API Keys</h1>
           <p className="text-muted-foreground mt-1">
-            Manage API keys for accessing the Flagify API
+            Manage API keys for accessing the Togglely API
           </p>
         </div>
         <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
@@ -218,7 +218,7 @@ export default function ApiKeys() {
             <DialogHeader>
               <DialogTitle>Create New API Key</DialogTitle>
               <DialogDescription>
-                Create a new API key for accessing the Flagify API
+                Create a new API key for accessing the Togglely API
               </DialogDescription>
             </DialogHeader>
             

@@ -20,7 +20,7 @@ export const verifyToken = (token: string): JWTPayload => {
 
 export const generateApiKey = (): string => {
   const chars = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  let result = 'flagify_';
+  let result = 'togglely_';
   for (let i = 0; i < 48; i++) {
     result += chars.charAt(Math.floor(Math.random() * chars.length));
   }

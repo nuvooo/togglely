@@ -1,0 +1,30 @@
+{
+  "name": "@togglely/sdk-workspace",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Togglely SDKs for multiple frameworks",
+  "workspaces": [
+    "core",
+    "vanilla",
+    "react",
+    "svelte",
+    "vue"
+  ],
+  "scripts": {
+    "build": "npm run build --workspaces",
+    "test": "npm run test --workspaces",
+    "publish:core": "npm publish --workspace=core --access=public",
+    "publish:vanilla": "npm publish --workspace=vanilla --access=public",
+    "publish:react": "npm publish --workspace=react --access=public",
+    "publish:svelte": "npm publish --workspace=svelte --access=public",
+    "publish:vue": "npm publish --workspace=vue --access=public",
+    "publish:all": "npm run publish:core && npm run publish:vanilla && npm run publish:react && npm run publish:svelte && npm run publish:vue"
+  },
+  "keywords": [
+    "feature-flags",
+    "feature-toggles",
+    "togglely"
+  ],
+  "author": "Togglely",
+  "license": "MIT"
+}

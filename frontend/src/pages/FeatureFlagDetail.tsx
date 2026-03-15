@@ -584,12 +584,12 @@ export default function FeatureFlagDetail() {
                     JavaScript/TypeScript
                   </h4>
                   <pre className="bg-gray-900 text-gray-100 rounded-lg p-4 overflow-x-auto">
-                    <code>{`import { Flagify } from '@flagify/sdk';
+                    <code>{`import { Togglely } from '@togglely/sdk';
 
-const flagify = new Flagify({ apiKey: 'YOUR_API_KEY' });
+const togglely = new Togglely({ apiKey: 'YOUR_API_KEY' });
 
 // Check if feature is enabled
-const isEnabled = await flagify.getBooleanFlag('${flag.key}');
+const isEnabled = await togglely.getBooleanFlag('${flag.key}');
 
 if (isEnabled) {
   // Show new feature
@@ -603,7 +603,7 @@ if (isEnabled) {
                     cURL
                   </h4>
                   <pre className="bg-gray-900 text-gray-100 rounded-lg p-4 overflow-x-auto">
-                    <code>{`curl -X POST https://api.flagify.io/v1/evaluate \\
+                    <code>{`curl -X POST https://api.togglely.io/v1/evaluate \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{

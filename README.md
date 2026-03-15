@@ -1,12 +1,12 @@
-# 🚩 Flagify - Feature Flag Management Platform
+# 🚩 Togglely - Feature Toggle Management Platform
 
-![Flagify Dashboard](screenshot.png)
+![Togglely Dashboard](screenshot.png)
 
-A complete, self-hosted Feature Flag Management Platform. Manage feature flags, organizations, projects, and environments with a modern web interface and a powerful API.
+A complete, self-hosted Feature Toggle Management Platform. Manage feature flags, organizations, projects, and environments with a modern web interface and a powerful API.
 
-🌐 **Live Demo**: [flagify.examplesart.de](https://flagify.examplesart.de/)  
-📖 **Documentation**: [flagify.examplesart.de/docs](https://flagify.examplesart.de/docs)  
-💻 **GitHub**: [github.com/nuvooo/flagify](https://github.com/nuvooo/flagify)
+🌐 **Live Demo**: [togglely.examplesart.de](https://togglely.examplesart.de/)  
+📖 **Documentation**: [togglely.examplesart.de/docs](https://togglely.examplesart.de/docs)  
+💻 **GitHub**: [github.com/nuvooo/togglely](https://github.com/nuvooo/togglely)
 
 ## ✨ Features
 
@@ -24,7 +24,7 @@ A complete, self-hosted Feature Flag Management Platform. Manage feature flags, 
   - Development, Staging, Production
   - Independent flag states per environment
 
-- 🚦 **Feature Flags**
+- 🚦 **Feature Toggles**
   - Multiple types: Boolean, String, Number, JSON
   - Targeting rules with conditions
   - Real-time updates
@@ -53,8 +53,8 @@ A complete, self-hosted Feature Flag Management Platform. Manage feature flags, 
 1. **Clone the repository**
 
 ```bash
-git clone https://github.com/nuvooo/flagify.git
-cd flagify
+git clone https://github.com/nuvooo/togglely.git
+cd togglely
 ```
 
 2. **Start Docker Containers**
@@ -71,13 +71,13 @@ docker-compose up -d
 
 ### Demo Credentials
 
-- **Email**: `demo@flagify.io`
+- **Email**: `demo@togglely.io`
 - **Password**: `demo1234`
 
 ## 📁 Project Structure
 
 ```
-flagify/
+togglely/
 ├── backend/           # Node.js/Express Backend API
 │   ├── src/
 │   │   ├── controllers/   # API Controllers
@@ -155,7 +155,7 @@ npx prisma db seed
 | POST | `/api/projects/organization/:orgId` | Create project |
 | GET | `/api/projects/:id` | Project details |
 
-### Feature Flags
+### Feature Toggles
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
@@ -168,28 +168,28 @@ npx prisma db seed
 
 | Method | Endpoint | Description |
 |--------|----------|-------------|
-| GET | `/sdk/flags/:environmentKey` | All flags |
-| GET | `/sdk/flags/:environmentKey/:flagKey` | Single flag |
-| POST | `/sdk/evaluate/:environmentKey/:flagKey` | Evaluate with context |
+| GET | `/sdk/toggles/:environmentKey` | All toggles |
+| GET | `/sdk/toggles/:environmentKey/:toggleKey` | Single toggle |
+| POST | `/sdk/evaluate/:environmentKey/:toggleKey` | Evaluate with context |
 
 ## 💻 SDK Integration
 
 ### JavaScript/TypeScript
 
 ```bash
-npm install @flagify/sdk
+npm install @togglely/sdk
 ```
 
 ```typescript
-import { FlagifyClient } from '@flagify/sdk';
+import { TogglelyClient } from '@togglely/sdk';
 
-const client = new FlagifyClient({
+const client = new TogglelyClient({
   apiKey: 'your-api-key',
   environment: 'production',
-  baseUrl: 'https://your-flagify-instance.com'
+  baseUrl: 'https://your-togglely-instance.com'
 });
 
-// Check boolean flag
+// Check boolean toggle
 const isEnabled = await client.isEnabled('new-feature');
 if (isEnabled) {
   // Show new functionality
@@ -217,14 +217,14 @@ const isEnabledForUser = await client.isEnabled('beta-feature');
 
 ### Multi-Tenant Architecture
 
-Flagify uses an organization-based multi-tenant architecture:
+Togglely uses an organization-based multi-tenant architecture:
 
 ```
 Users
   └── Organizations (Owner, Admin, Member, Viewer)
         └── Projects
               └── Environments (Dev, Staging, Prod)
-                    └── Feature Flags
+                    └── Feature Toggles
                           └── Targeting Rules
 ```
 

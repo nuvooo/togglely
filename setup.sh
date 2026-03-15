@@ -1,6 +1,6 @@
 #!/bin/bash
 
-echo "🚀 Setting up Flagify..."
+echo "🚀 Setting up Togglely..."
 
 # Check if Docker is installed
 if ! command -v docker &> /dev/null; then
@@ -25,7 +25,7 @@ fi
 echo ""
 echo "🎉 Setup complete!"
 echo ""
-echo "To start Flagify, run:"
+echo "To start Togglely, run:"
 echo "  docker-compose up -d"
 echo ""
 echo "The application will be available at:"
@@ -33,5 +33,5 @@ echo "  Frontend: http://localhost:3000"
 echo "  Backend API: http://localhost:4000"
 echo ""
 echo "Demo credentials:"
-echo "  Email: demo@flagify.io"
+echo "  Email: demo@togglely.io"
 echo "  Password: demo1234"

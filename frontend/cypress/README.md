@@ -1,8 +1,8 @@
-# Cypress E2E Tests for Flagify
+# Cypress E2E Tests for Togglely
 
 ## Overview
 
-This directory contains comprehensive end-to-end tests for the Flagify Feature Flag Management Platform. The tests cover all major functionality including authentication, organizations, projects, feature flags, API keys, and settings.
+This directory contains comprehensive end-to-end tests for the Togglely Feature Toggle Management Platform. The tests cover all major functionality including authentication, organizations, projects, feature flags, API keys, and settings.
 
 ## Test Structure
 
@@ -65,7 +65,7 @@ Or open `coverage/index.html` in your browser.
 Logs in a user and creates a session.
 
 ```typescript
-cy.login('demo@flagify.io', 'demo1234')
+cy.login('demo@togglely.io', 'demo1234')
 ```
 
 ### `cy.createOrganization(name)`
@@ -92,7 +92,7 @@ cy.createFeatureFlag('project-id', 'Dark Mode', 'dark-mode')
 ## Test Data
 
 Tests use the following demo credentials:
-- Email: `demo@flagify.io`
+- Email: `demo@togglely.io`
 - Password: `demo1234`
 
 These are seeded automatically when the backend starts with `prisma db seed`.

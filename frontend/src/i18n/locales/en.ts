@@ -1,6 +1,6 @@
 export const en = {
   // Common
-  'common.app-name': 'Flagify',
+  'common.app-name': 'Togglely',
   'common.loading': 'Loading...',
   'common.save': 'Save',
   'common.cancel': 'Cancel',
@@ -61,7 +61,7 @@ export const en = {
 
   // Auth - Register
   'register.title': 'Create account',
-  'register.subtitle': 'Start your journey with Flagify',
+  'register.subtitle': 'Start your journey with Togglely',
   'register.first-name-label': 'First name',
   'register.first-name-placeholder': 'John',
   'register.last-name-label': 'Last name',
@@ -170,7 +170,7 @@ export const en = {
   'create-organization.slug-placeholder': 'acme-inc',
   'create-organization.slug-help': 'Used in URLs. Only lowercase letters, numbers, and hyphens.',
   'create-organization.preview.title': 'Preview',
-  'create-organization.preview.url': 'flagify.io/{{slug}}',
+  'create-organization.preview.url': 'togglely.io/{{slug}}',
   'create-organization.tips.what-next.title': 'What happens next?',
   'create-organization.tips.what-next.description': 'After creating your organization, you can add projects, invite team members, and start managing feature flags.',
   'create-organization.tips.best-practices.title': 'Best Practices',

@@ -13,7 +13,7 @@ export async function resetDemoData() {
   try {
     // 1. Find the demo user
     const demoUser = await prisma.user.findUnique({
-      where: { email: 'demo@flagify.io' }
+      where: { email: 'demo@togglely.io' }
     });
 
     if (demoUser) {
@@ -200,7 +200,7 @@ export async function resetDemoData() {
       await prisma.apiKey.create({
         data: {
           name: 'Demo SDK Key',
-          key: 'flagify_demo_sdk_key_for_testing_purposes_only',
+          key: 'togglely_demo_sdk_key_for_testing_purposes_only',
           type: 'SDK',
           organizationId: org.id,
           userId: demoUser.id

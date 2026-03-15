@@ -1,0 +1,38 @@
+{
+  "name": "@togglely/sdk-react",
+  "version": "1.0.0",
+  "description": "React SDK for Togglely - Feature toggles with hooks",
+  "main": "dist/index.js",
+  "module": "dist/index.esm.js",
+  "types": "dist/index.d.ts",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc && rollup -c",
+    "test": "jest"
+  },
+  "keywords": [
+    "feature-flags",
+    "feature-toggles",
+    "togglely",
+    "react",
+    "hooks"
+  ],
+  "author": "Togglely",
+  "license": "MIT",
+  "peerDependencies": {
+    "react": "^16.8.0 || ^17.0.0 || ^18.0.0",
+    "react-dom": "^16.8.0 || ^17.0.0 || ^18.0.0"
+  },
+  "dependencies": {
+    "@togglely/sdk-core": "^1.0.0"
+  },
+  "devDependencies": {
+    "@rollup/plugin-typescript": "^11.1.5",
+    "@types/react": "^18.2.45",
+    "rollup": "^4.9.1",
+    "tslib": "^2.6.2",
+    "typescript": "^5.3.3"
+  }
+}

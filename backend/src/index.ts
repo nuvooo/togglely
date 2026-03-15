@@ -101,5 +101,5 @@ app.use((req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🚀 Flagify API running on port ${PORT}`);
+  console.log(`🚀 Togglely API running on port ${PORT}`);
 });

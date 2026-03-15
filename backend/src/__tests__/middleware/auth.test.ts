@@ -75,7 +75,7 @@ describe('Auth Middleware', () => {
 
   describe('authenticateApiKey', () => {
     it('should authenticate with valid API key from header', async () => {
-      const apiKey = 'flagify_validapikey123';
+      const apiKey = 'togglely_validapikey123';
       mockReq.headers = { authorization: `Bearer ${apiKey}` };
 
       const mockKeyRecord = {
@@ -101,7 +101,7 @@ describe('Auth Middleware', () => {
     });
 
     it('should authenticate with valid API key from query param', async () => {
-      const apiKey = 'flagify_validapikey123';
+      const apiKey = 'togglely_validapikey123';
       mockReq = { query: { apiKey }, headers: {} };
 
       const mockKeyRecord = {
@@ -122,7 +122,7 @@ describe('Auth Middleware', () => {
     });
 
     it('should authenticate with valid API key from x-api-key header', async () => {
-      const apiKey = 'flagify_validapikey123';
+      const apiKey = 'togglely_validapikey123';
       mockReq.headers = { 'x-api-key': apiKey };
 
       const mockKeyRecord = {

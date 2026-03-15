@@ -14,7 +14,7 @@ export default function Login() {
   const { t } = useTranslation();
   const [searchParams] = useSearchParams();
   const isDemo = searchParams.get('demo') === 'true';
-  const [email, setEmail] = useState(isDemo ? 'demo@flagify.io' : '');
+  const [email, setEmail] = useState(isDemo ? 'demo@togglely.io' : '');
   const [password, setPassword] = useState(isDemo ? 'demo1234' : '');
   const [rememberMe, setRememberMe] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
@@ -60,7 +60,7 @@ export default function Login() {
             {isDemo && (
               <div className="mt-4 p-3 rounded-lg bg-amber-50 dark:bg-amber-900/30 border border-amber-200 dark:border-amber-800 text-amber-800 dark:text-amber-300 text-sm">
                 <p className="font-medium mb-1">🎮 Live Demo Mode</p>
-                <p>Email: <code className="font-mono bg-amber-100 dark:bg-amber-950 px-1 rounded">demo@flagify.io</code></p>
+                <p>Email: <code className="font-mono bg-amber-100 dark:bg-amber-950 px-1 rounded">demo@togglely.io</code></p>
                 <p>Password: <code className="font-mono bg-amber-100 dark:bg-amber-950 px-1 rounded">demo1234</code></p>
               </div>
             )}

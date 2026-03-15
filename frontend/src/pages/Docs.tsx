@@ -50,35 +50,35 @@ const codeSnippets = {
   docker: `version: '3.8'
 
 services:
-  flagify:
-    image: ghcr.io/nuvooo/flagify:latest
+  togglely:
+    image: ghcr.io/nuvooo/togglely:latest
     ports:
       - "3000:80"
     environment:
       - NODE_ENV=production
-      - DATABASE_URL=mongodb://mongo:27017/flagify
+      - DATABASE_URL=mongodb://mongo:27017/togglely
       - REDIS_URL=redis://redis:6379
       - JWT_SECRET=your-secret-key`,
 
-  js: `import { Flagify } from '@flagify/sdk';
+  js: `import { Togglely } from '@togglely/sdk';
 
-const flagify = new Flagify({
+const togglely = new Togglely({
   apiKey: 'your-sdk-key'
 });
 
 // Check boolean flag
-const isEnabled = await flagify.getBooleanFlag('new-feature');
+const isEnabled = await togglely.getBooleanFlag('new-feature');
 
 // Get string value
-const theme = await flagify.getStringFlag('theme-color');
+const theme = await togglely.getStringFlag('theme-color');
 
 // Get number value  
-const maxItems = await flagify.getNumberFlag('max-items');
+const maxItems = await togglely.getNumberFlag('max-items');
 
 // Get JSON value
-const config = await flagify.getJSONFlag('ui-config');`,
+const config = await togglely.getJSONFlag('ui-config');`,
 
-  rest: `curl -X POST https://your-flagify.com/api/flags/evaluate \\
+  rest: `curl -X POST https://your-togglely.com/api/flags/evaluate \\
   -H "Authorization: Bearer YOUR_API_KEY" \\
   -H "Content-Type: application/json" \\
   -d '{
@@ -166,7 +166,7 @@ export default function Docs() {
                 <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
                   <FlagIcon className="h-5 w-5 text-primary-foreground" />
                 </span>
-                <span className="text-lg font-bold text-foreground">Flagify</span>
+                <span className="text-lg font-bold text-foreground">Togglely</span>
               </Link>
               <span className="text-muted-foreground">|</span>
               <span className="text-sm text-muted-foreground">Documentation</span>
@@ -181,7 +181,7 @@ export default function Docs() {
                 Live Demo
               </a>
               <a 
-                href="https://github.com/nuvooo/flagify/" 
+                href="https://github.com/nuvooo/togglely/" 
                 target="_blank" 
                 rel="noopener noreferrer"
                 className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400"
@@ -247,11 +247,11 @@ export default function Docs() {
           <main className="flex-1 min-w-0">
             <div className="prose prose-slate max-w-none">
               <h1 id="introduction" className="text-4xl font-bold text-foreground mb-6">
-                Flagify Documentation
+                Togglely Documentation
               </h1>
               
               <p className="text-lg text-muted-foreground mb-8">
-                Welcome to Flagify! This guide will help you get started with feature flags, 
+                Welcome to Togglely! This guide will help you get started with feature flags, 
                 from basic setup to advanced targeting and multi-tenant deployments.
               </p>
 
@@ -263,7 +263,7 @@ export default function Docs() {
                     </div>
                     <h3 className="font-semibold text-foreground group-hover:text-primary">Quick Start</h3>
                   </div>
-                  <p className="text-sm text-muted-foreground">Get up and running with Flagify in 5 minutes</p>
+                  <p className="text-sm text-muted-foreground">Get up and running with Togglely in 5 minutes</p>
                 </a>
                 
                 <a href="#sdk-js" className="group block p-6 bg-muted rounded-xl border border-border hover:border-primary hover:shadow-md transition-all">
@@ -273,7 +273,7 @@ export default function Docs() {
                     </div>
                     <h3 className="font-semibold text-foreground group-hover:text-primary">SDKs</h3>
                   </div>
-                  <p className="text-sm text-muted-foreground">Integrate Flagify into your application</p>
+                  <p className="text-sm text-muted-foreground">Integrate Togglely into your application</p>
                 </a>
                 
                 <a href="#docker" className="group block p-6 bg-muted rounded-xl border border-border hover:border-primary hover:shadow-md transition-all">
@@ -287,7 +287,7 @@ export default function Docs() {
                 </a>
                 
                 <a 
-                  href="https://github.com/nuvooo/flagify/" 
+                  href="https://github.com/nuvooo/togglely/" 
                   target="_blank" 
                   rel="noopener noreferrer"
                   className="group block p-6 bg-muted rounded-xl border border-border hover:border-primary hover:shadow-md transition-all"
@@ -309,12 +309,12 @@ export default function Docs() {
               </h2>
               
               <p className="text-gray-600 dark:text-gray-400 mb-4">
-                The fastest way to try Flagify is using our live demo or running it locally with Docker.
+                The fastest way to try Togglely is using our live demo or running it locally with Docker.
               </p>
 
               <h3 className="text-xl font-semibold text-foreground mt-8 mb-3">Option 1: Live Demo</h3>
               <p className="text-gray-600 dark:text-gray-400 mb-4">
-                Try Flagify instantly without installation{' '}
+                Try Togglely instantly without installation{' '}
                 <Link to="/login?demo=true" className="text-primary hover:underline">
                   here
                 </Link>
@@ -344,7 +344,7 @@ export default function Docs() {
               </h2>
               
               <p className="text-gray-600 dark:text-gray-400 mb-4">
-                Feature flags are the core concept of Flagify. They allow you to control feature availability 
+                Feature flags are the core concept of Togglely. They allow you to control feature availability 
                 without deploying new code.
               </p>
 
@@ -370,7 +370,7 @@ export default function Docs() {
               </h2>
               
               <p className="text-gray-600 dark:text-gray-400 mb-4">
-                Flagify supports multi-tenant projects through the concept of <strong>Brands</strong>. 
+                Togglely supports multi-tenant projects through the concept of <strong>Brands</strong>. 
                 This is perfect for SaaS applications where different customers need different feature configurations.
               </p>
               
@@ -406,7 +406,7 @@ export default function Docs() {
               </h2>
               
               <p className="text-gray-600 dark:text-gray-400 mb-4">
-                The recommended way to deploy Flagify is using Docker Compose. 
+                The recommended way to deploy Togglely is using Docker Compose. 
                 This sets up the complete stack including MongoDB and Redis.
               </p>
 
@@ -415,7 +415,7 @@ export default function Docs() {
               </h2>
               
               <p className="text-gray-600 dark:text-gray-400 mb-4">
-                Flagify is ready for Coolify deployment. Use the provided <code>docker-compose.coolify.yml</code> 
+                Togglely is ready for Coolify deployment. Use the provided <code>docker-compose.coolify.yml</code> 
                 for easy self-hosting on your own infrastructure.
               </p>
 
@@ -461,7 +461,7 @@ export default function Docs() {
                   If you need assistance or want to report an issue, visit our GitHub repository.
                 </p>
                 <a 
-                  href="https://github.com/nuvooo/flagify/issues" 
+                  href="https://github.com/nuvooo/togglely/issues" 
                   target="_blank" 
                   rel="noopener noreferrer"
                   className="inline-flex items-center gap-2 text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium"

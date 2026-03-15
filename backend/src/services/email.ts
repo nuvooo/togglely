@@ -24,7 +24,7 @@ export const sendEmail = async (options: EmailOptions): Promise<void> => {
   }
 
   await transporter.sendMail({
-    from: process.env.SMTP_FROM || 'Flagify <noreply@flagify.io>',
+    from: process.env.SMTP_FROM || 'Togglely <noreply@togglely.io>',
     to: options.to,
     subject: options.subject,
     html: options.html,
@@ -38,7 +38,7 @@ export const sendPasswordResetEmail = async (email: string, resetToken: string):
   const html = `
     <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
       <h2 style="color: #333;">Password Reset</h2>
-      <p>You requested a password reset for your Flagify account.</p>
+      <p>You requested a password reset for your Togglely account.</p>
       <p>Click the button below to reset your password:</p>
       <a href="${resetUrl}" style="display: inline-block; padding: 12px 24px; background-color: #007bff; color: white; text-decoration: none; border-radius: 4px; margin: 16px 0;">Reset Password</a>
       <p>Or copy and paste this link:</p>
@@ -50,7 +50,7 @@ export const sendPasswordResetEmail = async (email: string, resetToken: string):
 
   await sendEmail({
     to: email,
-    subject: 'Reset your Flagify password',
+    subject: 'Reset your Togglely password',
     html,
     text: `Reset your password: ${resetUrl}`,
   });

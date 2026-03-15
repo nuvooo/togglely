@@ -58,7 +58,7 @@ describe('JWT Utils', () => {
   describe('generateApiKey', () => {
     it('should generate API key with correct prefix', () => {
       const apiKey = generateApiKey();
-      expect(apiKey.startsWith('flagify_')).toBe(true);
+      expect(apiKey.startsWith('togglely_')).toBe(true);
     });
 
     it('should generate unique API keys', () => {
@@ -75,7 +75,7 @@ describe('JWT Utils', () => {
 
     it('should generate API key with only valid characters', () => {
       const apiKey = generateApiKey();
-      expect(apiKey).toMatch(/^flagify_[A-Za-z0-9]+$/);
+      expect(apiKey).toMatch(/^togglely_[A-Za-z0-9]+$/);
     });
   });
 });

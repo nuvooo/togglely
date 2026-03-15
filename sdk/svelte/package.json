@@ -1,0 +1,37 @@
+{
+  "name": "@togglely/sdk-svelte",
+  "version": "1.0.0",
+  "description": "Svelte SDK for Togglely - Feature toggles with stores",
+  "main": "dist/index.js",
+  "module": "dist/index.esm.js",
+  "types": "dist/index.d.ts",
+  "svelte": "dist/index.js",
+  "files": [
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc && rollup -c",
+    "test": "jest"
+  },
+  "keywords": [
+    "feature-flags",
+    "feature-toggles",
+    "togglely",
+    "svelte",
+    "stores"
+  ],
+  "author": "Togglely",
+  "license": "MIT",
+  "peerDependencies": {
+    "svelte": "^3.0.0 || ^4.0.0 || ^5.0.0"
+  },
+  "dependencies": {
+    "@togglely/sdk-core": "^1.0.0"
+  },
+  "devDependencies": {
+    "@rollup/plugin-typescript": "^11.1.5",
+    "rollup": "^4.9.1",
+    "tslib": "^2.6.2",
+    "typescript": "^5.3.3"
+  }
+}

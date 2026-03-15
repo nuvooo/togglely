@@ -1,6 +1,6 @@
-# Deploy Flagify on Coolify
+# Deploy Togglely on Coolify
 
-This guide explains how to deploy Flagify on [Coolify](https://coolify.io/) - an open-source & self-hostable Heroku/Netlify alternative.
+This guide explains how to deploy Togglely on [Coolify](https://coolify.io/) - an open-source & self-hostable Heroku/Netlify alternative.
 
 ## Quick Start
 
@@ -8,7 +8,7 @@ This guide explains how to deploy Flagify on [Coolify](https://coolify.io/) - an
 
 1. **Create a new resource** in Coolify
 2. **Select "Docker Compose"** as the source
-3. **Choose your Git repository** containing Flagify
+3. **Choose your Git repository** containing Togglely
 4. **Select the `docker-compose.coolify.yml` file**
 
 ### Option 2: Using Single Dockerfile
@@ -26,7 +26,7 @@ Configure these in Coolify UI:
 |----------|---------|----------|-------------|
 | `NODE_ENV` | `production` | No | Node environment |
 | `JWT_SECRET` | - | **Yes** | Secret for JWT tokens |
-| `DATABASE_URL` | `mongodb://mongodb:27017/flagify?replicaSet=rs0` | No | MongoDB connection |
+| `DATABASE_URL` | `mongodb://mongodb:27017/togglely?replicaSet=rs0` | No | MongoDB connection |
 | `REDIS_URL` | `redis://redis:6379` | No | Redis connection |
 | `BACKEND_PORT` | `4000` | No | Backend API port |
 | `FRONTEND_PORT` | `3000` | No | Frontend web port |
@@ -67,14 +67,14 @@ Make sure to configure these volumes in Coolify:
 
 ## Post-Deployment
 
-After deployment, access your Flagify instance at:
+After deployment, access your Togglely instance at:
 - **Frontend**: `https://your-domain.com`
 - **Backend API**: `https://your-domain.com/api`
 
 ### Default Login
 
 The first user can be created by registering through the UI or using the demo account:
-- Email: `demo@flagify.io`
+- Email: `demo@togglely.io`
 - Password: `demo1234`
 
 ## Troubleshooting
@@ -96,10 +96,10 @@ CORS_ORIGIN=https://your-domain.com
 
 ## Updates
 
-To update Flagify:
+To update Togglely:
 1. Pull the latest changes from Git
 2. Coolify will automatically rebuild and redeploy
 
 ## Support
 
-For issues and feature requests, visit: https://github.com/yourusername/flagify/issues
+For issues and feature requests, visit: https://github.com/yourusername/togglely/issues

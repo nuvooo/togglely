@@ -5,10 +5,10 @@
 services:
   mongodb:
     image: mongo:7
-    container_name: flagify-mongodb
+    container_name: togglely-mongodb
     command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
     environment:
-      MONGO_INITDB_DATABASE: flagify
+      MONGO_INITDB_DATABASE: togglely
     volumes:
       - mongodb_data:/data/db
     ports:
@@ -21,11 +21,11 @@ services:
       start_period: 0s
       start_interval: 1s
     networks:
-      - flagify-network
+      - togglely-network
 
   redis:
     image: redis:7-alpine
-    container_name: flagify-redis
+    container_name: togglely-redis
     volumes:
       - redis_data:/data
     ports:
@@ -42,10 +42,10 @@ services:
     build:
       context: ./backend
       dockerfile: Dockerfile
-    container_name: flagify-backend
+    container_name: togglely-backend
     environment:
       NODE_ENV: ${NODE_ENV:-production}
-      DATABASE_URL: ${DATABASE_URL:-mongodb://mongodb:27017/flagify?replicaSet=rs0}
+      DATABASE_URL: ${DATABASE_URL:-mongodb://mongodb:27017/togglely?replicaSet=rs0}
       REDIS_URL: ${REDIS_URL:-redis://redis:6379}
       JWT_SECRET: ${JWT_SECRET}
       PORT: ${BACKEND_PORT:-4000}
@@ -72,7 +72,7 @@ services:
     build:
       context: ./frontend
       dockerfile: Dockerfile
-    container_name: flagify-frontend
+    container_name: togglely-frontend
     environment:
       - VITE_API_URL=${VITE_API_URL:-http://backend:4000}
     ports:
@@ -88,5 +88,5 @@ volumes:
   uploads:
 
 networks:
-  flagify-network:
+  togglely-network:
     driver: bridge

@@ -37,7 +37,7 @@ describe('API Keys Controller', () => {
           id: 'key123',
           name: 'Production Key',
           type: 'SERVER',
-          key: 'flagify_abc123def456',
+          key: 'togglely_abc123def456',
           isActive: true,
           lastUsedAt: new Date(),
           expiresAt: null,
@@ -67,7 +67,7 @@ describe('API Keys Controller', () => {
           id: 'key123',
           name: 'My Key',
           type: 'SERVER',
-          key: 'flagify_abc123def456',
+          key: 'togglely_abc123def456',
           organization: { id: 'org123', name: 'Test Org' },
           isActive: true,
           lastUsedAt: new Date(),
@@ -99,12 +99,12 @@ describe('API Keys Controller', () => {
         id: 'key123',
         name: 'New Key',
         type: 'SERVER',
-        key: 'flagify_newkey123',
+        key: 'togglely_newkey123',
         expiresAt: null,
         createdAt: new Date(),
       };
 
-      (jwtUtils.generateApiKey as jest.Mock).mockReturnValue('flagify_newkey123');
+      (jwtUtils.generateApiKey as jest.Mock).mockReturnValue('togglely_newkey123');
       mockPrisma.apiKey.create.mockResolvedValue(mockKey);
 
       await createApiKey(mockReq, mockRes as Response, mockNext);
@@ -113,7 +113,7 @@ describe('API Keys Controller', () => {
       expect(mockRes.json).toHaveBeenCalledWith(expect.objectContaining({
         id: 'key123',
         name: 'New Key',
-        key: 'flagify_newkey123',
+        key: 'togglely_newkey123',
       }));
     });
 
@@ -125,12 +125,12 @@ describe('API Keys Controller', () => {
         id: 'key123',
         name: 'Temp Key',
         type: 'CLIENT',
-        key: 'flagify_tempkey123',
+        key: 'togglely_tempkey123',
         expiresAt: new Date(Date.now() + 30 * 24 * 60 * 60 * 1000),
         createdAt: new Date(),
       };
 
-      (jwtUtils.generateApiKey as jest.Mock).mockReturnValue('flagify_tempkey123');
+      (jwtUtils.generateApiKey as jest.Mock).mockReturnValue('togglely_tempkey123');
       mockPrisma.apiKey.create.mockResolvedValue(mockKey);
 
       await createApiKey(mockReq, mockRes as Response, mockNext);

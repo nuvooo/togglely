@@ -1,7 +1,7 @@
 {
-  "name": "flagify-backend",
+  "name": "togglely-backend",
   "version": "1.0.0",
-  "description": "Feature Flag Management Platform Backend",
+  "description": "Feature Toggle Management Platform Backend",
   "main": "dist/index.js",
   "scripts": {
     "dev": "tsx watch src/index.ts",
@@ -53,8 +53,8 @@
     "typescript": "^5.3.3"
   },
   "keywords": [
-    "feature-flags",
     "feature-toggles",
+    "feature-flags",
     "launchdarkly",
     "multi-tenant"
   ],
