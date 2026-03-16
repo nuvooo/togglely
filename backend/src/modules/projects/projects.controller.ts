@@ -44,6 +44,12 @@ export class ProjectsController {
     return { project };
   }
 
+  @Get(':id')
+  async findOne(@Param('id') id: string, @Req() req: any) {
+    const project = await this.projectsService.findOne(id, req.user.userId);
+    return { project };
+  }
+
   @Delete(':id')
   async delete(@Param('id') id: string, @Req() req: any) {
     await this.projectsService.delete(id, req.user.userId);

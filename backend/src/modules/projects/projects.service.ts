@@ -114,6 +114,46 @@ export class ProjectsService {
     await this.prisma.project.delete({ where: { id: projectId } });
   }
 
+  async findOne(projectId: string, userId: string): Promise<Project> {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: {
+        environments: {
+          orderBy: { sortOrder: 'asc' }
+        }
+      }
+    });
+
+    if (!project) {
+      throw new NotFoundException('Project not found');
+    }
+
+    const membership = await this.prisma.organizationMember.findFirst({
+      where: { userId, organizationId: project.organizationId },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    const domainProject = Project.reconstitute({
+      id: project.id,
+      name: project.name,
+      key: project.key,
+      description: project.description || '',
+      type: project.type as 'SINGLE' | 'MULTI',
+      allowedOrigins: project.allowedOrigins,
+      organizationId: project.organizationId,
+      createdAt: project.createdAt,
+      updatedAt: project.updatedAt,
+    });
+
+    // Attach environments for the frontend
+    (domainProject as any).environments = project.environments;
+
+    return domainProject;
+  }
+
   async findByOrganization(orgId: string, userId: string): Promise<Project[]> {
     const membership = await this.prisma.organizationMember.findFirst({
       where: { userId, organizationId: orgId },
