@@ -21,7 +21,7 @@ async function main() {
   }
 
   // Create demo user
-  const hashedPassword = await hashPassword('demo1234');
+  const hashedPassword = await hashPassword('demo123!');
   
   const user = await prisma.user.create({
     data: {
@@ -173,7 +173,7 @@ async function main() {
   console.log('');
   console.log('Demo credentials:');
   console.log('  Email: demo@togglely.io');
-  console.log('  Password: demo1234');
+  console.log('  Password: demo123!');
   console.log('');
   console.log('Demo API Key: togglely_demo_sdk_key_for_testing_purposes_only');
 }

@@ -28,16 +28,18 @@ const PORT = process.env.PORT || 4000;
 // Initialize Redis
 initRedis();
 
-// Schedule demo data reset every 10 minutes
-cron.schedule('*/10 * * * *', async () => {
-  await resetDemoData();
-});
+// Schedule demo data reset every 10 minutes (only if enabled)
+if (process.env.ENABLE_DEMO_RESET === 'true') {
+  console.log('🔄 Demo data reset enabled - scheduling every 10 minutes');
+  cron.schedule('*/10 * * * *', async () => {
+    await resetDemoData();
+  });
+  // Run once on startup
+  resetDemoData();
+}
 
 // Trust proxy for rate limiting behind nginx
 app.set('trust proxy', 1);
-
-// Initialize Redis
-initRedis();
 
 // Security middleware
 app.use(helmet({
