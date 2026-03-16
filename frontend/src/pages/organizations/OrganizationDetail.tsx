@@ -125,7 +125,7 @@ export default function OrganizationDetail() {
 
   const projects = currentOrganization?.projects || [];
   const filteredProjects = projects.filter(p => 
-    p.name.toLowerCase().includes(searchQuery.toLowerCase())
+    (p.name || '').toLowerCase().includes((searchQuery || '').toLowerCase())
   );
 
   if (isLoading || !currentOrganization) {
