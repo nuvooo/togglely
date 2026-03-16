@@ -5,22 +5,31 @@ import { validateSdkOrigin, handleSdkPreflight } from '../middleware/sdkCors';
 
 const router = Router();
 
-// Handle preflight OPTIONS requests
+// Handle preflight OPTIONS requests globally
 router.use(handleSdkPreflight);
 
-// Apply CORS validation before API key authentication
-router.use(validateSdkOrigin);
-
-// SDK endpoints use API key authentication
-router.use(authenticateApiKey);
+// SDK endpoints use API key authentication + CORS validation
+// CORS validation is applied per-route so req.params is available
 
 // Get all flags for an environment within a project
-router.get('/flags/:projectKey/:environmentKey', getAllFlags);
+router.get('/flags/:projectKey/:environmentKey', 
+  validateSdkOrigin,
+  authenticateApiKey, 
+  getAllFlags
+);
 
 // Get specific flag
-router.get('/flags/:projectKey/:environmentKey/:flagKey', getFlag);
+router.get('/flags/:projectKey/:environmentKey/:flagKey', 
+  validateSdkOrigin,
+  authenticateApiKey, 
+  getFlag
+);
 
 // Evaluate flag with context
-router.post('/evaluate/:projectKey/:environmentKey/:flagKey', evaluateFlag);
+router.post('/evaluate/:projectKey/:environmentKey/:flagKey', 
+  validateSdkOrigin,
+  authenticateApiKey, 
+  evaluateFlag
+);
 
 export { router as sdkRouter };
