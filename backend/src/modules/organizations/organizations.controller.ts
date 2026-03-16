@@ -2,7 +2,7 @@ import { Controller, Get, Post, Body, UseGuards, Request, Param } from '@nestjs/
 import { OrganizationsService } from './organizations.service';
 import { AuthGuard } from '../../shared/auth.guard';
 
-@Controller('api/organizations')
+@Controller('organizations')
 @UseGuards(AuthGuard)
 export class OrganizationsController {
   constructor(private readonly organizationsService: OrganizationsService) {}

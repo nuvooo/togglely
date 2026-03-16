@@ -14,6 +14,15 @@ export class ProjectsController {
     return { projects };
   }
 
+  @Get('organization/:orgId')
+  async findByOrganization(
+    @Param('orgId') orgId: string,
+    @Req() req: any,
+  ) {
+    const projects = await this.projectsService.findByOrganization(orgId, req.user.userId);
+    return projects;
+  }
+
   @Post('organization/:orgId')
   async create(
     @Param('orgId') orgId: string,

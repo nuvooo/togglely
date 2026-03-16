@@ -113,4 +113,30 @@ export class ProjectsService {
 
     await this.prisma.project.delete({ where: { id: projectId } });
   }
+
+  async findByOrganization(orgId: string, userId: string): Promise<Project[]> {
+    const membership = await this.prisma.organizationMember.findFirst({
+      where: { userId, organizationId: orgId },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    const projects = await this.prisma.project.findMany({
+      where: { organizationId: orgId },
+    });
+
+    return projects.map(p => Project.reconstitute({
+      id: p.id,
+      name: p.name,
+      key: p.key,
+      description: p.description || '',
+      type: p.type as 'SINGLE' | 'MULTI',
+      allowedOrigins: p.allowedOrigins,
+      organizationId: p.organizationId,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+    }));
+  }
 }
