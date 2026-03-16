@@ -276,9 +276,19 @@ export const deleteProject = async (req: AuthenticatedRequest, res: Response, ne
       return res.status(404).json({ error: 'Project not found' });
     }
 
-    // Delete in transaction: first environments, then the project
+    // Delete in transaction with proper dependency order
     await prisma.$transaction(async (tx) => {
-      // 1. Delete feature flags and their environments
+      // 1. Delete API keys associated with this project
+      await tx.apiKey.deleteMany({
+        where: { projectId }
+      });
+      
+      // 2. Delete audit logs for this project
+      await tx.auditLog.deleteMany({
+        where: { projectId }
+      });
+      
+      // 3. Delete feature flags and their environments
       const flags = await tx.featureFlag.findMany({
         where: { projectId },
         select: { id: true }
@@ -286,7 +296,7 @@ export const deleteProject = async (req: AuthenticatedRequest, res: Response, ne
       const flagIds = flags.map(f => f.id);
 
       if (flagIds.length > 0) {
-        // Delete flag environments first
+        // Delete all flag environments (including brand-specific ones)
         const flagEnvs = await tx.flagEnvironment.findMany({
           where: { flagId: { in: flagIds } },
           select: { id: true }
@@ -320,17 +330,17 @@ export const deleteProject = async (req: AuthenticatedRequest, res: Response, ne
         });
       }
 
-      // 2. Delete brands (for multi-tenant projects)
+      // 4. Delete brands (for multi-tenant projects)
       await tx.brand.deleteMany({
         where: { projectId }
       });
 
-      // 3. Delete environments
+      // 5. Delete environments
       await tx.environment.deleteMany({
         where: { projectId }
       });
 
-      // 4. Finally delete the project
+      // 6. Finally delete the project
       await tx.project.delete({
         where: { id: projectId }
       });
