@@ -50,21 +50,24 @@ const corsOptions: cors.CorsOptions = {
       process.env.FRONTEND_URL || 'http://localhost:3000',
       'http://localhost:5173', // Vite default dev port
       'http://localhost:3000',  // Standard frontend port
-      'https://togglely.examplesart.de' // Production URL
+      'https://togglely.examplesart.de', // Production URL
+      '*' // Allow all origins for SDK (temporary for testing)
     ];
     
     // Allow requests with no origin (like mobile apps or curl)
     if (!origin) return callback(null, true);
     
-    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development') {
+    // For SDK requests, allow any origin
+    if (allowedOrigins.indexOf(origin) !== -1 || process.env.NODE_ENV === 'development' || !origin) {
       callback(null, true);
     } else {
+      console.log(`[CORS] Blocked origin: ${origin}`);
       callback(new Error('Not allowed by CORS'));
     }
   },
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS', 'PATCH'],
-  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With']
+  allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With', 'X-API-Key']
 };
 
 app.use(cors(corsOptions));
