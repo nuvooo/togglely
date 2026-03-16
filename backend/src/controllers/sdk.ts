@@ -124,46 +124,46 @@ export const getAllFlags = async (req: AuthenticatedRequest, res: Response, next
     // Try cache first - ONLY if no brand specified
     const redis = getRedis();
     const cacheKey = getAllFlagsCacheKey(environment.id);
-    if (!brand) {
+    if (!brandKey) {
       const cached = await redis.get(cacheKey);
       if (cached) {
         return res.json(JSON.parse(cached));
       }
     }
 
-    // Fetch global (no brand) flag environments
-    const globalFlagEnvs = await prisma.flagEnvironment.findMany({
-      where: { environmentId: environment.id, brandId: null },
+    // Look up brand if brandKey provided
+    let brand: { id: string } | null = null;
+    if (brandKey) {
+      brand = await prisma.brand.findFirst({
+        where: { key: brandKey, projectId: environment.projectId },
+        select: { id: true }
+      });
+    }
+
+    // Fetch flag environments: brand-specific if brand found, otherwise any environment entry
+    const flagEnvs = await prisma.flagEnvironment.findMany({
+      where: {
+        environmentId: environment.id,
+        ...(brand ? { brandId: brand.id } : {})
+      },
       include: {
         flag: { select: { id: true, key: true, flagType: true } },
         targetingRules: { include: { conditions: true } }
       }
     });
 
-    // Fetch brand-specific flag environments if brand found
-    const brandFlagEnvMap: Record<string, { enabled: boolean; defaultValue: string }> = {};
-    if (brand) {
-      const brandFlagEnvs = await prisma.flagEnvironment.findMany({
-        where: { environmentId: environment.id, brandId: brand.id },
-        include: { flag: { select: { key: true, flagType: true } } }
-      });
-      for (const bfe of brandFlagEnvs) {
-        brandFlagEnvMap[bfe.flag.key] = { enabled: bfe.enabled, defaultValue: bfe.defaultValue };
-      }
-    }
+    // If brand was provided but no brand-specific entries found, fall back to all entries (any brand)
+    const effectiveFlagEnvs = (brand && flagEnvs.length === 0)
+      ? await prisma.flagEnvironment.findMany({
+          where: { environmentId: environment.id },
+          include: {
+            flag: { select: { id: true, key: true, flagType: true } },
+            targetingRules: { include: { conditions: true } }
+          }
+        })
+      : flagEnvs;
 
-    const flags = globalFlagEnvs.reduce((acc, fe) => {
-      // Brand override takes priority
-      const brandOverride = brandFlagEnvMap[fe.flag.key];
-      if (brandOverride) {
-        acc[fe.flag.key] = {
-          value: parseFlagValue(brandOverride.defaultValue, fe.flag.flagType),
-          enabled: brandOverride.enabled
-        };
-        return acc;
-      }
-
-      // Fall back to targeting rules, then global default
+    const flags = effectiveFlagEnvs.reduce((acc, fe) => {
       let value = parseFlagValue(fe.defaultValue, fe.flag.flagType);
       if (fe.enabled && Object.keys(context).length > 0 && fe.targetingRules.length > 0) {
         const ruleValue = evaluateTargetingRules(context, fe.targetingRules);
@@ -171,12 +171,11 @@ export const getAllFlags = async (req: AuthenticatedRequest, res: Response, next
           value = parseFlagValue(ruleValue, fe.flag.flagType);
         }
       }
-
       acc[fe.flag.key] = { value, enabled: fe.enabled };
       return acc;
     }, {} as Record<string, any>);
 
-    // Cache generic flags (no brand) for 30 seconds
+    // Cache only when no brand is involved
     if (!brand) {
       await redis.setex(cacheKey, 30, JSON.stringify(flags));
     }
@@ -219,9 +218,10 @@ export const getFlag = async (req: AuthenticatedRequest, res: Response, next: Ne
       });
     }
 
-    const flagEnv = await prisma.flagEnvironment.findFirst({
+    let flagEnv = await prisma.flagEnvironment.findFirst({
       where: {
         environmentId: environment.id,
+        brandId: brand ? brand.id : undefined,
         flag: {
           key: flagKey
         }
@@ -235,6 +235,20 @@ export const getFlag = async (req: AuthenticatedRequest, res: Response, next: Ne
         }
       }
     });
+
+    // If brand-specific entry not found, fall back to any entry for this flag
+    if (!flagEnv && brand) {
+      flagEnv = await prisma.flagEnvironment.findFirst({
+        where: {
+          environmentId: environment.id,
+          flag: { key: flagKey }
+        },
+        include: {
+          flag: true,
+          targetingRules: { include: { conditions: true } }
+        }
+      });
+    }
 
     if (!flagEnv) {
       // Return default off value
