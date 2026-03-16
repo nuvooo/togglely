@@ -302,9 +302,19 @@ export default function ProjectDetail() {
     if (!editingFlagEnv || !validProjectId) return;
     setIsSavingValue(true);
     try {
-      await api.patch(`/feature-flags/${editingFlagEnv.flag.id}/environments/${editingFlagEnv.env.environmentId}`, {
-        defaultValue: editValue,
-      });
+      // Use new endpoints for better multi-tenant support
+      if (project?.type === 'MULTI') {
+        // For multi-tenant, save as default value (affects all brands without override)
+        await api.patch(`/api/feature-flags/${editingFlagEnv.flag.id}/environment/${editingFlagEnv.env.environmentId}/default`, {
+          defaultValue: editValue,
+          enabled: editingFlagEnv.env.enabled
+        });
+      } else {
+        // For single-tenant, use legacy endpoint
+        await api.patch(`/feature-flags/${editingFlagEnv.flag.id}/environments/${editingFlagEnv.env.environmentId}`, {
+          defaultValue: editValue,
+        });
+      }
       
       // Refresh flags using the same logic as initial load
       if (project?.type === 'MULTI') {

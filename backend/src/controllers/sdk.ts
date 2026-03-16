@@ -1,60 +1,52 @@
 import { Request, Response, NextFunction } from 'express';
 import { prisma } from '../utils/prisma';
-import { getRedis, getFlagCacheKey, getAllFlagsCacheKey, invalidateFlagCache } from '../utils/redis';
 import { AuthenticatedRequest } from '../middleware/auth';
+import { getRedis } from '../utils/redis';
+
+// Cache utilities
+const getCacheKey = (envId: string, flagKey?: string) => 
+  flagKey ? `flags:${envId}:${flagKey}` : `flags:${envId}:all`;
+
+const getAllFlagsCacheKey = (envId: string) => `flags:${envId}:all`;
+
+const CACHE_TTL = 60; // 1 minute for SDK endpoints
 
 interface FlagContext {
   userId?: string;
   email?: string;
   country?: string;
   region?: string;
+  tenantId?: string;
+  brandKey?: string;
   [key: string]: any;
 }
 
-const evaluateCondition = (context: FlagContext, condition: { attribute: string; operator: string; value: string }): boolean => {
-  const contextValue = context[condition.attribute];
-  const conditionValue = condition.value;
-
+const evaluateCondition = (context: FlagContext, condition: any): boolean => {
+  const value = context[condition.attribute];
+  
   switch (condition.operator) {
     case 'EQUALS':
-      return String(contextValue) === conditionValue;
+      return value === condition.value;
     case 'NOT_EQUALS':
-      return String(contextValue) !== conditionValue;
+      return value !== condition.value;
     case 'CONTAINS':
-      return String(contextValue).includes(conditionValue);
-    case 'NOT_CONTAINS':
-      return !String(contextValue).includes(conditionValue);
-    case 'STARTS_WITH':
-      return String(contextValue).startsWith(conditionValue);
-    case 'ENDS_WITH':
-      return String(contextValue).endsWith(conditionValue);
+      return String(value).includes(condition.value);
     case 'GREATER_THAN':
-      return Number(contextValue) > Number(conditionValue);
+      return Number(value) > Number(condition.value);
     case 'LESS_THAN':
-      return Number(contextValue) < Number(conditionValue);
+      return Number(value) < Number(condition.value);
     case 'IN':
-      return conditionValue.split(',').map(v => v.trim()).includes(String(contextValue));
-    case 'NOT_IN':
-      return !conditionValue.split(',').map(v => v.trim()).includes(String(contextValue));
-    case 'MATCHES_REGEX':
-      try {
-        const regex = new RegExp(conditionValue);
-        return regex.test(String(contextValue));
-      } catch {
-        return false;
-      }
+      return condition.value.split(',').map((v: string) => v.trim()).includes(String(value));
     default:
       return false;
   }
 };
 
 const evaluateTargetingRules = (context: FlagContext, rules: any[]): any | null => {
-  // Sort by priority (lower = first)
   const sortedRules = [...rules].sort((a, b) => a.priority - b.priority);
 
   for (const rule of sortedRules) {
     if (!rule.conditions || rule.conditions.length === 0) {
-      // Default rule
       return rule.serveValue;
     }
 
@@ -71,7 +63,21 @@ const evaluateTargetingRules = (context: FlagContext, rules: any[]): any | null 
   return null;
 };
 
-const parseFlagValue = (value: string, type: string): any => {
+/**
+ * Parse flag value based on type
+ * Returns the actual value if enabled, or false/null if disabled
+ */
+const parseFlagValue = (value: string | null, type: string, enabled: boolean): any => {
+  // If disabled, return false
+  if (!enabled) {
+    return false;
+  }
+  
+  // If enabled but no value, return true for boolean, empty for others
+  if (value === null || value === undefined) {
+    return type === 'BOOLEAN' ? true : '';
+  }
+
   switch (type) {
     case 'BOOLEAN':
       return value === 'true';
@@ -92,11 +98,9 @@ export const getAllFlags = async (req: AuthenticatedRequest, res: Response, next
   try {
     const { projectKey, environmentKey } = req.params;
     const organizationId = req.organizationId;
-    // brandKey can come from query param directly or from context.tenantId
     const context: FlagContext = req.query.context ? JSON.parse(req.query.context as string) : {};
     const brandKey = (req.query.brandKey as string) || context.tenantId || context.brandKey || null;
 
-    // Find environment within the specific project
     const environment = await prisma.environment.findFirst({
       where: {
         key: environmentKey,
@@ -112,7 +116,6 @@ export const getAllFlags = async (req: AuthenticatedRequest, res: Response, next
       return res.status(404).json({ error: 'Environment not found' });
     }
 
-    // Look up brand if brandKey provided
     let brand: { id: string } | null = null;
     if (brandKey) {
       brand = await prisma.brand.findFirst({
@@ -131,11 +134,11 @@ export const getAllFlags = async (req: AuthenticatedRequest, res: Response, next
       }
     }
 
-    // Fetch flag environments: brand-specific if brand found, otherwise any environment entry
+    // Fetch flag environments: brand-specific if brand found, otherwise default (no brand)
     const flagEnvs = await prisma.flagEnvironment.findMany({
       where: {
         environmentId: environment.id,
-        ...(brand ? { brandId: brand.id } : {})
+        ...(brand ? { brandId: brand.id } : { brandId: null })
       },
       include: {
         flag: { select: { id: true, key: true, flagType: true } },
@@ -143,10 +146,13 @@ export const getAllFlags = async (req: AuthenticatedRequest, res: Response, next
       }
     });
 
-    // If brand was provided but no brand-specific entries found, fall back to all entries (any brand)
+    // If brand was provided but no brand-specific entries found, fall back to default (no brand)
     const effectiveFlagEnvs = (brand && flagEnvs.length === 0)
       ? await prisma.flagEnvironment.findMany({
-          where: { environmentId: environment.id },
+          where: { 
+            environmentId: environment.id,
+            brandId: null  // Get default values
+          },
           include: {
             flag: { select: { id: true, key: true, flagType: true } },
             targetingRules: { include: { conditions: true } }
@@ -154,24 +160,31 @@ export const getAllFlags = async (req: AuthenticatedRequest, res: Response, next
         })
       : flagEnvs;
 
-    const flags = effectiveFlagEnvs.reduce((acc, fe) => {
-      let value = parseFlagValue(fe.defaultValue, fe.flag.flagType);
-      if (fe.enabled && Object.keys(context).length > 0 && fe.targetingRules.length > 0) {
-        const ruleValue = evaluateTargetingRules(context, fe.targetingRules);
+    const result: Record<string, { value: any; enabled: boolean }> = {};
+
+    for (const flagEnv of effectiveFlagEnvs) {
+      let value = parseFlagValue(flagEnv.defaultValue, flagEnv.flag.flagType, flagEnv.enabled);
+      
+      // Only evaluate targeting rules if enabled and context provided
+      if (flagEnv.enabled && Object.keys(context).length > 0 && flagEnv.targetingRules.length > 0) {
+        const ruleValue = evaluateTargetingRules(context, flagEnv.targetingRules);
         if (ruleValue !== null) {
-          value = parseFlagValue(ruleValue, fe.flag.flagType);
+          value = parseFlagValue(ruleValue, flagEnv.flag.flagType, true);
         }
       }
-      acc[fe.flag.key] = { value, enabled: fe.enabled };
-      return acc;
-    }, {} as Record<string, any>);
 
-    // Cache only when no brand is involved
-    if (!brand) {
-      await redis.setex(cacheKey, 30, JSON.stringify(flags));
+      result[flagEnv.flag.key] = {
+        value,
+        enabled: flagEnv.enabled
+      };
     }
 
-    res.json(flags);
+    // Cache only if no brand specified
+    if (!brandKey) {
+      await redis.setex(cacheKey, CACHE_TTL, JSON.stringify(result));
+    }
+
+    res.json(result);
   } catch (error) {
     next(error);
   }
@@ -184,9 +197,8 @@ export const getFlag = async (req: AuthenticatedRequest, res: Response, next: Ne
     const context: FlagContext = req.query.context ? JSON.parse(req.query.context as string) : {};
     const brandKey = (req.query.brandKey as string) || context.tenantId || context.brandKey || null;
     
-    console.log(`[SDK] GetFlag: project=${projectKey}, env=${environmentKey}, flag=${flagKey}, brand=${brandKey}, org=${organizationId}`);
+    console.log(`[SDK] GetFlag: project=${projectKey}, env=${environmentKey}, flag=${flagKey}, brand=${brandKey}`);
 
-    // Find environment within project
     const environment = await prisma.environment.findFirst({
       where: {
         key: environmentKey,
@@ -211,29 +223,25 @@ export const getFlag = async (req: AuthenticatedRequest, res: Response, next: Ne
       });
     }
 
+    // Try to find brand-specific flag first, then default
     let flagEnv = await prisma.flagEnvironment.findFirst({
       where: {
         environmentId: environment.id,
-        brandId: brand ? brand.id : undefined,
-        flag: {
-          key: flagKey
-        }
+        brandId: brand ? brand.id : null,
+        flag: { key: flagKey }
       },
       include: {
         flag: true,
-        targetingRules: {
-          include: {
-            conditions: true
-          }
-        }
+        targetingRules: { include: { conditions: true } }
       }
     });
 
-    // If brand-specific entry not found, fall back to any entry for this flag
+    // If brand-specific entry not found, fall back to default (no brand)
     if (!flagEnv && brand) {
       flagEnv = await prisma.flagEnvironment.findFirst({
         where: {
           environmentId: environment.id,
+          brandId: null,
           flag: { key: flagKey }
         },
         include: {
@@ -244,25 +252,27 @@ export const getFlag = async (req: AuthenticatedRequest, res: Response, next: Ne
     }
 
     if (!flagEnv) {
-      console.log(`[SDK] Flag not found, returning default`);
-      // Return default off value
+      console.log(`[SDK] Flag not found: ${flagKey}`);
       return res.json({
         value: false,
         enabled: false
       });
     }
 
-    console.log(`[SDK] Flag found: type=${flagEnv.flag.flagType}, defaultValue=${flagEnv.defaultValue}, enabled=${flagEnv.enabled}`);
+    console.log(`[SDK] Found: type=${flagEnv.flag.flagType}, value=${flagEnv.defaultValue}, enabled=${flagEnv.enabled}`);
 
-    let value = parseFlagValue(flagEnv.defaultValue, flagEnv.flag.flagType);
+    // Parse value based on type and enabled state
+    let value = parseFlagValue(flagEnv.defaultValue, flagEnv.flag.flagType, flagEnv.enabled);
+    
+    // Evaluate targeting rules only if enabled
     if (flagEnv.enabled && Object.keys(context).length > 0 && flagEnv.targetingRules.length > 0) {
       const ruleValue = evaluateTargetingRules(context, flagEnv.targetingRules);
       if (ruleValue !== null) {
-        value = parseFlagValue(ruleValue, flagEnv.flag.flagType);
+        value = parseFlagValue(ruleValue, flagEnv.flag.flagType, true);
       }
     }
 
-    console.log(`[SDK] Returning: value=${value}, enabled=${flagEnv.enabled}`);
+    console.log(`[SDK] Returning: value=${JSON.stringify(value)}, enabled=${flagEnv.enabled}`);
     
     res.json({
       value,
@@ -277,70 +287,14 @@ export const evaluateFlag = async (req: AuthenticatedRequest, res: Response, nex
   try {
     const { projectKey, environmentKey, flagKey } = req.params;
     const context: FlagContext = req.body.context || {};
-    const organizationId = req.organizationId;
-
-    // Find environment within project
-    const environment = await prisma.environment.findFirst({
-      where: {
-        key: environmentKey,
-        project: { 
-          key: projectKey,
-          organizationId 
-        }
-      }
-    });
-
-    if (!environment) {
-      return res.status(404).json({ error: 'Environment not found' });
-    }
-
-    const flagEnv = await prisma.flagEnvironment.findFirst({
-      where: {
-        environmentId: environment.id,
-        flag: {
-          key: flagKey
-        }
-      },
-      include: {
-        flag: true,
-        targetingRules: {
-          include: {
-            conditions: true
-          }
-        }
-      }
-    });
-
-    if (!flagEnv) {
-      return res.json({
-        value: false,
-        enabled: false
-      });
-    }
-
-    // If flag is disabled, return default value
-    if (!flagEnv.enabled) {
-      return res.json({
-        value: parseFlagValue(flagEnv.defaultValue, flagEnv.flag.flagType),
-        enabled: false
-      });
-    }
-
-    // Evaluate targeting rules
-    const ruleValue = evaluateTargetingRules(context, flagEnv.targetingRules);
     
-    if (ruleValue !== null) {
-      return res.json({
-        value: parseFlagValue(ruleValue, flagEnv.flag.flagType),
-        enabled: true
-      });
-    }
-
-    // Return default value
-    res.json({
-      value: parseFlagValue(flagEnv.defaultValue, flagEnv.flag.flagType),
-      enabled: true
-    });
+    const result = await getFlag(
+      { ...req, query: { context: JSON.stringify(context) }, params: { projectKey, environmentKey, flagKey } } as any,
+      res,
+      next
+    );
+    
+    return result;
   } catch (error) {
     next(error);
   }
