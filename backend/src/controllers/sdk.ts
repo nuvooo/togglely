@@ -131,15 +131,6 @@ export const getAllFlags = async (req: AuthenticatedRequest, res: Response, next
       }
     }
 
-    // Look up brand if brandKey provided
-    let brand: { id: string } | null = null;
-    if (brandKey) {
-      brand = await prisma.brand.findFirst({
-        where: { key: brandKey, projectId: environment.projectId },
-        select: { id: true }
-      });
-    }
-
     // Fetch flag environments: brand-specific if brand found, otherwise any environment entry
     const flagEnvs = await prisma.flagEnvironment.findMany({
       where: {
