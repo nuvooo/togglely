@@ -1,8 +1,15 @@
 import { Router } from 'express';
 import { getAllFlags, getFlag, evaluateFlag } from '../controllers/sdk';
 import { authenticateApiKey } from '../middleware/auth';
+import { validateSdkOrigin, handleSdkPreflight } from '../middleware/sdkCors';
 
 const router = Router();
+
+// Handle preflight OPTIONS requests
+router.use(handleSdkPreflight);
+
+// Apply CORS validation before API key authentication
+router.use(validateSdkOrigin);
 
 // SDK endpoints use API key authentication
 router.use(authenticateApiKey);

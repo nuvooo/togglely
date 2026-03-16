@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Settings, Trash2, Globe, AlertTriangle, Building2, Plus, MoreVertical, Edit2, ArrowUp, ArrowDown } from 'lucide-react';
+import { ArrowLeft, Settings, Trash2, Globe, AlertTriangle, Building2, Plus, MoreVertical, Edit2, ArrowUp, ArrowDown, Shield } from 'lucide-react';
 import api from '@/lib/axios';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -38,6 +38,7 @@ interface Project {
   key: string;
   description: string | null;
   type: 'SINGLE' | 'MULTI';
+  allowedOrigins: string[];
   organizationId: string;
   organizationName: string;
   createdAt: string;
@@ -90,6 +91,10 @@ export default function ProjectSettings() {
   
   // Type change confirmation
   const [showTypeChangeDialog, setShowTypeChangeDialog] = useState(false);
+  
+  // Allowed origins management
+  const [allowedOrigins, setAllowedOrigins] = useState<string[]>([]);
+  const [newOrigin, setNewOrigin] = useState('');
 
   useEffect(() => {
     if (!projectId) return;
@@ -107,6 +112,7 @@ export default function ProjectSettings() {
         setName(data.name || '');
         setDescription(data.description || '');
         setProjectType(data.type || 'SINGLE');
+        setAllowedOrigins(data.allowedOrigins || []);
         setEnvironments(envsRes.data);
         setBrands(brandsRes.data);
       } catch (error) {
@@ -144,6 +150,7 @@ export default function ProjectSettings() {
         name,
         description,
         type: projectType,
+        allowedOrigins,
       });
       setProject(response.data);
       setMessage({ 
@@ -627,6 +634,91 @@ export default function ProjectSettings() {
             </Card>
           </TabsContent>
         )}
+
+        <TabsContent value="sdk">
+          <Card>
+            <CardHeader>
+              <div className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+                  <Shield className="w-5 h-5 text-primary" />
+                </div>
+                <div>
+                  <CardTitle>SDK Security</CardTitle>
+                  <CardDescription>Configure allowed origins for SDK access</CardDescription>
+                </div>
+              </div>
+            </CardHeader>
+            <CardContent className="space-y-6">
+              <div className="bg-muted/50 p-4 rounded-lg">
+                <h4 className="font-medium mb-2">About CORS Origins</h4>
+                <p className="text-sm text-muted-foreground">
+                  Specify which domains are allowed to access your feature flags via the SDK. 
+                  Leave empty to allow all origins, or add specific domains for enhanced security.
+                </p>
+                <ul className="text-sm text-muted-foreground mt-2 list-disc list-inside">
+                  <li>Use <code>https://example.com</code> for exact match</li>
+                  <li>Use <code>*.example.com</code> to allow all subdomains</li>
+                  <li>Use <code>*</code> to allow all origins</li>
+                </ul>
+              </div>
+
+              <div className="space-y-4">
+                <Label>Allowed Origins</Label>
+                <div className="flex gap-2">
+                  <Input
+                    value={newOrigin}
+                    onChange={(e) => setNewOrigin(e.target.value)}
+                    placeholder="https://example.com or *.example.com"
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') {
+                        e.preventDefault();
+                        if (newOrigin.trim()) {
+                          setAllowedOrigins([...allowedOrigins, newOrigin.trim()]);
+                          setNewOrigin('');
+                        }
+                      }
+                    }}
+                  />
+                  <Button
+                    onClick={() => {
+                      if (newOrigin.trim()) {
+                        setAllowedOrigins([...allowedOrigins, newOrigin.trim()]);
+                        setNewOrigin('');
+                      }
+                    }}
+                  >
+                    <Plus className="w-4 h-4" />
+                  </Button>
+                </div>
+                
+                <div className="space-y-2">
+                  {allowedOrigins.length === 0 ? (
+                    <p className="text-sm text-muted-foreground italic">No origins configured - all origins will be allowed</p>
+                  ) : (
+                    allowedOrigins.map((origin, index) => (
+                      <div key={index} className="flex items-center justify-between p-2 border rounded bg-background">
+                        <code className="text-sm">{origin}</code>
+                        <Button
+                          variant="ghost"
+                          size="sm"
+                          onClick={() => setAllowedOrigins(allowedOrigins.filter((_, i) => i !== index))}
+                        >
+                          <Trash2 className="w-4 h-4 text-destructive" />
+                        </Button>
+                      </div>
+                    ))
+                  )}
+                </div>
+              </div>
+
+              <div className="flex justify-end">
+                <Button onClick={saveProject} disabled={isSaving}>
+                  {isSaving ? 'Saving...' : 'Save Origins'}
+                </Button>
+              </div>
+            </CardContent>
+          </Card>
+        </TabsContent>
       </Tabs>
 
       {/* Delete Dialog */}

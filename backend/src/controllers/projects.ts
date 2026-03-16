@@ -131,6 +131,7 @@ export const getProject = async (req: AuthenticatedRequest, res: Response, next:
       slug: project.key,
       description: project.description,
       type: project.type,
+      allowedOrigins: project.allowedOrigins || [],
       organizationId: project.organizationId,
       organizationName: project.organization.name,
       environments: project.environments,
@@ -186,7 +187,7 @@ export const createProject = async (req: AuthenticatedRequest, res: Response, ne
 export const updateProject = async (req: AuthenticatedRequest, res: Response, next: NextFunction) => {
   try {
     const { projectId } = req.params;
-    const { name, description, type } = req.body;
+    const { name, description, type, allowedOrigins } = req.body;
     const userId = req.user!.userId;
 
     const project = await prisma.project.findUnique({
@@ -231,7 +232,8 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response, ne
       data: {
         ...(name && { name }),
         ...(description !== undefined && { description }),
-        ...(type && { type })
+        ...(type && { type }),
+        ...(allowedOrigins !== undefined && { allowedOrigins })
       }
     });
 
@@ -242,8 +244,8 @@ export const updateProject = async (req: AuthenticatedRequest, res: Response, ne
       organizationId: project.organizationId,
       projectId,
       userId,
-      oldValues: { name: project.name, description: project.description, type: oldType },
-      newValues: { name: name || project.name, description: description !== undefined ? description : project.description, type: newType }
+      oldValues: { name: project.name, description: project.description, type: oldType, allowedOrigins: project.allowedOrigins },
+      newValues: { name: name || project.name, description: description !== undefined ? description : project.description, type: newType, allowedOrigins: allowedOrigins !== undefined ? allowedOrigins : project.allowedOrigins }
     });
 
     res.json({

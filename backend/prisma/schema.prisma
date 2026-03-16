@@ -85,6 +85,7 @@ model Project {
   key            String
   description    String?
   type           ProjectType @default(SINGLE)
+  allowedOrigins String[]    @default([]) // CORS origins allowed for SDK access
   organizationId String      @db.ObjectId
   createdAt      DateTime    @default(now())
   updatedAt      DateTime    @updatedAt

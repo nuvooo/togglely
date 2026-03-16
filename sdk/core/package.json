@@ -10,7 +10,11 @@
   ],
   "scripts": {
     "build": "tsc && rollup -c",
-    "test": "jest"
+    "test": "jest",
+    "test:integration": "powershell -ExecutionPolicy Bypass -File scripts/test-integration.ps1",
+    "test:integration:bash": "bash scripts/test-integration.sh",
+    "test:integration:watch": "jest --config jest.integration.config.js --watch",
+    "test:all": "npm test && npm run test:integration"
   },
   "keywords": [
     "feature-flags",

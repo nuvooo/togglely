@@ -133,7 +133,8 @@ export async function resetDemoData() {
           name: 'Simple Web App',
           key: 'simple-web-app',
           description: 'A simple single-tenant web application',
-          organizationId: org.id
+          organizationId: org.id,
+          allowedOrigins: [] // Empty = allow all (backward compatibility)
         }
       });
 
@@ -226,7 +227,8 @@ export async function resetDemoData() {
           key: 'multi-tenant-saas',
           description: 'A multi-tenant SaaS platform with brand-specific feature flags',
           type: 'MULTI',
-          organizationId: org.id
+          organizationId: org.id,
+          allowedOrigins: [] // Empty = allow all (backward compatibility)
         }
       });
 
@@ -411,7 +413,8 @@ export async function resetDemoData() {
           key: 'orbit',
           description: 'Orbit project for SDK testing with Raab Karcher',
           type: 'MULTI',
-          organizationId: org.id
+          organizationId: org.id,
+          allowedOrigins: [] // Empty = allow all (backward compatibility)
         }
       });
 
