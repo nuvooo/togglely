@@ -92,6 +92,7 @@ export const getAllFlags = async (req: AuthenticatedRequest, res: Response, next
   try {
     const { projectKey, environmentKey } = req.params;
     const organizationId = req.organizationId;
+    const context: FlagContext = req.query.context ? JSON.parse(req.query.context as string) : {};
 
     // Find environment within the specific project
     const environment = await prisma.environment.findFirst({
@@ -108,13 +109,14 @@ export const getAllFlags = async (req: AuthenticatedRequest, res: Response, next
       return res.status(404).json({ error: 'Environment not found' });
     }
 
-    // Try cache first
+    // Try cache first - ONLY if no context is provided
     const redis = getRedis();
     const cacheKey = getAllFlagsCacheKey(environment.id);
-    const cached = await redis.get(cacheKey);
-
-    if (cached) {
-      return res.json(JSON.parse(cached));
+    if (Object.keys(context).length === 0) {
+      const cached = await redis.get(cacheKey);
+      if (cached) {
+        return res.json(JSON.parse(cached));
+      }
     }
 
     // Fetch from database
@@ -126,20 +128,36 @@ export const getAllFlags = async (req: AuthenticatedRequest, res: Response, next
             key: true,
             flagType: true
           }
+        },
+        targetingRules: {
+          include: {
+            conditions: true
+          }
         }
       }
     });
 
     const flags = flagEnvs.reduce((acc, fe) => {
+      let value = parseFlagValue(fe.defaultValue, fe.flag.flagType);
+      
+      if (fe.enabled && fe.targetingRules.length > 0) {
+        const ruleValue = evaluateTargetingRules(context, fe.targetingRules);
+        if (ruleValue !== null) {
+          value = parseFlagValue(ruleValue, fe.flag.flagType);
+        }
+      }
+
       acc[fe.flag.key] = {
-        value: parseFlagValue(fe.defaultValue, fe.flag.flagType),
+        value,
         enabled: fe.enabled
       };
       return acc;
     }, {} as Record<string, any>);
 
-    // Cache for 1 second during development/debugging
-    await redis.setex(cacheKey, 1, JSON.stringify(flags));
+    // Cache generic flags for 1 second during development/debugging
+    if (Object.keys(context).length === 0) {
+      await redis.setex(cacheKey, 1, JSON.stringify(flags));
+    }
 
     res.json(flags);
   } catch (error) {
