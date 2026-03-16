@@ -1,6 +1,6 @@
 {
   "name": "@togglely/sdk-core",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Core SDK for Togglely - Framework agnostic",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",

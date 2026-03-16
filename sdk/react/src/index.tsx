@@ -68,6 +68,8 @@ export interface TogglelyProviderProps extends Omit<TogglelyConfig, 'offlineFall
   children: ReactNode;
   /** Initial toggles for SSR / offline mode */
   initialToggles?: Record<string, any>;
+  /** Initial context (e.g., userId, tenantId) */
+  initialContext?: ToggleContext;
   /** Enable offline fallback (default: true) */
   offlineFallback?: boolean;
 }
@@ -75,13 +77,20 @@ export interface TogglelyProviderProps extends Omit<TogglelyConfig, 'offlineFall
 export function TogglelyProvider({
   children,
   initialToggles,
+  initialContext,
   offlineFallback = true,
   ...config
 }: TogglelyProviderProps) {
-  const [client] = useState(() => new TogglelyClient({
-    ...config,
-    offlineFallback
-  }));
+  const [client] = useState(() => {
+    const c = new TogglelyClient({
+      ...config,
+      offlineFallback
+    });
+    if (initialContext) {
+      c.setContext(initialContext);
+    }
+    return c;
+  });
   
   const [state, setState] = useState<TogglelyState>(client.getState());
 
@@ -89,9 +98,16 @@ export function TogglelyProvider({
     // Inject initial toggles for SSR if provided
     if (initialToggles && typeof window !== 'undefined') {
       (window as any).__TOGGLELY_TOGGLES = initialToggles;
+      // Trigger a re-load if we just set the window variable
+      if (initialToggles) {
+        // The client constructor already calls loadOfflineToggles, 
+        // but if we are hydrating, we might want to ensure they are sync
+      }
     }
 
-    // Listen to all events
+    if (initialContext) {
+      client.setContext(initialContext);
+    }
     const unsubscribeReady = client.on('ready', (newState) => setState(newState));
     const unsubscribeUpdate = client.on('update', (newState) => setState(newState));
     const unsubscribeError = client.on('error', (newState) => setState(newState));
@@ -113,6 +129,30 @@ export function TogglelyProvider({
       {children}
     </TogglelyContext.Provider>
   );
+}
+
+/**
+ * SSR Helper: Fetch all toggles for a specific environment and context.
+ * Use this in getServerSideProps (Next.js) or separate SSR loaders.
+ */
+export async function getTogglelyState(
+  config: Omit<TogglelyConfig, 'offlineFallback' | 'envPrefix' | 'refreshInterval'>,
+  context?: ToggleContext
+): Promise<Record<string, any>> {
+  const client = new TogglelyClient({
+    ...config,
+    refreshInterval: 0, // Disable polling for SSR
+    offlineFallback: false
+  });
+
+  if (context) {
+    client.setContext(context);
+  }
+
+  // Initial fetch
+  await client.refresh();
+  
+  return client.getAllToggles();
 }
 
 // ==================== Hooks ====================

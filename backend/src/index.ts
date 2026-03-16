@@ -49,7 +49,8 @@ const corsOptions: cors.CorsOptions = {
     const allowedOrigins = [
       process.env.FRONTEND_URL || 'http://localhost:3000',
       'http://localhost:5173', // Vite default dev port
-      'http://localhost:3000'  // Standard frontend port
+      'http://localhost:3000',  // Standard frontend port
+      'https://togglely.examplesart.de' // Production URL
     ];
     
     // Allow requests with no origin (like mobile apps or curl)

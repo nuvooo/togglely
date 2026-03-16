@@ -1,6 +1,6 @@
 {
   "name": "@togglely/sdk-svelte",
-  "version": "1.1.1",
+  "version": "1.1.2",
   "description": "Svelte SDK for Togglely - Feature toggles with stores",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
