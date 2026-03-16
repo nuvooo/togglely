@@ -189,7 +189,7 @@ export class TogglelyClient {
     // Fetch from server
     try {
       const response = await this.fetchWithTimeout(
-        `${this.config.baseUrl}/sdk/toggles/${this.config.environment}/${key}`,
+        `${this.config.baseUrl}/sdk/flags/${this.config.environment}/${key}`,
         {
           headers: {
             'Authorization': `Bearer ${this.config.apiKey}`,
