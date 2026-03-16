@@ -17,16 +17,24 @@ export async function resetDemoData() {
     });
 
     if (demoUser) {
-      // 2. Find all organizations where the demo user is an OWNER
-      const demoOrgs = await prisma.organizationMember.findMany({
-        where: {
-          userId: demoUser.id,
-          role: 'OWNER'
-        },
+      // 2. Find all members where the user is (to find orgs)
+      const demoMembers = await prisma.organizationMember.findMany({
+        where: { userId: demoUser.id },
         select: { organizationId: true }
       });
 
-      const orgIds = demoOrgs.map(o => o.organizationId);
+      const memberOrgIds = demoMembers.map(m => m.organizationId);
+
+      // Also find all organizations with the actual demo slug just to be safe
+      const slugOrgs = await prisma.organization.findMany({
+        where: { slug: 'demo-organization' },
+        select: { id: true }
+      });
+      
+      const slugOrgIds = slugOrgs.map(o => o.id);
+      
+      // Combine IDs
+      const orgIds = Array.from(new Set([...memberOrgIds, ...slugOrgIds]));
 
       if (orgIds.length > 0) {
         // 3. Delete everything associated with those organizations
