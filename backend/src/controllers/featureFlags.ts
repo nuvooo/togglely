@@ -233,7 +233,9 @@ export const createFeatureFlag = async (req: AuthenticatedRequest, res: Response
       });
 
       // Create flag environments for each environment
-      const defaultValue = flagType === 'BOOLEAN' ? 'false' : 
+      // Use provided defaultValue or fall back to type-based defaults
+      const defaultValue = req.body.defaultValue !== undefined ? req.body.defaultValue :
+                          flagType === 'BOOLEAN' ? 'false' : 
                           flagType === 'NUMBER' ? '0' : 
                           flagType === 'JSON' ? '{}' : '';
 

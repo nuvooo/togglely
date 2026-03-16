@@ -2,6 +2,8 @@
 
 React SDK for Togglely - Feature toggles with hooks.
 
+No automatic polling - manual refresh or use WebSockets for real-time updates.
+
 ## Installation
 
 ```bash

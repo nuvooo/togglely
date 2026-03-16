@@ -128,6 +128,7 @@ export default function FeatureFlags() {
         key: newFlagData.key,
         description: newFlagData.description || undefined,
         flagType: newFlagData.type,
+        defaultValue: newFlagData.defaultValue,
       });
       
       const newFlag = response.data.featureFlag || response.data;
@@ -616,12 +617,12 @@ export default function FeatureFlags() {
                       {flag.type}
                     </span>
                     {flag.isEnabled ? (
-                      <span className="inline-flex items-center rounded-full bg-green-100 dark:bg-green-950 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:text-green-400">
+                      <span className="inline-flex items-center rounded-full bg-green-100 dark:bg-green-900/60 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:text-green-300 ring-1 ring-inset ring-green-600/20 dark:ring-green-400/30">
                         <CheckCircleIcon className="mr-1 h-3 w-3" />
                         On
                       </span>
                     ) : (
-                      <span className="inline-flex items-center rounded-full bg-muted px-2.5 py-0.5 text-xs font-medium text-muted-foreground">
+                      <span className="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-300 ring-1 ring-inset ring-gray-500/10 dark:ring-gray-400/20">
                         <XCircleIcon className="mr-1 h-3 w-3" />
                         Off
                       </span>
@@ -656,14 +657,14 @@ export default function FeatureFlags() {
                     onChange={() => toggleFlag(flag.id, flag.isEnabled)}
                     disabled={togglingFlags.has(flag.id)}
                     className={clsx(
-                      flag.isEnabled ? 'bg-primary' : 'bg-muted',
+                      flag.isEnabled ? 'bg-primary' : 'bg-gray-200 dark:bg-gray-700',
                       'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed'
                     )}
                   >
                     <span
                       className={clsx(
                         flag.isEnabled ? 'translate-x-5' : 'translate-x-0',
-                        'pointer-events-none relative inline-block h-5 w-5 transform rounded-full bg-background shadow ring-0 transition duration-200 ease-in-out'
+                        'pointer-events-none relative inline-block h-5 w-5 transform rounded-full bg-white dark:bg-gray-200 shadow ring-0 transition duration-200 ease-in-out'
                       )}
                     />
                   </Switch>

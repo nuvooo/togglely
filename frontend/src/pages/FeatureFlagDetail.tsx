@@ -69,6 +69,8 @@ export default function FeatureFlagDetail() {
   const [isEditing, setIsEditing] = useState(false);
   const [editName, setEditName] = useState('');
   const [editDescription, setEditDescription] = useState('');
+  const [editDefaultValue, setEditDefaultValue] = useState<string>('');
+  const [editEnvironmentId, setEditEnvironmentId] = useState<string>('');
   const [newRule, setNewRule] = useState({
     name: '',
     attribute: '',
@@ -394,6 +396,8 @@ export default function FeatureFlagDetail() {
               onClick={() => {
                 setEditName(flag?.name || '');
                 setEditDescription(flag?.description || '');
+                setEditEnvironmentId(environmentStates[0]?.id || '');
+                setEditDefaultValue(String(environmentStates[0]?.defaultValue || ''));
                 setIsEditing(true);
               }}
               className="inline-flex items-center rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90"
@@ -428,7 +432,64 @@ export default function FeatureFlagDetail() {
                   className="mt-1 block w-full rounded-md border border-input bg-background shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
                 />
               </div>
-              <div className="flex justify-end space-x-3">
+              
+              {/* Edit Default Value per Environment */}
+              <div className="border-t border-border pt-4">
+                <h4 className="text-sm font-medium text-foreground mb-3">Edit Default Value</h4>
+                <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                  <div>
+                    <label className="block text-sm text-muted-foreground">Environment</label>
+                    <select
+                      value={editEnvironmentId}
+                      onChange={(e) => {
+                        const envId = e.target.value;
+                        setEditEnvironmentId(envId);
+                        const env = environmentStates.find(es => es.id === envId);
+                        setEditDefaultValue(String(env?.defaultValue || ''));
+                      }}
+                      className="mt-1 block w-full rounded-md border border-input bg-background shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
+                    >
+                      {environmentStates.map((env) => (
+                        <option key={env.id} value={env.id}>
+                          {env.name}
+                        </option>
+                      ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-sm text-muted-foreground">
+                      Default Value ({flag.type})
+                    </label>
+                    {flag.type === 'BOOLEAN' ? (
+                      <select
+                        value={editDefaultValue}
+                        onChange={(e) => setEditDefaultValue(e.target.value)}
+                        className="mt-1 block w-full rounded-md border border-input bg-background shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
+                      >
+                        <option value="true">true</option>
+                        <option value="false">false</option>
+                      </select>
+                    ) : flag.type === 'NUMBER' ? (
+                      <input
+                        type="number"
+                        value={editDefaultValue}
+                        onChange={(e) => setEditDefaultValue(e.target.value)}
+                        className="mt-1 block w-full rounded-md border border-input bg-background shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
+                      />
+                    ) : (
+                      <input
+                        type="text"
+                        value={editDefaultValue}
+                        onChange={(e) => setEditDefaultValue(e.target.value)}
+                        placeholder={flag.type === 'JSON' ? '{"key": "value"}' : 'Enter value'}
+                        className="mt-1 block w-full rounded-md border border-input bg-background shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
+                      />
+                    )}
+                  </div>
+                </div>
+              </div>
+
+              <div className="flex justify-end space-x-3 pt-4 border-t border-border">
                 <button
                   onClick={() => setIsEditing(false)}
                   className="rounded-md bg-background px-3 py-2 text-sm font-semibold text-foreground shadow-sm ring-1 ring-inset ring-border hover:bg-muted"
@@ -440,11 +501,26 @@ export default function FeatureFlagDetail() {
                     if (!flagId) return;
                     setIsSaving(true);
                     try {
+                      // Update flag name/description
                       await api.patch(`/feature-flags/${flagId}`, {
                         name: editName,
                         description: editDescription,
                       });
-                      setFlag({ ...flag, name: editName, description: editDescription });
+                      
+                      // Update default value for selected environment
+                      if (editEnvironmentId) {
+                        await api.patch(`/feature-flags/${flagId}/environments/${editEnvironmentId}`, {
+                          defaultValue: editDefaultValue,
+                        });
+                      }
+                      
+                      // Refresh data
+                      const [flagRes, envStatesRes] = await Promise.all([
+                        api.get(`/feature-flags/${flagId}`),
+                        api.get(`/feature-flags/${flagId}/environments`),
+                      ]);
+                      setFlag(flagRes.data.featureFlag);
+                      setEnvironmentStates(envStatesRes.data.environments);
                       setIsEditing(false);
                     } catch (error) {
                       console.error('Failed to update flag:', error);

@@ -14,14 +14,14 @@ export interface TogglelyConfig {
   environment: string;
   /** Base URL of your Togglely instance */
   baseUrl: string;
-  /** Refresh interval in milliseconds (default: 60000) */
-  refreshInterval?: number;
   /** Request timeout in milliseconds (default: 5000) */
   timeout?: number;
   /** Enable offline mode fallback via environment variables (default: true) */
   offlineFallback?: boolean;
   /** Prefix for environment variables (default: 'TOGGLELY_') */
   envPrefix?: string;
+  /** Auto-fetch toggles on init (default: true) */
+  autoFetch?: boolean;
 }
 
 export interface ToggleContext {
@@ -58,7 +58,6 @@ export type TogglelyEventHandler = (state: TogglelyState) => void;
 export class TogglelyClient {
   private config: Required<TogglelyConfig>;
   private toggles: Map<string, ToggleValue> = new Map();
-  private refreshTimer?: ReturnType<typeof setInterval>;
   private context: ToggleContext = {};
   private state: TogglelyState = {
     isReady: false,
@@ -71,10 +70,10 @@ export class TogglelyClient {
 
   constructor(config: TogglelyConfig) {
     this.config = {
-      refreshInterval: 60000,
       timeout: 5000,
       offlineFallback: true,
       envPrefix: 'TOGGLELY_',
+      autoFetch: true,
       ...config
     };
     
@@ -90,8 +89,10 @@ export class TogglelyClient {
       this.loadOfflineToggles();
     }
     
-    // Start polling
-    this.startPolling();
+    // Initial fetch (if enabled)
+    if (this.config.autoFetch) {
+      this.refresh();
+    }
   }
 
   // ==================== Event Handling ====================
@@ -195,7 +196,8 @@ export class TogglelyClient {
       const params = new URLSearchParams();
       const brandKey = this.context.tenantId || this.context.brandKey;
       if (brandKey) params.set('brandKey', String(brandKey));
-      else if (Object.keys(this.context).length > 0) {
+      // Always send context if available (needed for targeting rules)
+      if (Object.keys(this.context).length > 0) {
         params.set('context', JSON.stringify(this.context));
       }
       const query = params.toString() ? `?${params.toString()}` : '';
@@ -337,7 +339,8 @@ export class TogglelyClient {
       if (this.config.apiKey) params.set('apiKey', this.config.apiKey);
       const brandKey = this.context.tenantId || this.context.brandKey;
       if (brandKey) params.set('brandKey', String(brandKey));
-      else if (Object.keys(this.context).length > 0) {
+      // Always send context if available (needed for targeting rules)
+      if (Object.keys(this.context).length > 0) {
         params.set('context', JSON.stringify(this.context));
       }
       const response = await this.fetchWithTimeout(
@@ -407,26 +410,11 @@ export class TogglelyClient {
   // ==================== Cleanup ====================
 
   destroy(): void {
-    if (this.refreshTimer) {
-      clearInterval(this.refreshTimer);
-    }
     this.toggles.clear();
     this.eventHandlers.forEach(handlers => handlers.clear());
   }
 
   // ==================== Private Helpers ====================
-
-  private startPolling(): void {
-    // Initial fetch
-    this.refresh();
-    
-    // Set up polling
-    this.refreshTimer = setInterval(() => {
-      if (!this.state.isOffline) {
-        this.refresh();
-      }
-    }, this.config.refreshInterval);
-  }
 
   private fetchWithTimeout(url: string, options: RequestInit): Promise<Response> {
     return new Promise((resolve, reject) => {

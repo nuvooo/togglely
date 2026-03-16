@@ -8,6 +8,7 @@ import {
   DocumentTextIcon,
   Cog6ToothIcon,
   XMarkIcon,
+  BeakerIcon,
 } from '@heroicons/react/24/outline';
 import clsx from 'clsx';
 
@@ -21,6 +22,7 @@ const navigation = [
   { name: 'Organizations', href: '/organizations', icon: BuildingOfficeIcon },
   { name: 'Projects', href: '/projects', icon: FolderIcon },
   { name: 'Feature Flags', href: '/feature-flags', icon: FlagIcon },
+  { name: 'SDK Tester', href: '/sdk-tester', icon: BeakerIcon },
   { name: 'API Keys', href: '/api-keys', icon: KeyIcon },
   { name: 'Audit Logs', href: '/audit-logs', icon: DocumentTextIcon },
   { name: 'Settings', href: '/settings', icon: Cog6ToothIcon },

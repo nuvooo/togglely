@@ -18,6 +18,7 @@ import ProjectSettings from './pages/projects/ProjectSettings';
 import BrandFlags from './pages/projects/BrandFlags';
 import FeatureFlags from './pages/FeatureFlags';
 import FeatureFlagDetail from './pages/FeatureFlagDetail';
+import SDKTester from './pages/SDKTester';
 import ApiKeys from './pages/ApiKeys';
 import Settings from './pages/Settings';
 import ProtectedRoute from './components/ProtectedRoute';
@@ -56,6 +57,7 @@ function App() {
         {/* Feature Flags */}
         <Route path="feature-flags" element={<FeatureFlags />} />
         <Route path="feature-flags/:id" element={<FeatureFlagDetail />} />
+        <Route path="sdk-tester" element={<SDKTester />} />
         
         {/* API Keys */}
         <Route path="api-keys" element={<ApiKeys />} />

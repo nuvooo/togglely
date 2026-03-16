@@ -39,6 +39,7 @@ interface Project {
   name: string;
   key: string;
   description: string | null;
+  type: 'SINGLE' | 'MULTI';
   organizationId: string;
   organizationName: string;
   createdAt: string;
@@ -167,10 +168,16 @@ export default function ProjectDetail() {
     if (!validProjectId) return;
     setIsCreatingFlag(true);
     try {
+      // Determine default value based on type
+      const defaultValue = newFlagType === 'BOOLEAN' ? 'false' :
+                          newFlagType === 'NUMBER' ? '0' :
+                          newFlagType === 'JSON' ? '{}' : '';
+      
       const response = await api.post(`/feature-flags/project/${validProjectId}`, {
         name: newFlagName,
         key: newFlagKey,
         flagType: newFlagType,
+        defaultValue,
       });
       // Response now includes environments from backend
       setFeatureFlags([response.data, ...featureFlags]);
@@ -298,9 +305,16 @@ export default function ProjectDetail() {
       await api.patch(`/feature-flags/${editingFlagEnv.flag.id}/environments/${editingFlagEnv.env.environmentId}`, {
         defaultValue: editValue,
       });
-      // Refresh flags
-      const flagsRes = await api.get(`/feature-flags/project/${validProjectId}`);
-      setFeatureFlags(flagsRes.data);
+      
+      // Refresh flags using the same logic as initial load
+      if (project?.type === 'MULTI') {
+        const flagsWithBrandsRes = await api.get(`/projects/${validProjectId}/flags-with-brands`);
+        setFeatureFlags(flagsWithBrandsRes.data.flags);
+      } else {
+        const flagsRes = await api.get(`/feature-flags/project/${validProjectId}`);
+        setFeatureFlags(flagsRes.data);
+      }
+      
       setEditingFlagEnv(null);
     } catch (error) {
       console.error('Failed to save flag value:', error);
@@ -561,8 +575,24 @@ export default function ProjectDetail() {
                             );
                           })}
                         </div>
-                        <div className="mt-3 pt-2 border-t border-border text-xs text-muted-foreground">
-                          <span className="text-foreground">Value:</span> <code className="bg-card px-1 rounded text-foreground">{env.defaultValue}</code>
+                        <div className="mt-3 pt-2 border-t border-border text-xs flex items-center gap-2">
+                          <span className={env.enabled ? "text-green-800 dark:text-green-200" : "text-muted-foreground"}>Value:</span>{' '}
+                          <code className={clsx(
+                            "px-1.5 py-0.5 rounded font-mono text-xs",
+                            env.enabled 
+                              ? "bg-green-100 dark:bg-green-900/50 text-green-900 dark:text-green-100" 
+                              : "bg-card text-foreground"
+                          )}>
+                            {env.defaultValue}
+                          </code>
+                          {flag.flagType !== 'BOOLEAN' && (
+                            <button
+                              onClick={() => openEditValueDialog(flag, env)}
+                              className="text-xs text-primary hover:text-primary/80 underline"
+                            >
+                              Edit
+                            </button>
+                          )}
                         </div>
                       </div>
                     ))}
@@ -597,8 +627,16 @@ export default function ProjectDetail() {
                             />
                           </button>
                         </div>
-                        <div className="mt-2 text-sm text-muted-foreground flex items-center gap-2">
-                          <span className="text-foreground">Value:</span> <code className="bg-card px-1 rounded text-foreground">{env.defaultValue}</code>
+                        <div className="mt-2 text-sm flex items-center gap-2">
+                          <span className={env.enabled ? "text-green-800 dark:text-green-200" : "text-muted-foreground"}>Value:</span>{' '}
+                          <code className={clsx(
+                            "px-1.5 py-0.5 rounded font-mono text-xs",
+                            env.enabled 
+                              ? "bg-green-100 dark:bg-green-900/50 text-green-900 dark:text-green-100" 
+                              : "bg-card text-foreground"
+                          )}>
+                            {env.defaultValue}
+                          </code>
                           {flag.flagType !== 'BOOLEAN' && (
                             <button
                               onClick={() => openEditValueDialog(flag, env)}

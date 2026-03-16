@@ -2,6 +2,8 @@
 
 Vanilla JavaScript SDK for Togglely - Works with any framework or vanilla JS.
 
+No automatic polling - manual refresh or use WebSockets for real-time updates.
+
 ## Installation
 
 ```bash

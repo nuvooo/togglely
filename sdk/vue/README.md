@@ -2,6 +2,8 @@
 
 Vue 3 SDK for Togglely - Feature toggles with composables.
 
+No automatic polling - manual refresh or use WebSockets for real-time updates.
+
 ## Installation
 
 ```bash

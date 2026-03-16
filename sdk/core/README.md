@@ -2,6 +2,8 @@
 
 Core SDK for Togglely - Framework agnostic feature toggles.
 
+No automatic polling - fetch once on init (configurable) and refresh manually or use WebSockets.
+
 ## Installation
 
 ```bash
@@ -78,10 +80,10 @@ Creates a new Togglely client.
 - `apiKey` (string, required): Your API key
 - `environment` (string, required): Environment name
 - `baseUrl` (string, required): Togglely instance URL
-- `refreshInterval` (number, default: 60000): Polling interval in ms
 - `timeout` (number, default: 5000): Request timeout in ms
 - `offlineFallback` (boolean, default: true): Enable offline mode
 - `envPrefix` (string, default: 'TOGGLELY_'): Environment variable prefix
+- `autoFetch` (boolean, default: true): Fetch toggles on init
 
 ### Methods
 
@@ -92,5 +94,5 @@ Creates a new Togglely client.
 - `getAllToggles()`: Get all toggles
 - `setContext(context)`: Set evaluation context (userId, email, etc.)
 - `refresh()`: Manually refresh toggles
-- `destroy()`: Cleanup and stop polling
+- `destroy()`: Cleanup resources
 - `on(event, handler)`: Listen to events ('ready', 'update', 'error', 'offline', 'online')

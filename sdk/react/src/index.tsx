@@ -136,12 +136,12 @@ export function TogglelyProvider({
  * Use this in getServerSideProps (Next.js) or separate SSR loaders.
  */
 export async function getTogglelyState(
-  config: Omit<TogglelyConfig, 'offlineFallback' | 'envPrefix' | 'refreshInterval'>,
+  config: Omit<TogglelyConfig, 'offlineFallback' | 'envPrefix'>,
   context?: ToggleContext
 ): Promise<Record<string, any>> {
   const client = new TogglelyClient({
     ...config,
-    refreshInterval: 0, // Disable polling for SSR
+    autoFetch: false, // Disable auto-fetch for SSR
     offlineFallback: false
   });
 

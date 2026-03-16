@@ -2,6 +2,8 @@
 
 Svelte SDK for Togglely - Feature toggles with stores.
 
+No automatic polling - manual refresh or use WebSockets for real-time updates.
+
 ## Installation
 
 ```bash
