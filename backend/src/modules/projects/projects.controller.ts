@@ -20,7 +20,18 @@ export class ProjectsController {
     @Req() req: any,
   ) {
     const projects = await this.projectsService.findByOrganization(orgId, req.user.userId);
-    return projects;
+    return projects.map(p => ({
+      id: p.id,
+      name: p.name,
+      key: p.key,
+      description: p.description,
+      type: p.type,
+      organizationId: p.organizationId,
+      createdAt: p.createdAt,
+      updatedAt: p.updatedAt,
+      featureFlagCount: (p as any).featureFlagCount || 0,
+      environmentCount: (p as any).environmentCount || 0
+    }));
   }
 
   @Post('organization/:orgId')

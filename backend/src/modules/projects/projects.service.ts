@@ -125,18 +125,34 @@ export class ProjectsService {
 
     const projects = await this.prisma.project.findMany({
       where: { organizationId: orgId },
+      include: {
+        _count: {
+          select: { 
+            featureFlags: true, 
+            environments: true 
+          }
+        }
+      }
     });
 
-    return projects.map(p => Project.reconstitute({
-      id: p.id,
-      name: p.name,
-      key: p.key,
-      description: p.description || '',
-      type: p.type as 'SINGLE' | 'MULTI',
-      allowedOrigins: p.allowedOrigins,
-      organizationId: p.organizationId,
-      createdAt: p.createdAt,
-      updatedAt: p.updatedAt,
-    }));
+    return projects.map(p => {
+      const project = Project.reconstitute({
+        id: p.id,
+        name: p.name,
+        key: p.key,
+        description: p.description || '',
+        type: p.type as 'SINGLE' | 'MULTI',
+        allowedOrigins: p.allowedOrigins,
+        organizationId: p.organizationId,
+        createdAt: p.createdAt,
+        updatedAt: p.updatedAt,
+      });
+
+      // Attach counts for controller
+      (project as any).featureFlagCount = p._count.featureFlags;
+      (project as any).environmentCount = p._count.environments;
+
+      return project;
+    });
   }
 }
