@@ -183,6 +183,8 @@ export const getFlag = async (req: AuthenticatedRequest, res: Response, next: Ne
     const organizationId = req.organizationId;
     const context: FlagContext = req.query.context ? JSON.parse(req.query.context as string) : {};
     const brandKey = (req.query.brandKey as string) || context.tenantId || context.brandKey || null;
+    
+    console.log(`[SDK] GetFlag: project=${projectKey}, env=${environmentKey}, flag=${flagKey}, brand=${brandKey}, org=${organizationId}`);
 
     // Find environment within project
     const environment = await prisma.environment.findFirst({
@@ -242,12 +244,15 @@ export const getFlag = async (req: AuthenticatedRequest, res: Response, next: Ne
     }
 
     if (!flagEnv) {
+      console.log(`[SDK] Flag not found, returning default`);
       // Return default off value
       return res.json({
         value: false,
         enabled: false
       });
     }
+
+    console.log(`[SDK] Flag found: type=${flagEnv.flag.flagType}, defaultValue=${flagEnv.defaultValue}, enabled=${flagEnv.enabled}`);
 
     let value = parseFlagValue(flagEnv.defaultValue, flagEnv.flag.flagType);
     if (flagEnv.enabled && Object.keys(context).length > 0 && flagEnv.targetingRules.length > 0) {
@@ -257,6 +262,8 @@ export const getFlag = async (req: AuthenticatedRequest, res: Response, next: Ne
       }
     }
 
+    console.log(`[SDK] Returning: value=${value}, enabled=${flagEnv.enabled}`);
+    
     res.json({
       value,
       enabled: flagEnv.enabled
