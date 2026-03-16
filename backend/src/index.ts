@@ -12,6 +12,7 @@ import { projectsRouter } from './routes/projects';
 import { environmentsRouter } from './routes/environments';
 import { brandsRouter } from './routes/brands';
 import { featureFlagsRouter } from './routes/featureFlags';
+import { featureFlagValuesRouter } from './routes/featureFlagValues';
 import { sdkRouter } from './routes/sdk';
 import { apiKeysRouter } from './routes/apiKeys';
 import { auditLogsRouter } from './routes/auditLogs';
@@ -105,6 +106,7 @@ app.use('/api/brands', brandsRouter);
 app.use('/api/projects', projectsRouter);
 app.use('/api/environments', environmentsRouter);
 app.use('/api/feature-flags', featureFlagsRouter);
+app.use('/api/feature-flags', featureFlagValuesRouter);
 app.use('/api/api-keys', apiKeysRouter);
 app.use('/api/audit-logs', auditLogsRouter);
 
