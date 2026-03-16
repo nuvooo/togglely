@@ -402,7 +402,109 @@ export async function resetDemoData() {
       // require setting SDK context via client.setContext({ plan: 'premium' })
       // This is not shown in the demo UI but can be done programmatically
 
-      // Create API keys for both projects
+      // ============================================
+      // PROJECT 3: Orbit (for SDK testing)
+      // ============================================
+      const orbitProject = await prisma.project.create({
+        data: {
+          name: 'Orbit',
+          key: 'orbit',
+          description: 'Orbit project for SDK testing with Raab Karcher',
+          type: 'MULTI',
+          organizationId: org.id
+        }
+      });
+
+      // Create environments for Orbit project
+      const orbitDevEnv = await prisma.environment.create({
+        data: {
+          name: 'Development',
+          key: 'development',
+          projectId: orbitProject.id,
+          organizationId: org.id,
+          sortOrder: 0
+        }
+      });
+
+      const orbitProdEnv = await prisma.environment.create({
+        data: {
+          name: 'Production',
+          key: 'production',
+          projectId: orbitProject.id,
+          organizationId: org.id,
+          sortOrder: 1
+        }
+      });
+
+      // Create Raab Karcher brand for Orbit
+      const raabKarcherBrand = await prisma.brand.create({
+        data: {
+          name: 'Raab Karcher',
+          key: 'raab-karcher',
+          description: 'Raab Karcher brand',
+          projectId: orbitProject.id
+        }
+      });
+
+      // Create feature flags for Orbit
+      const orbitFlags = [
+        { name: 'New Feature', key: 'new-feature', type: 'BOOLEAN', defaultValue: 'false', devEnabled: true, prodEnabled: false },
+        { name: 'Dark Mode', key: 'dark-mode', type: 'BOOLEAN', defaultValue: 'true', devEnabled: true, prodEnabled: true },
+        { name: 'Max Items', key: 'max-items', type: 'NUMBER', defaultValue: '100', devEnabled: true, prodEnabled: true },
+      ];
+
+      for (const flagData of orbitFlags) {
+        const flag = await prisma.featureFlag.create({
+          data: {
+            name: flagData.name,
+            key: flagData.key,
+            flagType: flagData.type as any,
+            organizationId: org.id,
+            projectId: orbitProject.id,
+            createdById: demoUser.id
+          }
+        });
+
+        // Create global environments
+        await prisma.flagEnvironment.createMany({
+          data: [
+            {
+              flagId: flag.id,
+              environmentId: orbitDevEnv.id,
+              enabled: flagData.devEnabled,
+              defaultValue: flagData.defaultValue
+            },
+            {
+              flagId: flag.id,
+              environmentId: orbitProdEnv.id,
+              enabled: flagData.prodEnabled,
+              defaultValue: flagData.defaultValue
+            }
+          ]
+        });
+
+        // Create brand-specific overrides for Raab Karcher
+        await prisma.flagEnvironment.createMany({
+          data: [
+            {
+              flagId: flag.id,
+              environmentId: orbitDevEnv.id,
+              brandId: raabKarcherBrand.id,
+              enabled: true,
+              defaultValue: flagData.type === 'BOOLEAN' ? 'true' : flagData.defaultValue
+            },
+            {
+              flagId: flag.id,
+              environmentId: orbitProdEnv.id,
+              brandId: raabKarcherBrand.id,
+              enabled: flagData.prodEnabled,
+              defaultValue: flagData.type === 'BOOLEAN' ? 'true' : flagData.defaultValue
+            }
+          ]
+        });
+      }
+
+      // Create API keys for all projects
       await prisma.apiKey.create({
         data: {
           name: 'Simple Web App SDK Key',
@@ -423,9 +525,21 @@ export async function resetDemoData() {
         }
       });
 
+      // Create the specific API key the user is using
+      await prisma.apiKey.create({
+        data: {
+          name: 'Orbit SDK Key',
+          key: 'togglely_wE5wkv6gZr3cr5eZmLJ5O12IwfB2wwNcKSFqlxKy8vPHe9hw',
+          type: 'SDK',
+          organizationId: org.id,
+          userId: demoUser.id
+        }
+      });
+
       console.log('✅ Demo data reset successfully');
-      console.log('   📁 Simple Web App (demo-project)');
+      console.log('   📁 Simple Web App (simple-web-app)');
       console.log('   🏢 Multi-Tenant SaaS with 3 brands: Acme Corp, Startup Inc, Global Tech');
+      console.log('   🌍 Orbit with brand: Raab Karcher');
     }
   } catch (error) {
     console.error('❌ Demo data reset failed:', error);
