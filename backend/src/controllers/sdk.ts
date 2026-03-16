@@ -192,6 +192,7 @@ export const getFlag = async (req: AuthenticatedRequest, res: Response, next: Ne
     const { projectKey, environmentKey, flagKey } = req.params;
     const organizationId = req.organizationId;
     const context: FlagContext = req.query.context ? JSON.parse(req.query.context as string) : {};
+    const brandKey = (req.query.brandKey as string) || context.tenantId || context.brandKey || null;
 
     // Find environment within project
     const environment = await prisma.environment.findFirst({
@@ -201,11 +202,21 @@ export const getFlag = async (req: AuthenticatedRequest, res: Response, next: Ne
           key: projectKey,
           organizationId 
         }
-      }
+      },
+      include: { project: true }
     });
 
     if (!environment) {
       return res.status(404).json({ error: 'Environment not found' });
+    }
+
+    // Look up brand if brandKey provided
+    let brand: { id: string } | null = null;
+    if (brandKey) {
+      brand = await prisma.brand.findFirst({
+        where: { key: brandKey, projectId: environment.projectId },
+        select: { id: true }
+      });
     }
 
     const flagEnv = await prisma.flagEnvironment.findFirst({

@@ -192,11 +192,15 @@ export class TogglelyClient {
 
     // Fetch from server
     try {
-      const contextParam = Object.keys(this.context).length > 0
-        ? `?context=${encodeURIComponent(JSON.stringify(this.context))}`
-        : '';
+      const params = new URLSearchParams();
+      const brandKey = this.context.tenantId || this.context.brandKey;
+      if (brandKey) params.set('brandKey', String(brandKey));
+      else if (Object.keys(this.context).length > 0) {
+        params.set('context', JSON.stringify(this.context));
+      }
+      const query = params.toString() ? `?${params.toString()}` : '';
       const response = await this.fetchWithTimeout(
-        `${this.config.baseUrl}/sdk/flags/${this.config.project}/${this.config.environment}/${key}${contextParam}`,
+        `${this.config.baseUrl}/sdk/flags/${this.config.project}/${this.config.environment}/${key}${query}`,
         {
           headers: {
             'Authorization': `Bearer ${this.config.apiKey}`,
@@ -329,11 +333,15 @@ export class TogglelyClient {
 
   async refresh(): Promise<void> {
     try {
-      const contextParam = Object.keys(this.context).length > 0
-        ? `?context=${encodeURIComponent(JSON.stringify(this.context))}`
-        : '';
+      const params = new URLSearchParams();
+      if (this.config.apiKey) params.set('apiKey', this.config.apiKey);
+      const brandKey = this.context.tenantId || this.context.brandKey;
+      if (brandKey) params.set('brandKey', String(brandKey));
+      else if (Object.keys(this.context).length > 0) {
+        params.set('context', JSON.stringify(this.context));
+      }
       const response = await this.fetchWithTimeout(
-        `${this.config.baseUrl}/sdk/flags/${this.config.project}/${this.config.environment}${contextParam}`,
+        `${this.config.baseUrl}/sdk/flags/${this.config.project}/${this.config.environment}?${params.toString()}`,
         {
           headers: {
             'Authorization': `Bearer ${this.config.apiKey}`,
