@@ -10,7 +10,17 @@ import { SdkService } from './modules/sdk/sdk.service';
 async function bootstrap() {
   const app = await NestFactory.create(AppModule);
   
-  app.use(helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } }));
+  // Swagger UI needs relaxed CSP (inline scripts) — apply BEFORE helmet
+  app.use((req: any, res: any, next: any) => {
+    if (req.path && req.path.startsWith('/api/swagger')) {
+      res.setHeader(
+        'Content-Security-Policy',
+        "default-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data: https:; script-src 'self' 'unsafe-inline'; connect-src 'self'; font-src 'self' data:"
+      );
+      return next();
+    }
+    return helmet({ crossOriginResourcePolicy: { policy: 'cross-origin' } })(req, res, next);
+  });
   
   // CORS for all routes including SDK
   app.use(cors({
@@ -98,6 +108,9 @@ async function bootstrap() {
     }
   });
   
+  // Set global prefix BEFORE creating Swagger document so paths are correct
+  app.setGlobalPrefix('api');
+  
   // Swagger/OpenAPI Documentation - setup BEFORE global prefix
   const config = new DocumentBuilder()
     .setTitle('Togglely API')
@@ -179,10 +192,8 @@ Public SDK endpoints are available at /sdk/flags/ without authentication`)
     },
   };
   
-  // Setup Swagger at /api/docs
-  app.setGlobalPrefix('');
-  SwaggerModule.setup('api/docs', app, document);
-  app.setGlobalPrefix('api');
+  // Setup Swagger at /api/swagger
+  SwaggerModule.setup('api/swagger', app, document);
   
   const port = process.env.PORT || 4000;
   await app.listen(port, '0.0.0.0');
