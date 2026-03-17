@@ -14,7 +14,7 @@ async function bootstrap() {
     origin: [
       process.env.FRONTEND_URL || 'http://localhost:3000',
       'http://localhost:5173',
-      'https://togglely.examplesart.de'
+      'https://togglely.de'
     ],
     credentials: true,
   });
@@ -38,7 +38,9 @@ async function bootstrap() {
   httpAdapter.get('/sdk/flags/:projectKey/:environmentKey', async (req, res) => {
     try {
       const { projectKey, environmentKey } = req.params;
-      const { brandKey, apiKey } = req.query;
+      const { brandKey, tenantId, apiKey } = req.query;
+      // Support both brandKey and tenantId (React SDK uses tenantId)
+      const effectiveBrandKey = brandKey || tenantId;
       
       // Validate API key if provided
       if (apiKey) {
@@ -51,7 +53,7 @@ async function bootstrap() {
       const results = await sdkService.evaluateAllFlags(
         projectKey,
         environmentKey,
-        brandKey as string,
+        effectiveBrandKey as string,
       );
       res.json(results);
     } catch (error) {
@@ -63,7 +65,9 @@ async function bootstrap() {
   httpAdapter.get('/sdk/flags/:projectKey/:environmentKey/:flagKey', async (req, res) => {
     try {
       const { projectKey, environmentKey, flagKey } = req.params;
-      const { brandKey, apiKey } = req.query;
+      const { brandKey, tenantId, apiKey } = req.query;
+      // Support both brandKey and tenantId (React SDK uses tenantId)
+      const effectiveBrandKey = brandKey || tenantId;
       
       // Validate API key if provided
       if (apiKey) {
@@ -77,7 +81,7 @@ async function bootstrap() {
         projectKey,
         environmentKey,
         flagKey,
-        brandKey as string,
+        effectiveBrandKey as string,
       );
       res.json(result);
     } catch (error) {

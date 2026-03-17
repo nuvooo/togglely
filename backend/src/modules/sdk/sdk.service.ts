@@ -29,30 +29,45 @@ export class SdkService {
       where: { projectId: project.id, key: flagKey },
     });
     
-    if (!flag) return { value: false, enabled: false, flagType: 'BOOLEAN' };
+    if (!flag) {
+      return { value: false, enabled: false, flagType: 'BOOLEAN' };
+    }
 
     let brandId: string | null = null;
     if (brandKey && project.type === 'MULTI') {
       const brand = await this.prisma.brand.findFirst({
         where: { projectId: project.id, key: brandKey },
       });
-      if (brand) brandId = brand.id;
+      if (brand) {
+        brandId = brand.id;
+      }
     }
 
-    // Find flag environment - handle both null and undefined for brandId
-    const flagEnvs = await this.prisma.flagEnvironment.findMany({
+    // Find or create flag environment
+    let flagEnv = await this.prisma.flagEnvironment.findFirst({
       where: {
         flagId: flag.id,
         environmentId: environment.id,
+        brandId: brandId || null,
       },
     });
     
-    // Find matching environment (check for brand match or default/no brand)
-    const flagEnv = flagEnvs.find(fe => 
-      brandId ? fe.brandId === brandId : !fe.brandId
-    );
+    // Auto-create if missing
+    if (!flagEnv) {
+      flagEnv = await this.prisma.flagEnvironment.create({
+        data: {
+          flagId: flag.id,
+          environmentId: environment.id,
+          brandId: brandId || null,
+          enabled: false,
+          defaultValue: flag.flagType === 'BOOLEAN' ? 'false' : 
+                       flag.flagType === 'NUMBER' ? '0' : 
+                       flag.flagType === 'JSON' ? '{}' : '',
+        },
+      });
+    }
 
-    if (!flagEnv || !flagEnv.enabled) {
+    if (!flagEnv.enabled) {
       return { value: false, enabled: false, flagType: flag.flagType };
     }
 
@@ -69,11 +84,12 @@ export class SdkService {
       updatedAt: flag.updatedAt,
     });
 
-    return {
+    const result = {
       value: domainFlag.parseValue(flagEnv.defaultValue),
       enabled: flagEnv.enabled,
       flagType: flag.flagType,
     };
+    return result;
   }
 
   async evaluateAllFlags(
@@ -118,11 +134,26 @@ export class SdkService {
 
     for (const flag of flags) {
       // Find matching flag environment
-      const flagEnv = flagEnvs.find(fe => 
+      let flagEnv = flagEnvs.find(fe => 
         fe.flagId === flag.id && (brandId ? fe.brandId === brandId : !fe.brandId)
       );
+      
+      // Auto-create if missing
+      if (!flagEnv) {
+        flagEnv = await this.prisma.flagEnvironment.create({
+          data: {
+            flagId: flag.id,
+            environmentId: environment.id,
+            brandId: brandId || null,
+            enabled: false,
+            defaultValue: flag.flagType === 'BOOLEAN' ? 'false' : 
+                         flag.flagType === 'NUMBER' ? '0' : 
+                         flag.flagType === 'JSON' ? '{}' : '',
+          },
+        });
+      }
 
-      if (!flagEnv || !flagEnv.enabled) {
+      if (!flagEnv.enabled) {
         results[flag.key] = {
           value: false,
           enabled: false,
