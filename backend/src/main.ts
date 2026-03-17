@@ -34,34 +34,7 @@ async function bootstrap() {
   
   // SDK endpoints
   
-  // Get all flags for project/environment (for SDK initialization)
-  httpAdapter.get('/sdk/flags/:projectKey/:environmentKey', async (req, res) => {
-    try {
-      const { projectKey, environmentKey } = req.params;
-      const { brandKey, tenantId, apiKey } = req.query;
-      // Support both brandKey and tenantId (React SDK uses tenantId)
-      const effectiveBrandKey = brandKey || tenantId;
-      
-      // Validate API key if provided
-      if (apiKey) {
-        const validKey = await sdkService.validateApiKey(apiKey as string, projectKey);
-        if (!validKey) {
-          return res.status(401).json({ error: 'Invalid API key' });
-        }
-      }
-      
-      const results = await sdkService.evaluateAllFlags(
-        projectKey,
-        environmentKey,
-        effectiveBrandKey as string,
-      );
-      res.json(results);
-    } catch (error) {
-      res.status(404).json({ error: 'Project or environment not found' });
-    }
-  });
-  
-  // Get single flag
+  // Get single flag - MUST be registered BEFORE the list endpoint!
   httpAdapter.get('/sdk/flags/:projectKey/:environmentKey/:flagKey', async (req, res) => {
     try {
       const { projectKey, environmentKey, flagKey } = req.params;
@@ -86,6 +59,34 @@ async function bootstrap() {
       res.json(result);
     } catch (error) {
       res.status(404).json({ error: 'Flag not found' });
+    }
+  });
+  
+  // Get all flags for project/environment (for SDK initialization)
+  // MUST be registered AFTER the single flag endpoint!
+  httpAdapter.get('/sdk/flags/:projectKey/:environmentKey', async (req, res) => {
+    try {
+      const { projectKey, environmentKey } = req.params;
+      const { brandKey, tenantId, apiKey } = req.query;
+      // Support both brandKey and tenantId (React SDK uses tenantId)
+      const effectiveBrandKey = brandKey || tenantId;
+      
+      // Validate API key if provided
+      if (apiKey) {
+        const validKey = await sdkService.validateApiKey(apiKey as string, projectKey);
+        if (!validKey) {
+          return res.status(401).json({ error: 'Invalid API key' });
+        }
+      }
+      
+      const results = await sdkService.evaluateAllFlags(
+        projectKey,
+        environmentKey,
+        effectiveBrandKey as string,
+      );
+      res.json(results);
+    } catch (error) {
+      res.status(404).json({ error: 'Project or environment not found' });
     }
   });
   
