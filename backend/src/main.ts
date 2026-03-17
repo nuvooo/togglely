@@ -26,7 +26,7 @@ async function bootstrap() {
   
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   
-  // Register standalone routes BEFORE global prefix and BEFORE CORS
+  // Register standalone routes BEFORE global prefix
   const httpAdapter = app.getHttpAdapter();
   const sdkService = app.get(SdkService);
   
@@ -42,10 +42,8 @@ async function bootstrap() {
     try {
       const { projectKey, environmentKey, flagKey } = req.params;
       const { brandKey, tenantId, apiKey } = req.query;
-      // Support both brandKey and tenantId (React SDK uses tenantId)
       const effectiveBrandKey = brandKey || tenantId;
       
-      // Validate API key if provided
       if (apiKey) {
         const validKey = await sdkService.validateApiKey(apiKey as string, projectKey);
         if (!validKey) {
@@ -65,16 +63,13 @@ async function bootstrap() {
     }
   });
   
-  // Get all flags for project/environment (for SDK initialization)
-  // MUST be registered AFTER the single flag endpoint!
+  // Get all flags for project/environment
   httpAdapter.get('/sdk/flags/:projectKey/:environmentKey', async (req, res) => {
     try {
       const { projectKey, environmentKey } = req.params;
       const { brandKey, tenantId, apiKey } = req.query;
-      // Support both brandKey and tenantId (React SDK uses tenantId)
       const effectiveBrandKey = brandKey || tenantId;
       
-      // Validate API key if provided
       if (apiKey) {
         const validKey = await sdkService.validateApiKey(apiKey as string, projectKey);
         if (!validKey) {
@@ -93,7 +88,7 @@ async function bootstrap() {
     }
   });
   
-  // Swagger/OpenAPI Documentation - Setup BEFORE global prefix
+  // Swagger/OpenAPI Documentation - setup BEFORE global prefix
   const config = new DocumentBuilder()
     .setTitle('Togglely API')
     .setDescription(`Feature Flag Management API
@@ -108,9 +103,10 @@ Public SDK endpoints are available at /sdk/flags/ without authentication`)
     .setVersion('2.0')
     .addBearerAuth()
     .build();
+  
   const document = SwaggerModule.createDocument(app, config);
   
-  // Manually add Auth endpoint to Swagger
+  // Manually add endpoints to Swagger
   document.paths['/api/auth/login'] = {
     post: {
       tags: ['Auth'],
@@ -130,26 +126,12 @@ Public SDK endpoints are available at /sdk/flags/ without authentication`)
         },
       },
       responses: {
-        '200': { 
-          description: 'Returns JWT token',
-          content: {
-            'application/json': {
-              schema: {
-                type: 'object',
-                properties: {
-                  token: { type: 'string' },
-                  user: { type: 'object' },
-                },
-              },
-            },
-          },
-        },
+        '200': { description: 'Returns JWT token' },
         '401': { description: 'Invalid credentials' },
       },
     },
   };
   
-  // Manually add SDK endpoints to Swagger
   document.paths['/sdk/flags/{projectKey}/{environmentKey}'] = {
     get: {
       tags: ['SDK'],
@@ -157,13 +139,13 @@ Public SDK endpoints are available at /sdk/flags/ without authentication`)
       parameters: [
         { name: 'projectKey', in: 'path', required: true, schema: { type: 'string' } },
         { name: 'environmentKey', in: 'path', required: true, schema: { type: 'string' } },
-        { name: 'tenantId', in: 'query', required: false, schema: { type: 'string' }, description: 'Brand key for multi-tenant projects' },
-        { name: 'brandKey', in: 'query', required: false, schema: { type: 'string' }, description: 'Alternative to tenantId' },
+        { name: 'tenantId', in: 'query', required: false, schema: { type: 'string' } },
+        { name: 'brandKey', in: 'query', required: false, schema: { type: 'string' } },
         { name: 'apiKey', in: 'query', required: false, schema: { type: 'string' } },
       ],
       responses: {
-        '200': { description: 'Returns all flags with their values' },
-        '404': { description: 'Project or environment not found' },
+        '200': { description: 'Returns all flags' },
+        '404': { description: 'Not found' },
       },
     },
   };
@@ -181,16 +163,16 @@ Public SDK endpoints are available at /sdk/flags/ without authentication`)
         { name: 'apiKey', in: 'query', required: false, schema: { type: 'string' } },
       ],
       responses: {
-        '200': { description: 'Returns flag value and status' },
-        '404': { description: 'Flag not found' },
+        '200': { description: 'Returns flag value' },
+        '404': { description: 'Not found' },
       },
     },
   };
   
-  app.setGlobalPrefix('api');
-  
   // Setup Swagger at /api/docs
-  SwaggerModule.setup('docs', app, document);
+  app.setGlobalPrefix('');
+  SwaggerModule.setup('api/docs', app, document);
+  app.setGlobalPrefix('api');
   
   const port = process.env.PORT || 4000;
   await app.listen(port, '0.0.0.0');
