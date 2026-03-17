@@ -202,8 +202,7 @@ export class SdkService {
       },
     });
     
-    // Check if any key matches (comparing with or without 'tk_' prefix)
-    const normalizedInput = apiKey.startsWith('tk_') ? apiKey : `tk_${apiKey}`;
-    return keys.some(k => k.key === apiKey || k.key === normalizedInput);
+    // Check if any active key matches the provided key
+    return keys.some(k => k.key === apiKey);
   }
 }

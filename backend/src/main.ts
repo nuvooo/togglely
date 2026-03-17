@@ -41,11 +41,16 @@ async function bootstrap() {
   httpAdapter.get('/sdk/flags/:projectKey/:environmentKey/:flagKey', async (req, res) => {
     try {
       const { projectKey, environmentKey, flagKey } = req.params;
-      const { brandKey, tenantId, apiKey } = req.query;
+      const { brandKey, tenantId, apiKey: queryApiKey } = req.query;
       const effectiveBrandKey = brandKey || tenantId;
       
+      // Accept apiKey from query param OR Authorization: Bearer header
+      const authHeader = req.headers['authorization'] as string | undefined;
+      const bearerKey = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
+      const apiKey = (queryApiKey as string | undefined) || bearerKey;
+      
       if (apiKey) {
-        const validKey = await sdkService.validateApiKey(apiKey as string, projectKey);
+        const validKey = await sdkService.validateApiKey(apiKey, projectKey);
         if (!validKey) {
           return res.status(401).json({ error: 'Invalid API key' });
         }
@@ -67,11 +72,16 @@ async function bootstrap() {
   httpAdapter.get('/sdk/flags/:projectKey/:environmentKey', async (req, res) => {
     try {
       const { projectKey, environmentKey } = req.params;
-      const { brandKey, tenantId, apiKey } = req.query;
+      const { brandKey, tenantId, apiKey: queryApiKey } = req.query;
       const effectiveBrandKey = brandKey || tenantId;
       
+      // Accept apiKey from query param OR Authorization: Bearer header
+      const authHeader = req.headers['authorization'] as string | undefined;
+      const bearerKey = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
+      const apiKey = (queryApiKey as string | undefined) || bearerKey;
+      
       if (apiKey) {
-        const validKey = await sdkService.validateApiKey(apiKey as string, projectKey);
+        const validKey = await sdkService.validateApiKey(apiKey, projectKey);
         if (!validKey) {
           return res.status(401).json({ error: 'Invalid API key' });
         }
