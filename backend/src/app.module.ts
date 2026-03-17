@@ -1,7 +1,7 @@
 import { Module } from '@nestjs/common';
 import { ConfigModule } from '@nestjs/config';
 import { ThrottlerModule } from '@nestjs/throttler';
-import { HealthController } from './modules/health/health.controller';
+
 import { FlagsModule } from './modules/flags/flags.module';
 import { ProjectsModule } from './modules/projects/projects.module';
 import { BrandsModule } from './modules/brands/brands.module';
@@ -28,6 +28,5 @@ import { PrismaModule } from './shared/prisma.module';
     BrandsModule,
     SdkModule,
   ],
-  controllers: [HealthController],
 })
 export class AppModule {}
