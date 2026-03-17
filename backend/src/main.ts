@@ -187,12 +187,10 @@ Public SDK endpoints are available at /sdk/flags/ without authentication`)
     },
   };
   
-  // Setup Swagger at /api/docs (inside API prefix)
-  SwaggerModule.setup('docs', app, document, {
-    useGlobalPrefix: true,  // This makes it /api/docs
-  });
-  
   app.setGlobalPrefix('api');
+  
+  // Setup Swagger at /api/docs
+  SwaggerModule.setup('docs', app, document);
   
   const port = process.env.PORT || 4000;
   await app.listen(port, '0.0.0.0');
