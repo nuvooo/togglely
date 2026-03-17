@@ -10,7 +10,10 @@ RUN apt-get update && \
 
 # Copy package files
 COPY package*.json ./
-RUN npm install
+RUN npm install --include=dev
+
+# Install nest CLI globally for build
+RUN npm install -g @nestjs/cli
 
 # Copy prisma schema
 COPY prisma ./prisma/
