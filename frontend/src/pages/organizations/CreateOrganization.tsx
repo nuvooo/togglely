@@ -12,32 +12,16 @@ import {
   Building2, 
   Loader2,
   CheckCircle2,
-  Globe,
   Sparkles
 } from 'lucide-react';
 
 export default function CreateOrganization() {
   const { t } = useTranslation();
   const [name, setName] = useState('');
-  const [slug, setSlug] = useState('');
   const [isLoading, setIsLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const navigate = useNavigate();
   const { createOrganization } = useOrganizationStore();
-
-  const generateSlug = (name: string) => {
-    return name
-      .toLowerCase()
-      .replace(/[^a-z0-9]+/g, '-')
-      .replace(/^-+|-+$/g, '');
-  };
-
-  const handleNameChange = (value: string) => {
-    setName(value);
-    if (!slug || slug === generateSlug(name)) {
-      setSlug(generateSlug(value));
-    }
-  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -45,21 +29,12 @@ export default function CreateOrganization() {
     setError(null);
 
     try {
-      const org = await createOrganization({ name, slug });
+      // Slug wird vom Backend automatisch als UUID generiert
+      const org = await createOrganization({ name });
       navigate(`/organizations/${org.id}`);
     } catch (err: any) {
       const message = err.response?.data?.message;
-      const errorCode = err.response?.data?.error;
-      
-      if (err.response?.status === 409 || errorCode === 'Conflict') {
-        // Generate a unique slug suggestion
-        const randomSuffix = Math.floor(Math.random() * 10000);
-        const suggestedSlug = `${slug}-${randomSuffix}`;
-        setError(`Organization name already exists. Try "${suggestedSlug}" instead.`);
-        setSlug(suggestedSlug);
-      } else {
-        setError(message || errorCode || 'Failed to create organization');
-      }
+      setError(message || 'Failed to create organization');
     } finally {
       setIsLoading(false);
     }
@@ -117,31 +92,12 @@ export default function CreateOrganization() {
                 id="name"
                 placeholder={t('create-organization.name-placeholder')}
                 value={name}
-                onChange={(e) => handleNameChange(e.target.value)}
+                onChange={(e) => setName(e.target.value)}
                 required
                 className="h-11"
               />
               <p className="text-xs text-muted-foreground">
                 {t('create-organization.name-help')}
-              </p>
-            </div>
-
-            <div className="space-y-2">
-              <Label htmlFor="slug">{t('create-organization.slug-label')}</Label>
-              <div className="relative">
-                <Globe className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-muted-foreground" />
-                <Input
-                  id="slug"
-                  placeholder={t('create-organization.slug-placeholder')}
-                  value={slug}
-                  onChange={(e) => setSlug(e.target.value.toLowerCase().replace(/[^a-z0-9-]/g, ''))}
-                  required
-                  className="h-11 pl-10 font-mono"
-                  pattern="[a-z0-9-]+"
-                />
-              </div>
-              <p className="text-xs text-muted-foreground">
-                {t('create-organization.slug-help')}
               </p>
             </div>
 
@@ -155,7 +111,7 @@ export default function CreateOrganization() {
                   </div>
                   <div>
                     <p className="font-medium">{name}</p>
-                    <p className="text-xs text-muted-foreground font-mono">{t('create-organization.preview.url', { slug })}</p>
+                    <p className="text-xs text-muted-foreground">Your new organization</p>
                   </div>
                 </div>
               </div>
@@ -165,7 +121,7 @@ export default function CreateOrganization() {
               <Button 
                 type="submit" 
                 className="min-w-[140px]"
-                disabled={isLoading || !name || !slug}
+                disabled={isLoading || !name}
               >
                 {isLoading ? (
                   <>

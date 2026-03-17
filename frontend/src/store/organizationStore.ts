@@ -30,7 +30,7 @@ export interface Environment {
 
 export interface CreateOrganizationData {
   name: string;
-  slug: string;
+  slug?: string;
 }
 
 export interface CreateProjectData {
