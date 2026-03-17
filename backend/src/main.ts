@@ -22,7 +22,7 @@ async function bootstrap() {
   
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }));
   
-  app.setGlobalPrefix('api');
+  app.setGlobalPrefix('api', { exclude: ['sdk'] });
   
   await app.listen(process.env.PORT || 4000);
   console.log(`🚀 Togglely API running on port ${process.env.PORT || 4000}`);

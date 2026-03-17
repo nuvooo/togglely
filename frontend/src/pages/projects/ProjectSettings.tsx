@@ -281,7 +281,8 @@ export default function ProjectSettings() {
         key: brandKey,
         description: brandDescription,
       });
-      setBrands([...brands, response.data]);
+      const newBrand = response.data.brand || response.data;
+      setBrands([...brands, newBrand]);
       setShowBrandDialog(false);
       setBrandName('');
       setBrandKey('');

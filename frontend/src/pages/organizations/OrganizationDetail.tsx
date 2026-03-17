@@ -88,11 +88,16 @@ export default function OrganizationDetail() {
     if (!orgId) return;
     setIsCreatingProject(true);
     try {
-      await createProject(orgId, { name: newProjectName, key: newProjectKey, type: newProjectType });
+      const newProject = await createProject(orgId, { name: newProjectName, key: newProjectKey, type: newProjectType });
       setShowCreateProjectDialog(false);
       setNewProjectName('');
       setNewProjectKey('');
       setNewProjectType('SINGLE');
+      // Navigate to the new project (handle both wrapped and unwrapped responses)
+      const projectId = (newProject as any).project?.id || newProject.id;
+      if (projectId) {
+        navigate(`/projects/${projectId}?orgId=${orgId}`);
+      }
     } catch (error) {
       console.error('Failed to create project:', error);
     } finally {
