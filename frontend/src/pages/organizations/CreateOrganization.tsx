@@ -48,7 +48,18 @@ export default function CreateOrganization() {
       const org = await createOrganization({ name, slug });
       navigate(`/organizations/${org.id}`);
     } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to create organization');
+      const message = err.response?.data?.message;
+      const errorCode = err.response?.data?.error;
+      
+      if (err.response?.status === 409 || errorCode === 'Conflict') {
+        // Generate a unique slug suggestion
+        const randomSuffix = Math.floor(Math.random() * 10000);
+        const suggestedSlug = `${slug}-${randomSuffix}`;
+        setError(`Organization name already exists. Try "${suggestedSlug}" instead.`);
+        setSlug(suggestedSlug);
+      } else {
+        setError(message || errorCode || 'Failed to create organization');
+      }
     } finally {
       setIsLoading(false);
     }

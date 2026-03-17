@@ -1,5 +1,6 @@
 import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma.service';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class OrganizationsService {
@@ -94,15 +95,8 @@ export class OrganizationsService {
   }
 
   async create(name: string, slug: string | undefined, userId: string) {
-    const finalSlug = slug || name.toLowerCase().replace(/[^a-z0-9]+/g, '-');
-
-    const existing = await this.prisma.organization.findUnique({
-      where: { slug: finalSlug },
-    });
-
-    if (existing) {
-      throw new ConflictException('Organization slug already exists');
-    }
+    // Always use UUID as slug for uniqueness
+    const finalSlug = slug || randomUUID();
 
     const org = await this.prisma.organization.create({
       data: {
