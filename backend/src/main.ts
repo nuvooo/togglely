@@ -93,9 +93,7 @@ async function bootstrap() {
     }
   });
   
-  app.setGlobalPrefix('api');
-  
-  // Swagger/OpenAPI Documentation
+  // Swagger/OpenAPI Documentation - Setup BEFORE global prefix
   const config = new DocumentBuilder()
     .setTitle('Togglely API')
     .setDescription(`Feature Flag Management API
@@ -189,7 +187,12 @@ Public SDK endpoints are available at /sdk/flags/ without authentication`)
     },
   };
   
-  SwaggerModule.setup('api/docs', app, document);
+  // Setup Swagger at /api/docs (inside API prefix)
+  SwaggerModule.setup('docs', app, document, {
+    useGlobalPrefix: true,  // This makes it /api/docs
+  });
+  
+  app.setGlobalPrefix('api');
   
   const port = process.env.PORT || 4000;
   await app.listen(port, '0.0.0.0');
