@@ -22,6 +22,12 @@ export interface TogglelyConfig {
   envPrefix?: string;
   /** Auto-fetch toggles on init (default: true) */
   autoFetch?: boolean;
+  /** Brand/Tenant key for multi-brand projects (optional) */
+  brandKey?: string;
+  /** Alias for brandKey - Tenant ID for multi-brand projects (optional) */
+  tenantId?: string;
+  /** Initial context for targeting (optional) */
+  context?: ToggleContext;
 }
 
 export interface ToggleContext {
@@ -56,7 +62,7 @@ export type TogglelyEventHandler = (state: TogglelyState) => void;
  * Core Togglely Client
  */
 export class TogglelyClient {
-  private config: Required<TogglelyConfig>;
+  private config: TogglelyConfig & { timeout: number; offlineFallback: boolean; envPrefix: string; autoFetch: boolean };
   private toggles: Map<string, ToggleValue> = new Map();
   private context: ToggleContext = {};
   private state: TogglelyState = {
@@ -83,6 +89,12 @@ export class TogglelyClient {
     this.eventHandlers.set('error', new Set());
     this.eventHandlers.set('offline', new Set());
     this.eventHandlers.set('online', new Set());
+    
+    // Set initial context if provided (including brandKey/tenantId)
+    const initialContext: ToggleContext = { ...config.context };
+    if (config.brandKey) initialContext.brandKey = config.brandKey;
+    if (config.tenantId) initialContext.tenantId = config.tenantId;
+    this.context = initialContext;
     
     // Load offline toggles first (if enabled)
     if (this.config.offlineFallback) {

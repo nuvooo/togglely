@@ -285,10 +285,18 @@ export class FlagsService {
     }));
   }
 
-  async updateEnvironment(flagId: string, environmentId: string, data: { isEnabled?: boolean; defaultValue?: string }) {
-    const existing = await this.prisma.flagEnvironment.findFirst({
-      where: { flagId, environmentId, brandId: null },
+  async updateEnvironment(flagId: string, envId: string, data: { isEnabled?: boolean; defaultValue?: string }) {
+    // Try to find by flagEnvironment.id first (what frontend sends)
+    let existing = await this.prisma.flagEnvironment.findFirst({
+      where: { id: envId, flagId, brandId: null },
     });
+
+    // If not found, try by environmentId (backward compatibility)
+    if (!existing) {
+      existing = await this.prisma.flagEnvironment.findFirst({
+        where: { flagId, environmentId: envId, brandId: null },
+      });
+    }
 
     if (existing) {
       return this.prisma.flagEnvironment.update({
@@ -300,15 +308,9 @@ export class FlagsService {
       });
     }
 
-    return this.prisma.flagEnvironment.create({
-      data: {
-        flagId,
-        environmentId,
-        brandId: null,
-        enabled: data.isEnabled ?? false,
-        defaultValue: data.defaultValue ?? 'false',
-      },
-    });
+    // If not found, we cannot create without knowing the environmentId
+    // The envId passed is likely a flagEnvironment.id that doesn't exist
+    throw new NotFoundException('Flag environment not found');
   }
 
   async updateValue(flagId: string, environmentId: string, dto: UpdateFlagValueDto) {
