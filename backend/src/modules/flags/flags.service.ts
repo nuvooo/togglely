@@ -286,19 +286,38 @@ export class FlagsService {
   }
 
   async updateEnvironment(flagId: string, envId: string, data: { isEnabled?: boolean; defaultValue?: string }) {
-    // Try to find by flagEnvironment.id first (what frontend sends)
+    console.log(`[updateEnvironment] flagId: ${flagId}, envId: ${envId}, data:`, data);
+    
+    // Try 1: Find by flagEnvironment.id directly (most likely case)
     let existing = await this.prisma.flagEnvironment.findFirst({
-      where: { id: envId, flagId, brandId: null },
+      where: { id: envId },
     });
+    console.log(`[updateEnvironment] Find by id=${envId}:`, existing ? `found (brandId=${existing.brandId})` : 'not found');
 
-    // If not found, try by environmentId (backward compatibility)
+    // Try 2: Find by flagId + environmentId (for non-brand envs)
     if (!existing) {
       existing = await this.prisma.flagEnvironment.findFirst({
         where: { flagId, environmentId: envId, brandId: null },
       });
+      console.log(`[updateEnvironment] Find by flagId+envId:`, existing ? 'found' : 'not found');
+    }
+
+    // Try 3: Find any flagEnv for this flag in this environment (regardless of brand)
+    if (!existing) {
+      const allEnvs = await this.prisma.flagEnvironment.findMany({
+        where: { flagId },
+        include: { environment: true },
+      });
+      console.log(`[updateEnvironment] All flagEnvs for flagId ${flagId}:`, allEnvs.map(e => ({ id: e.id, envId: e.environmentId, brandId: e.brandId })));
+      
+      // Find one matching the envId (either by environment.id or flagEnvironment.id)
+      existing = allEnvs.find(fe => 
+        fe.id === envId || fe.environmentId === envId
+      );
     }
 
     if (existing) {
+      console.log(`[updateEnvironment] Updating id=${existing.id} with:`, data);
       return this.prisma.flagEnvironment.update({
         where: { id: existing.id },
         data: {
@@ -308,8 +327,7 @@ export class FlagsService {
       });
     }
 
-    // If not found, we cannot create without knowing the environmentId
-    // The envId passed is likely a flagEnvironment.id that doesn't exist
+    console.error(`[updateEnvironment] NOT FOUND - flagId: ${flagId}, envId: ${envId}`);
     throw new NotFoundException('Flag environment not found');
   }
 
