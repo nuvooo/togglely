@@ -215,11 +215,16 @@ export class SdkService {
 
     const results: Record<string, any> = {};
 
+    console.log(`[SDK getAllFlags] Processing ${flags.length} flags, brandId: ${brandId}, envId: ${environment.id}`);
+    console.log(`[SDK getAllFlags] Found ${flagEnvs.length} flagEnvironments:`, flagEnvs.map(fe => ({ flagId: fe.flagId, brandId: fe.brandId, enabled: fe.enabled })));
+
     for (const flag of flags) {
       // Find matching flag environment
-      let flagEnv = flagEnvs.find(fe => 
-        fe.flagId === flag.id && (brandId ? fe.brandId === brandId : !fe.brandId)
-      );
+      let flagEnv = flagEnvs.find(fe => {
+        const matches = fe.flagId === flag.id && (brandId ? fe.brandId === brandId : !fe.brandId);
+        console.log(`[SDK] Checking flagEnv for flag ${flag.key}: fe.flagId=${fe.flagId}, flag.id=${flag.id}, fe.brandId=${fe.brandId}, brandId=${brandId}, matches=${matches}`);
+        return matches;
+      });
       
       // Auto-create if missing
       if (!flagEnv) {
