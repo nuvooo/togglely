@@ -78,7 +78,7 @@ async function bootstrap() {
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-    allowedHeaders: ['Content-Type', 'Authorization', 'X-Requested-With'],
+    allowedHeaders: ['Content-Type', 'Authorization', 'X-API-Key', 'X-Requested-With'],
   }));
   
   app.use(morgan('combined'));
@@ -113,7 +113,7 @@ async function bootstrap() {
     const allowedOrigin = origin || '*';
     res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
     res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-Requested-With');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key, X-Requested-With');
     res.setHeader('Access-Control-Allow-Credentials', 'true');
     res.setHeader('Vary', 'Origin');
   };
@@ -124,10 +124,11 @@ async function bootstrap() {
     const { brandKey, tenantId, apiKey: queryApiKey } = req.query;
     const effectiveBrandKey = brandKey || tenantId;
     
-    // Accept apiKey from query param OR Authorization: Bearer header
+    // Accept apiKey from query param OR Authorization: Bearer header OR X-API-Key header
     const authHeader = req.headers['authorization'] as string | undefined;
     const bearerKey = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
-    const apiKey = (queryApiKey as string | undefined) || bearerKey;
+    const headerApiKey = req.headers['x-api-key'] as string | undefined;
+    const apiKey = (queryApiKey as string | undefined) || bearerKey || headerApiKey;
     const origin = req.headers['origin'] as string | undefined;
     
     // Always set CORS headers first
@@ -178,10 +179,11 @@ async function bootstrap() {
     const { brandKey, tenantId, apiKey: queryApiKey } = req.query;
     const effectiveBrandKey = brandKey || tenantId;
     
-    // Accept apiKey from query param OR Authorization: Bearer header
+    // Accept apiKey from query param OR Authorization: Bearer header OR X-API-Key header
     const authHeader = req.headers['authorization'] as string | undefined;
     const bearerKey = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
-    const apiKey = (queryApiKey as string | undefined) || bearerKey;
+    const headerApiKey = req.headers['x-api-key'] as string | undefined;
+    const apiKey = (queryApiKey as string | undefined) || bearerKey || headerApiKey;
     const origin = req.headers['origin'] as string | undefined;
     
     // Always set CORS headers first
