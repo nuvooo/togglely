@@ -133,7 +133,7 @@ async function main() {
   
   // Merge configs (args > env > defaults)
   const config: CliConfig = {
-    baseUrl: 'https://togglely.io',
+    baseUrl: 'https://togglely.de',
     output: './togglely-toggles.json',
     format: 'json',
     ...envConfig,
