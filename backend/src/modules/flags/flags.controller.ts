@@ -10,8 +10,12 @@ export class FlagsController {
   constructor(private readonly flagsService: FlagsService) {}
 
   @Get()
-  async findAll(@Req() req: any, @Query('projectId') projectId?: string) {
-    const flags = await this.flagsService.findAll(req.user.userId, projectId);
+  async findAll(
+    @Req() req: any, 
+    @Query('projectId') projectId?: string,
+    @Query('environmentId') environmentId?: string,
+  ) {
+    const flags = await this.flagsService.findAll(req.user.userId, projectId, environmentId);
     return { featureFlags: flags };
   }
 

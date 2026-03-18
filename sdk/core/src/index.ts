@@ -262,8 +262,9 @@ export class TogglelyClient {
     try {
       const params = new URLSearchParams();
       if (this.config.apiKey) params.set('apiKey', this.config.apiKey);
-      const brandKey = this.context.tenantId || this.context.brandKey;
-      if (brandKey) params.set('tenantId', String(brandKey));
+      // Support both brandKey and tenantId for maximum compatibility
+      if (this.context.brandKey) params.set('brandKey', String(this.context.brandKey));
+      if (this.context.tenantId) params.set('tenantId', String(this.context.tenantId));
       if (Object.keys(this.context).length > 0) {
         params.set('context', JSON.stringify(this.context));
       }
@@ -454,8 +455,9 @@ export class TogglelyClient {
     try {
       const params = new URLSearchParams();
       if (this.config.apiKey) params.set('apiKey', this.config.apiKey);
-      const brandKey = this.context.tenantId || this.context.brandKey;
-      if (brandKey) params.set('tenantId', String(brandKey));
+      // Support both brandKey and tenantId for maximum compatibility
+      if (this.context.brandKey) params.set('brandKey', String(this.context.brandKey));
+      if (this.context.tenantId) params.set('tenantId', String(this.context.tenantId));
       if (Object.keys(this.context).length > 0) {
         params.set('context', JSON.stringify(this.context));
       }

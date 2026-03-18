@@ -8,7 +8,7 @@ import { UpdateFlagValueDto } from './dto/update-flag-value.dto';
 export class FlagsService {
   constructor(private readonly prisma: PrismaService) {}
 
-  async findAll(userId: string, projectId?: string) {
+  async findAll(userId: string, projectId?: string, environmentId?: string) {
     if (projectId) {
       const project = await this.prisma.project.findUnique({ where: { id: projectId } });
       if (!project) throw new NotFoundException('Project not found');
@@ -22,15 +22,39 @@ export class FlagsService {
     const where = projectId ? { projectId } : {};
     const flags = await this.prisma.featureFlag.findMany({ where });
     
-    return flags.map(f => ({
-      id: f.id,
-      key: f.key,
-      name: f.name,
-      description: f.description,
-      flagType: f.flagType,
-      projectId: f.projectId,
-      enabled: false,
-    }));
+    // If environmentId is provided, get the actual enabled status
+    let flagEnvs: Map<string, { enabled: boolean; defaultValue: string; environmentId: string }> = new Map();
+    if (projectId && environmentId) {
+      const envs = await this.prisma.flagEnvironment.findMany({
+        where: {
+          flagId: { in: flags.map(f => f.id) },
+          environmentId,
+          brandId: null,
+        },
+      });
+      envs.forEach(fe => {
+        flagEnvs.set(fe.flagId, { 
+          enabled: fe.enabled, 
+          defaultValue: fe.defaultValue,
+          environmentId: fe.environmentId 
+        });
+      });
+    }
+    
+    return flags.map(f => {
+      const flagEnv = flagEnvs.get(f.id);
+      return {
+        id: f.id,
+        key: f.key,
+        name: f.name,
+        description: f.description,
+        flagType: f.flagType,
+        projectId: f.projectId,
+        enabled: flagEnv?.enabled ?? false,
+        defaultValue: flagEnv?.defaultValue,
+        environmentId: flagEnv?.environmentId,
+      };
+    });
   }
 
   async findByProject(projectId: string) {

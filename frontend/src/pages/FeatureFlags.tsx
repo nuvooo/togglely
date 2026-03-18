@@ -90,7 +90,13 @@ export default function FeatureFlags() {
             selectedEnvironment !== 'all' ? selectedEnvironment : undefined,
         },
       });
-      setFeatureFlags(response.data.featureFlags || []);
+      const flags = response.data.featureFlags || [];
+      // Normalize the flag data to ensure consistent structure
+      setFeatureFlags(flags.map((flag: any) => ({
+        ...flag,
+        isEnabled: flag.enabled ?? flag.isEnabled ?? false,
+        environmentId: flag.environmentId || selectedEnvironment,
+      })));
     } catch (error) {
       console.error('Failed to fetch feature flags:', error);
       setFeatureFlags([]);
@@ -154,15 +160,25 @@ export default function FeatureFlags() {
     }
   };
 
-  const toggleFlag = async (flagId: string, currentValue: boolean) => {
+  const toggleFlag = async (flagId: string, currentValue: boolean, environmentId?: string) => {
     if (!isValidObjectId(flagId)) {
       console.error('Invalid flagId:', flagId);
       return;
     }
     
+    // Get the effective environment ID
+    const effectiveEnvId = environmentId || selectedEnvironment;
+    if (!effectiveEnvId || effectiveEnvId === 'all') {
+      alert('Please select a specific environment to toggle flags');
+      return;
+    }
+    
     setTogglingFlags((prev) => new Set(prev).add(flagId));
     try {
-      await api.post(`/feature-flags/${flagId}/toggle`);
+      await api.post(`/feature-flags/${flagId}/toggle`, {
+        environmentId: effectiveEnvId,
+        enabled: !currentValue,
+      });
       setFeatureFlags((prev) =>
         prev.map((flag) =>
           flag.id === flagId ? { ...flag, isEnabled: !currentValue } : flag
@@ -651,8 +667,8 @@ export default function FeatureFlags() {
                 <div className="ml-4 flex items-center space-x-4">
                   <Switch
                     checked={flag.isEnabled}
-                    onChange={() => toggleFlag(flag.id, flag.isEnabled)}
-                    disabled={togglingFlags.has(flag.id)}
+                    onChange={() => toggleFlag(flag.id, flag.isEnabled, flag.environmentId)}
+                    disabled={togglingFlags.has(flag.id) || selectedEnvironment === 'all'}
                     className={clsx(
                       flag.isEnabled ? 'bg-primary' : 'bg-gray-200 dark:bg-gray-700',
                       'relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2 disabled:opacity-50 disabled:cursor-not-allowed'
