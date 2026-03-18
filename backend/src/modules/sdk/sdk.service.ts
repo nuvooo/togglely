@@ -113,12 +113,23 @@ export class SdkService {
 
     let brandId: string | null = null;
     if (brandKey && project.type === 'MULTI') {
-      const brand = await this.prisma.brand.findFirst({
+      // Try to find by key first, then by id (in case brandKey is actually an id)
+      let brand = await this.prisma.brand.findFirst({
         where: { projectId: project.id, key: brandKey },
       });
+      
+      // If not found by key, try by id
+      if (!brand) {
+        brand = await this.prisma.brand.findFirst({
+          where: { projectId: project.id, id: brandKey },
+        });
+      }
+      
       if (brand) {
         brandId = brand.id;
-        console.log(`[SDK Service] Brand found: ${brand.id}`);
+        console.log(`[SDK Service] Brand found: ${brand.id} (key: ${brand.key})`);
+      } else {
+        console.log(`[SDK Service] Brand not found for key/id: ${brandKey}`);
       }
     }
 
