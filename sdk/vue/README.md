@@ -1,8 +1,14 @@
-# @togglely/sdk-vue
+# Togglely Vue SDK
 
-Vue 3 SDK for Togglely - Feature toggles with composables.
+Vue composables and directives for [Togglely](https://togglely.io) feature flag management.
 
-No automatic polling - manual refresh or use WebSockets for real-time updates.
+## Features
+
+- 🎣 **Vue Composables** - `useToggle`, `useStringToggle`, `useNumberToggle`, `useJSONToggle`
+- 🎯 **Directives** - `v-feature-toggle` for declarative UI
+- 💾 **Offline Support** - Built-in offline fallback
+- 🔒 **TypeScript** - Full type safety
+- ⚡ **Reactive** - Automatic updates when flags change
 
 ## Installation
 
@@ -10,11 +16,10 @@ No automatic polling - manual refresh or use WebSockets for real-time updates.
 npm install @togglely/sdk-vue
 ```
 
-## Usage
-
-### Plugin
+## Quick Start
 
 ```typescript
+// main.ts
 import { createApp } from 'vue';
 import { createTogglely } from '@togglely/sdk-vue';
 import App from './App.vue';
@@ -23,95 +28,120 @@ const app = createApp(App);
 
 app.use(createTogglely({
   apiKey: 'your-api-key',
+  project: 'my-project',
   environment: 'production',
-  baseUrl: 'https://your-togglely-instance.com'
+  baseUrl: 'https://togglely.io',
 }));
 
 app.mount('#app');
 ```
 
-### Composables
-
-#### `useToggle(key, defaultValue)`
-
-Check if a boolean feature toggle is enabled:
-
 ```vue
+<!-- MyComponent.vue -->
 <script setup>
-import { useToggle } from '@togglely/sdk-vue';
+import { useToggle, useStringToggle, useNumberToggle } from '@togglely/sdk-vue';
 
 const isEnabled = useToggle('new-feature', false);
-</script>
-
-<template>
-  <NewFeature v-if="isEnabled" />
-  <OldFeature v-else />
-</template>
-```
-
-#### `useStringToggle(key, defaultValue)`
-
-Get a string toggle value:
-
-```vue
-<script setup>
-const message = useStringToggle('welcome-message', 'Hello');
-</script>
-
-<template>
-  <p>{{ message }}</p>
-</template>
-```
-
-#### `useNumberToggle(key, defaultValue)`
-
-Get a number toggle value:
-
-```vue
-<script setup>
+const message = useStringToggle('welcome-message', 'Hello!');
 const limit = useNumberToggle('max-items', 10);
 </script>
+
+<template>
+  <div v-if="isEnabled">
+    <h1>{{ message }}</h1>
+    <p>Max items: {{ limit }}</p>
+  </div>
+  <div v-else>
+    Feature not available
+  </div>
+</template>
 ```
 
-#### `useJSONToggle(key, defaultValue)`
+## Plugin Options
 
-Get a JSON toggle value:
-
-```vue
-<script setup>
-const config = useJSONToggle('app-config', { theme: 'light' });
-</script>
+```typescript
+app.use(createTogglely({
+  apiKey: 'your-api-key',
+  project: 'my-project',
+  environment: 'production',
+  baseUrl: 'https://togglely.io',
+  tenantId: 'brand-a',           // For multi-brand projects
+  offlineJsonPath: '/toggles.json',
+  offlineToggles: {              // Inline offline fallback
+    'new-feature': { value: true, enabled: true },
+  },
+}));
 ```
 
-#### `useToggles()`
+## Composables
+
+### useToggle
+
+Reactive boolean toggle:
+
+```typescript
+const isEnabled = useToggle('new-feature', false);
+// Ref<boolean>
+```
+
+### useStringToggle
+
+Reactive string toggle:
+
+```typescript
+const message = useStringToggle('welcome-message', 'Hello!');
+// Ref<string>
+```
+
+### useNumberToggle
+
+Reactive number toggle:
+
+```typescript
+const limit = useNumberToggle('max-items', 10);
+// Ref<number>
+```
+
+### useJSONToggle
+
+Reactive JSON toggle:
+
+```typescript
+const config = useJSONToggle('app-config', { theme: 'dark' });
+// Ref<YourType>
+```
+
+### useToggles
 
 Get all toggles:
 
-```vue
-<script setup>
-const toggles = useToggles();
-// toggles is a readonly ref
-</script>
+```typescript
+const allToggles = useToggles();
+// DeepReadonly<Ref<Record<string, ToggleValue>>>
 ```
 
-#### `useTogglelyState()`
+### useTogglelyState
 
-Get the SDK state:
+Get SDK state:
 
-```vue
-<script setup>
+```typescript
 const state = useTogglelyState();
-// state.value = { isReady, isOffline, lastError, lastFetch }
-</script>
-
-<template>
-  <p v-if="state.isOffline">Offline mode</p>
-</template>
+// { isReady, isOffline, lastError, lastFetch }
 ```
 
-### Directive
+### useTogglelyContext
 
-Register the directive:
+Set targeting context:
+
+```typescript
+const { setContext, clearContext, getContext } = useTogglelyContext();
+
+setContext({ userId: '123', country: 'DE' });
+```
+
+## Directives
+
+### v-feature-toggle
 
 ```typescript
 import { vFeatureToggle } from '@togglely/sdk-vue';
@@ -119,28 +149,57 @@ import { vFeatureToggle } from '@togglely/sdk-vue';
 app.directive('feature-toggle', vFeatureToggle);
 ```
 
-Use in templates:
-
 ```vue
 <template>
+  <!-- Simple usage -->
   <div v-feature-toggle="'new-feature'">
-    Only visible when toggle is enabled
+    Only visible when enabled
   </div>
   
+  <!-- With options -->
   <div v-feature-toggle="{ toggle: 'premium', defaultValue: false }">
     Premium content
   </div>
 </template>
 ```
 
-### Context
+## SSR (Nuxt.js)
 
-```vue
-<script setup>
-import { useTogglelyContext } from '@togglely/sdk-vue';
+```typescript
+// plugins/togglely.ts
+import { createTogglely } from '@togglely/sdk-vue';
 
-const { setContext, clearContext, getContext } = useTogglelyContext();
-
-setContext({ userId: '123', email: 'user@example.com' });
-</script>
+export default defineNuxtPlugin((nuxtApp) => {
+  nuxtApp.vueApp.use(createTogglely({
+    apiKey: process.env.TOGGLELY_APIKEY!,
+    project: 'my-project',
+    environment: 'production',
+    baseUrl: 'https://togglely.io',
+  }));
+});
 ```
+
+## Build-Time JSON Generation
+
+```json
+{
+  "scripts": {
+    "build": "togglely-pull --apiKey=$TOGGLELY_APIKEY --project=my-project --environment=production --output=./public/toggles.json && vite build"
+  }
+}
+```
+
+```typescript
+// main.ts
+app.use(createTogglely({
+  apiKey: 'your-api-key',
+  project: 'my-project',
+  environment: 'production',
+  baseUrl: 'https://togglely.io',
+  offlineJsonPath: '/toggles.json',
+}));
+```
+
+## License
+
+MIT

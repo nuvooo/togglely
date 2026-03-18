@@ -1,10 +1,16 @@
 /**
- * Togglely Core SDK - Framework agnostic
+ * Togglely Core SDK - Framework agnostic feature flag management
  * 
- * Supports offline fallback via environment variables
+ * Features:
+ * - Real-time feature flag evaluation
+ * - Offline fallback via JSON file, environment variables, or window object
+ * - Multi-brand/tenant support
+ * - Type-safe flag access
+ * - Build-time JSON generation for offline-first deployment
  */
 
-// Types
+// ==================== Types ====================
+
 export interface TogglelyConfig {
   /** API Key from your Togglely dashboard */
   apiKey: string;
@@ -16,8 +22,12 @@ export interface TogglelyConfig {
   baseUrl: string;
   /** Request timeout in milliseconds (default: 5000) */
   timeout?: number;
-  /** Enable offline mode fallback via environment variables (default: true) */
+  /** Enable offline fallback (default: true) */
   offlineFallback?: boolean;
+  /** Path to offline JSON file for fallback (optional) */
+  offlineJsonPath?: string;
+  /** Inline offline toggles data (optional) */
+  offlineToggles?: Record<string, ToggleValue>;
   /** Prefix for environment variables (default: 'TOGGLELY_') */
   envPrefix?: string;
   /** Auto-fetch toggles on init (default: true) */
@@ -41,6 +51,7 @@ export interface ToggleContext {
 export interface ToggleValue {
   value: any;
   enabled: boolean;
+  flagType?: 'BOOLEAN' | 'STRING' | 'NUMBER' | 'JSON';
 }
 
 export interface AllTogglesResponse {
@@ -54,15 +65,19 @@ export interface TogglelyState {
   lastFetch: Date | null;
 }
 
-// Event types
 export type TogglelyEventType = 'ready' | 'update' | 'error' | 'offline' | 'online';
 export type TogglelyEventHandler = (state: TogglelyState) => void;
 
-/**
- * Core Togglely Client
- */
+// ==================== Togglely Client ====================
+
 export class TogglelyClient {
-  private config: TogglelyConfig & { timeout: number; offlineFallback: boolean; envPrefix: string; autoFetch: boolean };
+  private config: TogglelyConfig & { 
+    timeout: number; 
+    offlineFallback: boolean; 
+    envPrefix: string; 
+    autoFetch: boolean;
+    offlineJsonPath: string | undefined;
+  };
   private toggles: Map<string, ToggleValue> = new Map();
   private context: ToggleContext = {};
   private state: TogglelyState = {
@@ -80,7 +95,14 @@ export class TogglelyClient {
       offlineFallback: true,
       envPrefix: 'TOGGLELY_',
       autoFetch: true,
+      offlineJsonPath: undefined,
       ...config
+    } as TogglelyConfig & { 
+      timeout: number; 
+      offlineFallback: boolean; 
+      envPrefix: string; 
+      autoFetch: boolean;
+      offlineJsonPath: string | undefined;
     };
     
     // Initialize event handlers
@@ -161,33 +183,52 @@ export class TogglelyClient {
 
   // ==================== Toggle Accessors ====================
 
+  /**
+   * Check if a boolean feature flag is enabled
+   * @param key - The flag key
+   * @param defaultValue - Default value if flag not found
+   * @returns Promise<boolean>
+   */
   async isEnabled(key: string, defaultValue: boolean = false): Promise<boolean> {
-    console.log(`[Togglely SDK] isEnabled("${key}", default=${defaultValue})`);
     const value = await this.getValue(key);
-    console.log(`[Togglely SDK] isEnabled result for "${key}":`, value);
     
     if (value === null) {
-      console.log(`[Togglely SDK] "${key}" not found, returning default: ${defaultValue}`);
       return defaultValue;
     }
     
-    const result = value.enabled && value.value === true;
-    console.log(`[Togglely SDK] "${key}" enabled=${value.enabled}, value=${value.value} → returning ${result}`);
-    return result;
+    return value.enabled && value.value === true;
   }
 
+  /**
+   * Get a string feature flag value
+   * @param key - The flag key
+   * @param defaultValue - Default value if flag not found or disabled
+   * @returns Promise<string>
+   */
   async getString(key: string, defaultValue: string = ''): Promise<string> {
     const value = await this.getValue(key);
     if (value === null || !value.enabled) return defaultValue;
     return String(value.value);
   }
 
+  /**
+   * Get a number feature flag value
+   * @param key - The flag key
+   * @param defaultValue - Default value if flag not found or disabled
+   * @returns Promise<number>
+   */
   async getNumber(key: string, defaultValue: number = 0): Promise<number> {
     const value = await this.getValue(key);
     if (value === null || !value.enabled) return defaultValue;
     return Number(value.value);
   }
 
+  /**
+   * Get a JSON feature flag value
+   * @param key - The flag key
+   * @param defaultValue - Default value if flag not found or disabled
+   * @returns Promise<T>
+   */
   async getJSON<T = any>(key: string, defaultValue: T = {} as T): Promise<T> {
     const value = await this.getValue(key);
     if (value === null || !value.enabled) return defaultValue;
@@ -203,12 +244,16 @@ export class TogglelyClient {
     return value.value as T;
   }
 
+  /**
+   * Get raw toggle value
+   * @param key - The flag key
+   * @returns Promise<ToggleValue | null>
+   */
   async getValue(key: string): Promise<ToggleValue | null> {
     // Try cache first - but only if no context is set
     if (Object.keys(this.context).length === 0) {
       const cached = this.toggles.get(key);
       if (cached) {
-        console.log(`[Togglely SDK] Cache hit for "${key}":`, cached);
         return cached;
       }
     }
@@ -216,50 +261,28 @@ export class TogglelyClient {
     // Fetch from server
     try {
       const params = new URLSearchParams();
-      // Send API key as query parameter (required by backend)
       if (this.config.apiKey) params.set('apiKey', this.config.apiKey);
       const brandKey = this.context.tenantId || this.context.brandKey;
       if (brandKey) params.set('tenantId', String(brandKey));
-      // Always send context if available (needed for targeting rules)
       if (Object.keys(this.context).length > 0) {
         params.set('context', JSON.stringify(this.context));
       }
       const query = params.toString() ? `?${params.toString()}` : '';
       const url = `${this.config.baseUrl}/sdk/flags/${encodeURIComponent(this.config.project)}/${encodeURIComponent(this.config.environment)}/${encodeURIComponent(key)}${query}`;
       
-      console.log(`[Togglely SDK] Fetching: ${url}`);
-      
       const response = await this.fetchWithTimeout(url, { headers: { 'Content-Type': 'application/json' } });
 
-      console.log(`[Togglely SDK] Response status: ${response.status}`);
-
       if (!response.ok) {
-        // Try to get error details from response
-        let errorBody = '';
-        try {
-          errorBody = await response.text();
-          console.error(`[Togglely SDK] Error response body:`, errorBody);
-        } catch {}
-        
         if (response.status === 404) {
-          console.log(`[Togglely SDK] Flag "${key}" not found (404)`);
           return null;
         }
-        if (response.status === 401) {
-          console.error(`[Togglely SDK] Authentication failed (401) - Check your API key`);
-        }
-        if (response.status === 403) {
-          console.error(`[Togglely SDK] Forbidden (403) - Origin not allowed`);
-        }
-        throw new Error(`HTTP ${response.status}: ${errorBody || response.statusText}`);
+        throw new Error(`HTTP ${response.status}: ${response.statusText}`);
       }
 
       const data: ToggleValue = await response.json();
-      console.log(`[Togglely SDK] Received data for "${key}":`, data);
       
       this.toggles.set(key, data);
       
-      // Update state if we were offline
       if (this.state.isOffline) {
         this.state.isOffline = false;
         this.emit('online');
@@ -267,23 +290,23 @@ export class TogglelyClient {
       
       return data;
     } catch (error: any) {
-      console.error(`[Togglely SDK] Network/Error for "${key}":`, error.message);
-      
-      // Try offline fallback only if enabled
+      // Try offline fallback
       if (this.config.offlineFallback) {
         const offlineValue = this.getOfflineToggle(key);
         if (offlineValue !== null) {
-          console.log(`[Togglely SDK] Using offline fallback for "${key}":`, offlineValue);
           return offlineValue;
         }
       }
       
-      // Return safe default instead of null
-      console.warn(`[Togglely SDK] Returning default (disabled) for "${key}" due to error`);
+      // Return safe default
       return { value: false, enabled: false };
     }
   }
 
+  /**
+   * Get all toggles
+   * @returns Record<string, ToggleValue>
+   */
   getAllToggles(): Record<string, ToggleValue> {
     const result: Record<string, ToggleValue> = {};
     this.toggles.forEach((value, key) => {
@@ -295,12 +318,30 @@ export class TogglelyClient {
   // ==================== Offline Fallback ====================
 
   /**
-   * Load toggles from environment variables
-   * Format: TOGGLELY_<TOGGLE_KEY>=<value> or TOGGLELY_<TOGGLE_KEY>_ENABLED=true
+   * Load offline toggles from multiple sources (in priority order):
+   * 1. Inline offlineToggles from config
+   * 2. JSON file (if offlineJsonPath is set)
+   * 3. window.__TOGGLELY_TOGGLES (browser)
+   * 4. Environment variables (Node.js)
    */
   private loadOfflineToggles(): void {
     try {
-      // Browser environment - check window.__TOGGLELY_TOGGLES
+      // Priority 1: Inline offline toggles from config
+      if (this.config.offlineToggles && Object.keys(this.config.offlineToggles).length > 0) {
+        for (const [key, value] of Object.entries(this.config.offlineToggles)) {
+          this.toggles.set(key, value);
+        }
+        this.offlineTogglesLoaded = true;
+        console.log('[Togglely] Loaded offline toggles from config');
+        return;
+      }
+
+      // Priority 2: JSON file (browser only - fetch synchronously not possible, will try async)
+      if (this.config.offlineJsonPath && typeof window !== 'undefined') {
+        this.loadOfflineJsonFile(this.config.offlineJsonPath);
+      }
+
+      // Priority 3: Browser environment - check window.__TOGGLELY_TOGGLES
       if (typeof window !== 'undefined' && (window as any).__TOGGLELY_TOGGLES) {
         const offlineToggles = (window as any).__TOGGLELY_TOGGLES;
         for (const [key, value] of Object.entries(offlineToggles)) {
@@ -311,12 +352,11 @@ export class TogglelyClient {
         return;
       }
 
-      // Node.js / Bun / Deno environment - check process.env
+      // Priority 4: Node.js / Bun / Deno environment - check process.env
       if (typeof process !== 'undefined' && process.env) {
         const prefix = this.config.envPrefix;
         for (const [envKey, envValue] of Object.entries(process.env)) {
           if (envKey?.startsWith(prefix) && envValue !== undefined) {
-            // Parse toggle key: TOGGLELY_MY_FEATURE -> my-feature
             const toggleKey = envKey
               .slice(prefix.length)
               .toLowerCase()
@@ -333,13 +373,47 @@ export class TogglelyClient {
     }
   }
 
+  /**
+   * Load offline toggles from JSON file (async)
+   */
+  private async loadOfflineJsonFile(path: string): Promise<void> {
+    try {
+      if (typeof window !== 'undefined') {
+        // Browser - fetch the JSON file
+        const response = await fetch(path);
+        if (response.ok) {
+          const data = await response.json();
+          for (const [key, value] of Object.entries(data)) {
+            this.toggles.set(key, this.parseOfflineValue(value));
+          }
+          this.offlineTogglesLoaded = true;
+          console.log('[Togglely] Loaded offline toggles from JSON file:', path);
+        }
+      } else if (typeof require !== 'undefined') {
+        // Node.js - require the JSON file
+        const fs = require('fs');
+        const pathModule = require('path');
+        const fullPath = pathModule.resolve(path);
+        
+        if (fs.existsSync(fullPath)) {
+          const data = JSON.parse(fs.readFileSync(fullPath, 'utf-8'));
+          for (const [key, value] of Object.entries(data)) {
+            this.toggles.set(key, this.parseOfflineValue(value));
+          }
+          this.offlineTogglesLoaded = true;
+          console.log('[Togglely] Loaded offline toggles from JSON file:', fullPath);
+        }
+      }
+    } catch (error) {
+      console.warn('[Togglely] Failed to load offline JSON file:', error);
+    }
+  }
+
   private getOfflineToggle(key: string): ToggleValue | null {
     if (!this.config.offlineFallback) return null;
     
-    // Try to get from already loaded offline toggles
     const cached = this.toggles.get(key);
     if (cached) {
-      // If we haven't emitted offline event yet, do it now
       if (!this.state.isOffline) {
         this.state.isOffline = true;
         this.emit('offline');
@@ -351,23 +425,19 @@ export class TogglelyClient {
   }
 
   private parseOfflineValue(value: any): ToggleValue {
-    // Handle boolean strings
     if (typeof value === 'string') {
       const lower = value.toLowerCase();
       if (lower === 'true') return { value: true, enabled: true };
       if (lower === 'false') return { value: false, enabled: true };
       
-      // Try to parse as number
       if (!isNaN(Number(value))) {
         return { value: Number(value), enabled: true };
       }
       
-      // Try to parse as JSON
       try {
         const parsed = JSON.parse(value);
         return { value: parsed, enabled: true };
       } catch {
-        // Return as string
         return { value, enabled: true };
       }
     }
@@ -377,14 +447,15 @@ export class TogglelyClient {
 
   // ==================== Refresh / Polling ====================
 
+  /**
+   * Refresh all toggles from the server
+   */
   async refresh(): Promise<void> {
     try {
       const params = new URLSearchParams();
-      // Send API key as query parameter (required by backend)
       if (this.config.apiKey) params.set('apiKey', this.config.apiKey);
       const brandKey = this.context.tenantId || this.context.brandKey;
       if (brandKey) params.set('tenantId', String(brandKey));
-      // Always send context if available (needed for targeting rules)
       if (Object.keys(this.context).length > 0) {
         params.set('context', JSON.stringify(this.context));
       }
@@ -412,7 +483,6 @@ export class TogglelyClient {
         this.emit('ready');
       }
       
-      // If we were offline, go online
       if (this.state.isOffline) {
         this.state.isOffline = false;
         this.emit('online');
@@ -423,7 +493,6 @@ export class TogglelyClient {
     } catch (error) {
       this.state.lastError = error as Error;
       
-      // If we have offline toggles, switch to offline mode
       if (this.config.offlineFallback && this.offlineTogglesLoaded) {
         if (!this.state.isOffline) {
           this.state.isOffline = true;

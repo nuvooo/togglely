@@ -1,43 +1,24 @@
 # Togglely SDKs
 
-Official SDKs for Togglely - Feature Toggle Management System
+Official JavaScript/TypeScript SDKs for [Togglely](https://togglely.io) feature flag management platform.
 
 ## Packages
 
-| Package | Framework | Install |
-|---------|-----------|---------|
-| `@togglely/sdk` | Vanilla JS / Universal | `npm install @togglely/sdk` |
-| `@togglely/sdk-react` | React | `npm install @togglely/sdk-react` |
-| `@togglely/sdk-svelte` | Svelte | `npm install @togglely/sdk-svelte` |
-| `@togglely/sdk-vue` | Vue 3 | `npm install @togglely/sdk-vue` |
-| `@togglely/sdk-core` | Core (Framework agnostic) | `npm install @togglely/sdk-core` |
-
-## Features
-
-- 🚀 **Multiple Framework Support** - React, Svelte, Vue, Vanilla JS
-- 📴 **Offline Mode** - Automatic fallback to environment variables when service is unavailable
-- 🔄 **Real-time Updates** - Automatic polling with event system
-- 🌐 **SSR Support** - Server-side rendering compatible
-- 🔧 **TypeScript** - Full TypeScript support
-- 📦 **Lightweight** - Small bundle size
+| Package | Description | Framework |
+|---------|-------------|-----------|
+| [`@togglely/sdk-core`](./core) | Core SDK | Framework-agnostic |
+| [`@togglely/sdk`](./vanilla) | Vanilla JS SDK | Browser / Node.js |
+| [`@togglely/sdk-react`](./react) | React SDK | React |
+| [`@togglely/sdk-vue`](./vue) | Vue SDK | Vue 3 |
+| [`@togglely/sdk-svelte`](./svelte) | Svelte SDK | Svelte |
 
 ## Quick Start
 
-### Vanilla JavaScript
-
-```javascript
-import { TogglelyClient } from '@togglely/sdk';
-
-const client = new TogglelyClient({
-  apiKey: 'your-api-key',
-  environment: 'production',
-  baseUrl: 'https://your-togglely-instance.com'
-});
-
-const isEnabled = await client.isEnabled('new-feature', false);
-```
-
 ### React
+
+```bash
+npm install @togglely/sdk-react
+```
 
 ```tsx
 import { TogglelyProvider, useToggle } from '@togglely/sdk-react';
@@ -46,8 +27,9 @@ function App() {
   return (
     <TogglelyProvider 
       apiKey="your-api-key"
+      project="my-project"
       environment="production"
-      baseUrl="https://your-togglely-instance.com"
+      baseUrl="https://togglely.io"
     >
       <MyComponent />
     </TogglelyProvider>
@@ -60,7 +42,42 @@ function MyComponent() {
 }
 ```
 
+### Vue
+
+```bash
+npm install @togglely/sdk-vue
+```
+
+```typescript
+import { createApp } from 'vue';
+import { createTogglely } from '@togglely/sdk-vue';
+
+const app = createApp(App);
+app.use(createTogglely({
+  apiKey: 'your-api-key',
+  project: 'my-project',
+  environment: 'production',
+  baseUrl: 'https://togglely.io',
+}));
+```
+
+```vue
+<script setup>
+import { useToggle } from '@togglely/sdk-vue';
+const isEnabled = useToggle('new-feature', false);
+</script>
+
+<template>
+  <NewFeature v-if="isEnabled" />
+  <OldFeature v-else />
+</template>
+```
+
 ### Svelte
+
+```bash
+npm install @togglely/sdk-svelte
+```
 
 ```svelte
 <script>
@@ -68,8 +85,9 @@ function MyComponent() {
   
   initTogglely({
     apiKey: 'your-api-key',
+    project: 'my-project',
     environment: 'production',
-    baseUrl: 'https://your-togglely-instance.com'
+    baseUrl: 'https://togglely.io',
   });
   
   const isEnabled = toggle('new-feature', false);
@@ -82,76 +100,106 @@ function MyComponent() {
 {/if}
 ```
 
-### Vue
-
-```vue
-<script setup>
-import { createTogglely } from '@togglely/sdk-vue';
-import { useToggle } from '@togglely/sdk-vue';
-
-const isEnabled = useToggle('new-feature', false);
-</script>
-
-<template>
-  <div v-if="isEnabled">
-    <NewFeature />
-  </div>
-  <div v-else>
-    <OldFeature />
-  </div>
-</template>
-```
-
-## Offline Mode
-
-All SDKs support automatic offline fallback to environment variables:
-
-### Environment Variables (Node.js/Bun/Deno)
+### Vanilla JS
 
 ```bash
-# Format: TOGGLELY_<TOGGLE_NAME>=<value>
-TOGGLELY_NEW_FEATURE=true
-TOGGLELY_MAX_ITEMS=100
-TOGGLELY_WELCOME_MESSAGE="Hello World"
-TOGGLELY_APP_CONFIG='{"theme":"dark","lang":"de"}'
+npm install @togglely/sdk
 ```
 
-### Browser (Inject into HTML)
+```javascript
+import { initTogglely, isEnabled } from '@togglely/sdk';
+
+initTogglely({
+  apiKey: 'your-api-key',
+  project: 'my-project',
+  environment: 'production',
+  baseUrl: 'https://togglely.io',
+});
+
+const enabled = await isEnabled('new-feature', false);
+```
+
+Or via CDN:
 
 ```html
+<script src="https://unpkg.com/@togglely/sdk/dist/index.umd.min.js"></script>
 <script>
-  window.__TOGGLELY_TOGGLES = {
-    'new-feature': true,
-    'max-items': 100,
-    'welcome-message': 'Hello World',
-    'app-config': { theme: 'dark', lang: 'de' }
-  };
+  Togglely.initTogglely({ apiKey: 'your-api-key', ... });
 </script>
 ```
 
-### Configuration
+## Key Features
 
-```javascript
-const client = new TogglelyClient({
-  apiKey: 'your-api-key',
-  environment: 'production',
-  baseUrl: 'https://your-togglely-instance.com',
-  offlineFallback: true,  // Enable offline mode (default: true)
-  envPrefix: 'TOGGLELY_'   // Environment variable prefix (default: 'TOGGLELY_')
-});
+### 🏢 Multi-Brand / Multi-Tenant Support
+
+For projects with multiple brands or tenants:
+
+```typescript
+// React
+<TogglelyProvider tenantId="brand-a" ...>
+
+// Vue
+app.use(createTogglely({ tenantId: 'brand-a', ... }));
+
+// Core
+const client = new TogglelyClient({ tenantId: 'brand-a', ... });
 ```
 
-## Events
+### 💾 Offline Fallback
 
-All SDKs support event handling:
+All SDKs support multiple offline fallback methods:
 
-```javascript
-client.on('ready', () => console.log('Toggles loaded'));
-client.on('update', () => console.log('Toggles updated'));
-client.on('error', () => console.log('Error occurred'));
-client.on('offline', () => console.log('Using offline toggles'));
-client.on('online', () => console.log('Back online'));
+1. **Inline Toggles** - Pass toggles directly in config
+2. **JSON File** - Load from a JSON file path
+3. **Environment Variables** - Node.js (`TOGGLELY_*`)
+4. **Window Object** - Browser (`window.__TOGGLELY_TOGGLES`)
+
+### 🔧 Build-Time JSON Generation
+
+Generate offline JSON during build:
+
+```bash
+npx @togglely/sdk-core togglely-pull \
+  --apiKey=your-api-key \
+  --project=my-project \
+  --environment=production \
+  --output=./toggles.json
 ```
+
+Or add to your build script:
+
+```json
+{
+  "scripts": {
+    "build": "togglely-pull && vite build"
+  }
+}
+```
+
+### 🎯 Targeting Context
+
+Set user context for advanced targeting:
+
+```typescript
+// React
+const client = useTogglelyClient();
+client.setContext({ userId: '123', country: 'DE' });
+
+// Vue
+const { setContext } = useTogglelyContext();
+setContext({ userId: '123', country: 'DE' });
+
+// Core
+client.setContext({ userId: '123', country: 'DE' });
+```
+
+## Documentation
+
+- [Core SDK Documentation](./core/README.md)
+- [React SDK Documentation](./react/README.md)
+- [Vue SDK Documentation](./vue/README.md)
+- [Svelte SDK Documentation](./svelte/README.md)
+- [Vanilla JS SDK Documentation](./vanilla/README.md)
 
 ## License
 

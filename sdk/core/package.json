@@ -1,10 +1,13 @@
 {
   "name": "@togglely/sdk-core",
-  "version": "1.1.10",
-  "description": "Core SDK for Togglely - Framework agnostic",
+  "version": "1.2.0",
+  "description": "Core SDK for Togglely - Framework agnostic feature flag management with offline support",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
   "types": "dist/index.d.ts",
+  "bin": {
+    "togglely-pull": "dist/cli.js"
+  },
   "files": [
     "dist"
   ],
@@ -20,7 +23,9 @@
     "feature-flags",
     "feature-toggles",
     "togglely",
-    "core"
+    "core",
+    "offline",
+    "multi-tenant"
   ],
   "author": "Togglely",
   "license": "MIT",
