@@ -87,13 +87,18 @@ export class BrandsService {
   }
 
   async toggleFlag(brandId: string, flagId: string, environmentId: string, enabled?: boolean) {
+    console.log(`[BrandsService.toggleFlag] brandId=${brandId}, flagId=${flagId}, environmentId=${environmentId}, enabled=${enabled}`);
+    
     // Try to find existing brand-specific flag environment
     const existing = await this.prisma.flagEnvironment.findFirst({
       where: { flagId, environmentId, brandId },
     });
+    
+    console.log(`[BrandsService.toggleFlag] Existing brand-specific flagEnv:`, existing ? `id=${existing.id}, enabled=${existing.enabled}` : 'not found');
 
     if (existing) {
       const newEnabled = enabled !== undefined ? enabled : !existing.enabled;
+      console.log(`[BrandsService.toggleFlag] Updating existing to enabled=${newEnabled}`);
       return this.prisma.flagEnvironment.update({
         where: { id: existing.id },
         data: { enabled: newEnabled },
@@ -101,8 +106,9 @@ export class BrandsService {
     }
 
     // Create new brand-specific flag environment
+    console.log(`[BrandsService.toggleFlag] Creating new brand-specific flagEnv`);
     try {
-      return await this.prisma.flagEnvironment.create({
+      const created = await this.prisma.flagEnvironment.create({
         data: {
           flagId,
           environmentId,
@@ -111,13 +117,17 @@ export class BrandsService {
           defaultValue: 'false',
         },
       });
+      console.log(`[BrandsService.toggleFlag] Created: id=${created.id}, enabled=${created.enabled}`);
+      return created;
     } catch (e: any) {
+      console.error(`[BrandsService.toggleFlag] Error creating:`, e.message, e.code);
       // If unique constraint, find and update instead
       if (e.code === 'P2002') {
         const found = await this.prisma.flagEnvironment.findFirst({
           where: { flagId, environmentId, brandId },
         });
         if (found) {
+          console.log(`[BrandsService.toggleFlag] Found after conflict, updating id=${found.id}`);
           return this.prisma.flagEnvironment.update({
             where: { id: found.id },
             data: { enabled: enabled ?? true },
