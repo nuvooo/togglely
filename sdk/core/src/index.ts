@@ -196,7 +196,15 @@ export class TogglelyClient {
       return defaultValue;
     }
     
-    return value.enabled && value.value === true;
+    // enabled is the primary on/off switch for a flag.
+    // value.value holds the flag's configured value (used for non-boolean use-cases).
+    // For boolean flags: if enabled, return the boolean value itself.
+    // If the value is not a boolean (misconfigured), fall back to just enabled.
+    if (typeof value.value === 'boolean') {
+      return value.enabled && value.value;
+    }
+
+    return value.enabled;
   }
 
   /**

@@ -224,6 +224,38 @@ export function useToggle(key: string, defaultValue: boolean = false): boolean {
 }
 
 /**
+ * Hook to check if a feature flag is enabled (regardless of its value).
+ * Use this for BOOLEAN flags where "enabled" means the feature is on.
+ * Unlike useToggle which checks `enabled && value === true`,
+ * this only checks the `enabled` field.
+ */
+export function useEnabled(key: string, defaultValue: boolean = false): boolean {
+  const client = useTogglelyClient();
+  const [value, setValue] = useState(defaultValue);
+
+  useEffect(() => {
+    let mounted = true;
+
+    const checkToggle = async () => {
+      const result = await client.getValue(key);
+      if (mounted) {
+        setValue(result !== null ? result.enabled : defaultValue);
+      }
+    };
+
+    checkToggle();
+
+    const unsubscribe = client.on('update', checkToggle);
+    return () => {
+      mounted = false;
+      unsubscribe();
+    };
+  }, [client, key, defaultValue]);
+
+  return value;
+}
+
+/**
  * Hook to get a string toggle value
  */
 export function useStringToggle(key: string, defaultValue: string = ''): string {
