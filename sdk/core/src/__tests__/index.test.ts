@@ -181,10 +181,10 @@ describe('TogglelyClient', () => {
   });
 
   describe('toggle accessors', () => {
-    it('should always fetch fresh value from server', async () => {
+    it('should use stale-while-revalidate pattern', async () => {
       const client = new TogglelyClient(mockConfig);
       
-      // First call
+      // First call - no cache, wait for server
       (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
         json: async () => ({ value: true, enabled: true })
@@ -192,13 +192,15 @@ describe('TogglelyClient', () => {
       const value1 = await client.isEnabled('bool-flag', false);
       expect(value1).toBe(true);
       
-      // Second call should also fetch from server (no cache)
+      // Second call - should return cached value immediately (stale-while-revalidate)
+      // Server returns different value, but we get cached value first
       (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
         json: async () => ({ value: false, enabled: false })
       });
       const value2 = await client.isEnabled('bool-flag', false);
-      expect(value2).toBe(false);
+      // Returns cached value (true) while updating in background
+      expect(value2).toBe(true);
       
       // Should have made 2 API calls
       expect(global.fetch).toHaveBeenCalledTimes(2);

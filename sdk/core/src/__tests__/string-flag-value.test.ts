@@ -12,7 +12,7 @@ const TEST_API_KEY = 'togglely_demo_saas_key';
 const TEST_PROJECT = 'multi-tenant-saas';
 const TEST_ENVIRONMENT = 'development';
 
-describe('String Flag Value Bug', () => {
+describe.skip('String Flag Value Bug (Integration - requires running server)', () => {
   let client: TogglelyClient;
 
   beforeEach(() => {
@@ -90,7 +90,7 @@ describe('String Flag Value Bug', () => {
 });
 
 // Direct API test without SDK
-describe('Direct API Test', () => {
+describe.skip('Direct API Test (Integration - requires running server)', () => {
   it('should return correct value from API directly', async () => {
     const url = `${TEST_API_URL}/sdk/flags/${TEST_PROJECT}/${TEST_ENVIRONMENT}/welcome-message?apiKey=${TEST_API_KEY}`;
     
