@@ -15,7 +15,6 @@ interface PendingInvite {
 
 export default function PendingInvitesBanner() {
   const [invites, setInvites] = useState<PendingInvite[]>([]);
-  const [loading, setLoading] = useState(false);
   const [acceptingId, setAcceptingId] = useState<string | null>(null);
   const [dismissed, setDismissed] = useState(false);
 
