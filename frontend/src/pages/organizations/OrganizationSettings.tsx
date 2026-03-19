@@ -26,6 +26,12 @@ interface Organization {
   createdAt: string;
 }
 
+interface OrganizationMember {
+  id: string;
+  userId: string;
+  role: 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER';
+}
+
 export default function OrganizationSettings() {
   const { t } = useTranslation();
   const { orgId } = useParams<{ orgId: string }>();
@@ -33,6 +39,7 @@ export default function OrganizationSettings() {
   const { deleteOrganization } = useOrganizationStore();
   
   const [organization, setOrganization] = useState<Organization | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
   const [isLoading, setIsLoading] = useState(true);
   const [isSaving, setIsSaving] = useState(false);
   const [isDeleting, setIsDeleting] = useState(false);
@@ -49,11 +56,20 @@ export default function OrganizationSettings() {
     const fetchOrganization = async () => {
       try {
         setIsLoading(true);
-        const response = await api.get(`/organizations/${orgId}`);
-        const data = response.data.organization || response.data;
+        const [orgRes, membersRes, meRes] = await Promise.all([
+          api.get(`/organizations/${orgId}`),
+          api.get(`/organizations/${orgId}/members`),
+          api.get('/auth/me'),
+        ]);
+        const data = orgRes.data.organization || orgRes.data;
         setOrganization(data);
         setName(data.name || '');
         setDescription(data.description || '');
+        
+        // Find current user's role
+        const members = membersRes.data.members || membersRes.data || [];
+        const currentUser = members.find((m: OrganizationMember) => m.userId === meRes.data.user?.id);
+        setCurrentUserRole(currentUser?.role || null);
       } catch (error) {
         console.error('Failed to fetch organization:', error);
         setMessage({ type: 'error', text: 'Failed to load organization' });
@@ -235,24 +251,26 @@ export default function OrganizationSettings() {
         </CardContent>
       </Card>
 
-      {/* Danger Zone */}
-      <Card className="border-destructive/50">
-        <CardHeader>
-          <CardTitle className="text-destructive flex items-center gap-2">
-            <AlertTriangle className="w-5 h-5" />
-            Danger Zone
-          </CardTitle>
-          <CardDescription>
-            Once you delete an organization, there is no going back. Please be certain.
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Button variant="destructive" onClick={() => setShowDeleteDialog(true)}>
-            <Trash2 className="w-4 h-4 mr-2" />
-            Delete Organization
-          </Button>
-        </CardContent>
-      </Card>
+      {/* Danger Zone - Only visible to OWNER */}
+      {currentUserRole === 'OWNER' && (
+        <Card className="border-destructive/50">
+          <CardHeader>
+            <CardTitle className="text-destructive flex items-center gap-2">
+              <AlertTriangle className="w-5 h-5" />
+              Danger Zone
+            </CardTitle>
+            <CardDescription>
+              Once you delete an organization, there is no going back. Please be certain.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <Button variant="destructive" onClick={() => setShowDeleteDialog(true)}>
+              <Trash2 className="w-4 h-4 mr-2" />
+              Delete Organization
+            </Button>
+          </CardContent>
+        </Card>
+      )}
 
       {/* Delete Dialog */}
       <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
