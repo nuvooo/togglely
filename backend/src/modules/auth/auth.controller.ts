@@ -143,11 +143,69 @@ export class AuthController {
     if (invite.expiresAt < new Date()) throw new NotFoundException('Invite expired');
     if (invite.acceptedAt) throw new ConflictException('Invite already used');
 
+    // Check if user already exists
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email: invite.email },
+    });
+
     return {
       email: invite.email,
       organizationName: invite.organization.name,
       role: invite.role,
+      existingUser: !!existingUser,
     };
+  }
+
+  // Accept invite for existing users
+  @Post('invite/:token/accept')
+  @UseGuards(AuthGuard)
+  async acceptInvite(@Param('token') token: string, @Req() req: any) {
+    const invite = await this.prisma.organizationInvite.findUnique({
+      where: { token },
+      include: { organization: true },
+    });
+
+    if (!invite) throw new NotFoundException('Invite not found');
+    if (invite.expiresAt < new Date()) throw new NotFoundException('Invite expired');
+    if (invite.acceptedAt) throw new ConflictException('Invite already used');
+
+    // Verify the logged-in user matches the invite email
+    const user = await this.prisma.user.findUnique({
+      where: { id: req.user.userId },
+    });
+
+    if (!user || user.email !== invite.email) {
+      throw new ForbiddenException('This invite is for a different email address');
+    }
+
+    // Check if already a member
+    const existingMember = await this.prisma.organizationMember.findFirst({
+      where: { organizationId: invite.organizationId, userId: user.id },
+    });
+
+    if (existingMember) {
+      throw new ConflictException('You are already a member of this organization');
+    }
+
+    // Add user to organization
+    await this.prisma.organizationMember.create({
+      data: {
+        userId: user.id,
+        organizationId: invite.organizationId,
+        role: invite.role,
+      },
+    });
+
+    // Mark invite as accepted
+    await this.prisma.organizationInvite.update({
+      where: { id: invite.id },
+      data: {
+        acceptedAt: new Date(),
+        acceptedById: user.id,
+      },
+    });
+
+    return { success: true, message: 'You have joined the organization' };
   }
 
   @Post('invite/:token/register')

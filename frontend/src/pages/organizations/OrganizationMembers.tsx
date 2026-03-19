@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react';
 import { Link, useParams, useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
-import { ArrowLeft, Users, UserPlus, Trash2 } from 'lucide-react';
+import { ArrowLeft, Users, UserPlus, Trash2, Mail, Clock } from 'lucide-react';
 import api from '@/lib/axios';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -35,6 +35,14 @@ interface Member {
   joinedAt: string;
 }
 
+interface PendingInvite {
+  id: string;
+  email: string;
+  role: 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER';
+  createdAt: string;
+  expiresAt: string;
+}
+
 interface Organization {
   id: string;
   name: string;
@@ -47,6 +55,7 @@ export default function OrganizationMembers() {
   
   const [organization, setOrganization] = useState<Organization | null>(null);
   const [members, setMembers] = useState<Member[]>([]);
+  const [pendingInvites, setPendingInvites] = useState<PendingInvite[]>([]);
   const [isLoading, setIsLoading] = useState(true);
   const [isInviting, setIsInviting] = useState(false);
   const [showInviteDialog, setShowInviteDialog] = useState(false);
@@ -54,29 +63,37 @@ export default function OrganizationMembers() {
   const [inviteRole, setInviteRole] = useState('MEMBER');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [inviteUrl, setInviteUrl] = useState<string | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
 
   useEffect(() => {
     if (!orgId) return;
     
-    const fetchData = async () => {
-      try {
-        setIsLoading(true);
-        const [orgRes, membersRes] = await Promise.all([
-          api.get(`/organizations/${orgId}`),
-          api.get(`/organizations/${orgId}/members`),
-        ]);
-        setOrganization(orgRes.data.organization || orgRes.data);
-        setMembers(membersRes.data.members || membersRes.data || []);
-      } catch (error) {
-        console.error('Failed to fetch data:', error);
-        setMessage({ type: 'error', text: 'Failed to load members' });
-      } finally {
-        setIsLoading(false);
-      }
-    };
-
     fetchData();
   }, [orgId]);
+
+  const fetchData = async () => {
+    try {
+      setIsLoading(true);
+      const [orgRes, membersRes, invitesRes] = await Promise.all([
+        api.get(`/organizations/${orgId}`),
+        api.get(`/organizations/${orgId}/members`),
+        api.get(`/organizations/${orgId}/invites`),
+      ]);
+      setOrganization(orgRes.data.organization || orgRes.data);
+      setMembers(membersRes.data.members || membersRes.data || []);
+      setPendingInvites(invitesRes.data.invites || []);
+      
+      // Get current user's role
+      const meRes = await api.get('/auth/me');
+      const myMembership = membersRes.data.members?.find((m: Member) => m.userId === meRes.data.user?.id);
+      setCurrentUserRole(myMembership?.role || null);
+    } catch (error) {
+      console.error('Failed to fetch data:', error);
+      setMessage({ type: 'error', text: 'Failed to load members' });
+    } finally {
+      setIsLoading(false);
+    }
+  };
 
   const handleInvite = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -93,21 +110,15 @@ export default function OrganizationMembers() {
       });
       
       if (response.data.inviteUrl) {
-        // New user invite created
+        // Invite created
         setInviteUrl(window.location.origin + response.data.inviteUrl);
         setMessage({ 
           type: 'success', 
-          text: 'Invite created! Send the link below to the user.' 
+          text: response.data.message || 'Invite created! Send the link below to the user.' 
         });
-      } else {
-        // Existing user added directly
-        setShowInviteDialog(false);
-        setInviteEmail('');
-        setInviteRole('MEMBER');
-        setMessage({ type: 'success', text: response.data.message || 'Member added successfully' });
-        // Refresh members list
-        const membersRes = await api.get(`/organizations/${orgId}/members`);
-        setMembers(membersRes.data.members || membersRes.data || []);
+        // Refresh pending invites
+        const invitesRes = await api.get(`/organizations/${orgId}/invites`);
+        setPendingInvites(invitesRes.data.invites || []);
       }
     } catch (error: any) {
       console.error('Failed to invite member:', error);
@@ -136,6 +147,44 @@ export default function OrganizationMembers() {
       });
     }
   };
+
+  const handleUpdateRole = async (userId: string, newRole: string) => {
+    if (!orgId) return;
+
+    try {
+      const response = await api.patch(`/organizations/${orgId}/members/${userId}`, {
+        role: newRole,
+      });
+      setMembers(members.map(m => m.userId === userId ? { ...m, role: newRole as any } : m));
+      setMessage({ type: 'success', text: 'Role updated successfully' });
+    } catch (error: any) {
+      console.error('Failed to update role:', error);
+      setMessage({ 
+        type: 'error', 
+        text: error.response?.data?.error || 'Failed to update role' 
+      });
+    }
+  };
+
+  const handleCancelInvite = async (inviteId: string) => {
+    if (!orgId) return;
+    if (!confirm('Are you sure you want to cancel this invite?')) return;
+
+    try {
+      await api.delete(`/organizations/${orgId}/invites/${inviteId}`);
+      setPendingInvites(pendingInvites.filter(i => i.id !== inviteId));
+      setMessage({ type: 'success', text: 'Invite cancelled successfully' });
+    } catch (error: any) {
+      console.error('Failed to cancel invite:', error);
+      setMessage({ 
+        type: 'error', 
+        text: error.response?.data?.error || 'Failed to cancel invite' 
+      });
+    }
+  };
+
+  const canManageMembers = currentUserRole === 'OWNER' || currentUserRole === 'ADMIN';
+  const canChangeRoles = currentUserRole === 'OWNER';
 
   const getRoleBadgeColor = (role: string) => {
     switch (role) {
@@ -195,10 +244,12 @@ export default function OrganizationMembers() {
             <p className="text-muted-foreground text-sm">Manage members and their roles</p>
           </div>
         </div>
-        <Button onClick={() => setShowInviteDialog(true)}>
-          <UserPlus className="w-4 h-4 mr-2" />
-          Invite Member
-        </Button>
+        {canManageMembers && (
+          <Button onClick={() => setShowInviteDialog(true)}>
+            <UserPlus className="w-4 h-4 mr-2" />
+            Invite Member
+          </Button>
+        )}
       </div>
 
       <Separator />
@@ -207,6 +258,57 @@ export default function OrganizationMembers() {
         <div className={`p-4 rounded-lg ${message.type === 'success' ? 'bg-green-50 text-green-800 border border-green-200' : 'bg-destructive/10 text-destructive border border-destructive/20'}`}>
           {message.text}
         </div>
+      )}
+
+      {/* Pending Invites */}
+      {pendingInvites.length > 0 && canManageMembers && (
+        <Card>
+          <CardHeader>
+            <div className="flex items-center gap-3">
+              <div className="w-10 h-10 rounded-lg bg-amber-100 flex items-center justify-center">
+                <Mail className="w-5 h-5 text-amber-600" />
+              </div>
+              <div>
+                <CardTitle>Pending Invites ({pendingInvites.length})</CardTitle>
+                <CardDescription>Invites waiting to be accepted</CardDescription>
+              </div>
+            </div>
+          </CardHeader>
+          <CardContent>
+            <div className="space-y-4">
+              {pendingInvites.map((invite) => (
+                <div key={invite.id} className="flex items-center justify-between p-4 rounded-lg border bg-amber-50/50">
+                  <div className="flex items-center gap-4">
+                    <div className="w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center text-amber-600 font-medium">
+                      <Clock className="w-5 h-5" />
+                    </div>
+                    <div>
+                      <p className="font-medium">{invite.email}</p>
+                      <p className="text-sm text-muted-foreground">
+                        Invited {new Date(invite.createdAt).toLocaleDateString()}
+                        {' · '}
+                        Expires {new Date(invite.expiresAt).toLocaleDateString()}
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-4">
+                    <Badge className={getRoleBadgeColor(invite.role)}>
+                      {invite.role}
+                    </Badge>
+                    <Button 
+                      variant="ghost" 
+                      size="icon"
+                      onClick={() => handleCancelInvite(invite.id)}
+                      className="text-destructive hover:text-destructive"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </Button>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
       )}
 
       {/* Members List */}
@@ -246,10 +348,26 @@ export default function OrganizationMembers() {
                     </div>
                   </div>
                   <div className="flex items-center gap-4">
-                    <Badge className={getRoleBadgeColor(member.role)}>
-                      {member.role}
-                    </Badge>
-                    {member.role !== 'OWNER' && (
+                    {canChangeRoles && member.role !== 'OWNER' ? (
+                      <Select 
+                        value={member.role} 
+                        onValueChange={(value) => handleUpdateRole(member.userId, value)}
+                      >
+                        <SelectTrigger className="w-32">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          <SelectItem value="ADMIN">Admin</SelectItem>
+                          <SelectItem value="MEMBER">Member</SelectItem>
+                          <SelectItem value="VIEWER">Viewer</SelectItem>
+                        </SelectContent>
+                      </Select>
+                    ) : (
+                      <Badge className={getRoleBadgeColor(member.role)}>
+                        {member.role}
+                      </Badge>
+                    )}
+                    {canManageMembers && member.role !== 'OWNER' && (
                       <Button 
                         variant="ghost" 
                         size="icon"
@@ -307,7 +425,7 @@ export default function OrganizationMembers() {
                   </Button>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  Send this link to {inviteEmail}. They will be able to create an account and join your organization.
+                  Send this link to {inviteEmail}. They will be able to join your organization.
                 </p>
               </div>
               <DialogFooter>

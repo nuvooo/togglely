@@ -89,8 +89,8 @@ export class OrganizationsController {
       where: { email: body.email },
     });
 
+    // Check if already a member
     if (existingUser) {
-      // Add existing user directly
       const existingMember = await this.prisma.organizationMember.findFirst({
         where: { organizationId: id, userId: existingUser.id },
       });
@@ -98,16 +98,19 @@ export class OrganizationsController {
       if (existingMember) {
         throw new ForbiddenException('User is already a member');
       }
+    }
 
-      await this.prisma.organizationMember.create({
-        data: {
-          userId: existingUser.id,
-          organizationId: id,
-          role: (body.role || 'MEMBER') as any,
-        },
-      });
+    // Check for existing pending invite
+    const existingInvite = await this.prisma.organizationInvite.findFirst({
+      where: {
+        email: body.email,
+        organizationId: id,
+        acceptedAt: null,
+      },
+    });
 
-      return { success: true, message: 'User added to organization' };
+    if (existingInvite) {
+      throw new ForbiddenException('An invite is already pending for this email');
     }
 
     // Create invite token
@@ -195,6 +198,65 @@ export class OrganizationsController {
     });
 
     return { success: true };
+  }
+
+  // Update member role
+  @Patch(':id/members/:userId')
+  async updateMember(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @Body() body: { role: string },
+    @Req() req: any,
+  ) {
+    // Check permissions (only OWNER can change roles, ADMIN cannot change OWNER)
+    const membership = await this.prisma.organizationMember.findFirst({
+      where: {
+        userId: req.user.userId,
+        organizationId: id,
+        role: { in: ['OWNER', 'ADMIN'] },
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('Only owners and admins can update member roles');
+    }
+
+    // Get target member
+    const targetMember = await this.prisma.organizationMember.findFirst({
+      where: { organizationId: id, userId },
+    });
+
+    if (!targetMember) {
+      throw new ForbiddenException('Member not found');
+    }
+
+    // ADMIN cannot change OWNER's role
+    if (membership.role === 'ADMIN' && targetMember.role === 'OWNER') {
+      throw new ForbiddenException('Admins cannot modify the owner');
+    }
+
+    // Cannot change owner's role (only owner can transfer ownership)
+    if (targetMember.role === 'OWNER' && body.role !== 'OWNER') {
+      throw new ForbiddenException('Cannot change owner role. Transfer ownership instead.');
+    }
+
+    const updated = await this.prisma.organizationMember.update({
+      where: { id: targetMember.id },
+      data: { role: body.role as any },
+      include: { user: { select: { id: true, email: true, firstName: true, lastName: true } } },
+    });
+
+    return {
+      member: {
+        id: updated.id,
+        userId: updated.userId,
+        email: updated.user.email,
+        firstName: updated.user.firstName,
+        lastName: updated.user.lastName,
+        name: `${updated.user.firstName ?? ''} ${updated.user.lastName ?? ''}`.trim() || updated.user.email,
+        role: updated.role,
+      },
+    };
   }
 
   @Get(':id')
