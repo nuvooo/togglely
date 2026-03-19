@@ -7,9 +7,16 @@ import {
   ServerIcon,
   ChevronRightIcon,
   ChevronDownIcon,
-  PlayIcon
-} from '@heroicons/react/24/outline';
+  PlayIcon,
+  CopyIcon,
+  CheckIcon,
+  ShieldIcon,
+  UsersIcon,
+  SettingsIcon,
+  GlobeIcon
+} from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import { Button } from '@/components/ui/button';
 
 const sidebarNavigation = [
   {
@@ -25,127 +32,149 @@ const sidebarNavigation = [
     items: [
       { name: 'Feature Flags', href: '#flags' },
       { name: 'Environments', href: '#environments' },
-      { name: 'Targeting', href: '#targeting' },
-      { name: 'Multi-Tenancy', href: '#multitenancy' },
+      { name: 'Organizations', href: '#organizations' },
+      { name: 'Roles & Permissions', href: '#roles' },
     ],
   },
   {
-    title: 'SDKs',
+    title: 'SDKs & Integration',
     items: [
-      { name: 'JavaScript/TypeScript', href: '#sdk-js' },
+      { name: 'JavaScript/TypeScript SDK', href: '#sdk-js' },
+      { name: 'SDK Configuration', href: '#sdk-config' },
       { name: 'REST API', href: '#sdk-rest' },
     ],
   },
   {
     title: 'Deployment',
     items: [
-      { name: 'Docker', href: '#docker' },
-      { name: 'Coolify', href: '#coolify' },
+      { name: 'Docker Compose', href: '#docker' },
       { name: 'Environment Variables', href: '#env' },
+      { name: 'Coolify', href: '#coolify' },
     ],
   },
 ];
 
 const codeSnippets = {
-  docker: `version: '3.8'
+  docker: `git clone https://github.com/nuvooo/togglely.git
+cd togglely
 
-services:
-  togglely:
-    image: ghcr.io/nuvooo/togglely:latest
-    ports:
-      - "3000:80"
-    environment:
-      - NODE_ENV=production
-      - DATABASE_URL=mongodb://mongo:27017/togglely
-      - REDIS_URL=redis://redis:6379
-      - JWT_SECRET=your-secret-key`,
+# Copy environment file
+cp .env.example .env
 
-  js: `import { Togglely } from '@togglely/sdk';
+# Edit .env with your settings
+# Then start with Docker Compose
+docker-compose up -d
 
-const togglely = new Togglely({
-  apiKey: 'your-sdk-key'
+# The app will be available at http://localhost`,
+
+  js: `import { TogglelyClient } from '@togglely/sdk-core';
+
+const client = new TogglelyClient({
+  apiKey: 'your-sdk-key',
+  project: 'my-app',
+  environment: 'production',
+  // Optional: Custom base URL for self-hosted
+  baseUrl: 'https://api.togglely.de'
 });
 
-// Check boolean flag
-const isEnabled = await togglely.getBooleanFlag('new-feature');
+// Initialize the client
+await client.init();
 
-// Get string value
-const theme = await togglely.getStringFlag('theme-color');
+// Check if feature is enabled
+const isEnabled = await client.getValue('new-dashboard');
 
-// Get number value  
-const maxItems = await togglely.getNumberFlag('max-items');
+// With user context for targeting
+const theme = await client.getValue('theme', {
+  userId: 'user-123',
+  plan: 'premium',
+  region: 'eu'
+});`,
 
-// Get JSON value
-const config = await togglely.getJSONFlag('ui-config');`,
-
-  rest: `curl -X POST https://your-togglely.com/api/flags/evaluate \\
-  -H "Authorization: Bearer YOUR_API_KEY" \\
-  -H "Content-Type: application/json" \\
+  rest: `curl -X POST https://api.togglely.de/api/sdk/flags \
+  -H "Authorization: Bearer YOUR_API_KEY" \
+  -H "Content-Type: application/json" \
   -d '{
-    "flagKey": "new-feature",
+    "keys": ["new-feature", "theme-color"],
     "context": {
       "userId": "user-123",
       "email": "user@example.com"
     }
-  }'`
+  }'`,
+
+  env: `# Required
+DATABASE_URL=mongodb://mongodb:27017/togglely?replicaSet=rs0
+JWT_SECRET=your-super-secret-jwt-key
+
+# Optional - for email notifications
+SMTP_HOST=smtp.gmail.com
+SMTP_PORT=587
+SMTP_USER=your-email@gmail.com
+SMTP_PASS=your-app-password
+SMTP_FROM=noreply@togglely.de
+
+# Frontend URL for invite links
+FRONTEND_URL=https://togglely.de`
 };
+
+function CodeBlock({ code, language }: { code: string; language: string }) {
+  const [copied, setCopied] = useState(false);
+
+  const copyToClipboard = async () => {
+    await navigator.clipboard.writeText(code);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  return (
+    <div className="relative group rounded-lg overflow-hidden bg-gray-950 border border-gray-800 my-4">
+      <div className="flex items-center justify-between px-4 py-2 bg-gray-900/50 border-b border-gray-800">
+        <span className="text-xs font-mono text-gray-400">{language}</span>
+        <Button
+          variant="ghost"
+          size="sm"
+          onClick={copyToClipboard}
+          className="h-8 text-gray-400 hover:text-white"
+        >
+          {copied ? <CheckIcon className="h-4 w-4" /> : <CopyIcon className="h-4 w-4" />}
+          <span className="ml-2 text-xs">{copied ? 'Copied!' : 'Copy'}</span>
+        </Button>
+      </div>
+      <pre className="p-4 overflow-x-auto text-sm leading-relaxed text-gray-300 font-mono">
+        <code>{code}</code>
+      </pre>
+    </div>
+  );
+}
 
 export default function Docs() {
   const [activeSection, setActiveSection] = useState('introduction');
   const [expandedSections, setExpandedSections] = useState<string[]>(['Getting Started']);
+  const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const observerRef = useRef<IntersectionObserver | null>(null);
 
   useEffect(() => {
-    // Get all section IDs from sidebar navigation
     const sectionIds = sidebarNavigation.flatMap(section => 
       section.items.map(item => item.href.replace('#', ''))
     );
 
-    // Create IntersectionObserver
     observerRef.current = new IntersectionObserver(
       (entries) => {
-        // Find the most visible section
-        const visibleEntries = entries.filter(entry => entry.isIntersecting);
-        if (visibleEntries.length > 0) {
-          // Use the one with highest intersection ratio
-          const mostVisible = visibleEntries.reduce((prev, current) =>
-            prev.intersectionRatio > current.intersectionRatio ? prev : current
-          );
-          setActiveSection(mostVisible.target.id);
-        }
+        entries.forEach((entry) => {
+          if (entry.isIntersecting) {
+            setActiveSection(entry.target.id);
+          }
+        });
       },
-      {
-        rootMargin: '-20% 0px -60% 0px', // Trigger when section is near top
-        threshold: [0, 0.25, 0.5, 0.75, 1]
-      }
+      { rootMargin: '-20% 0% -80% 0%' }
     );
 
-    // Observe all sections
-    sectionIds.forEach(id => {
+    sectionIds.forEach((id) => {
       const element = document.getElementById(id);
-      if (element && observerRef.current) {
-        observerRef.current.observe(element);
-      }
+      if (element) observerRef.current?.observe(element);
     });
 
-    return () => {
-      if (observerRef.current) {
-        observerRef.current.disconnect();
-      }
-    };
+    return () => observerRef.current?.disconnect();
   }, []);
-
-  // Auto-expand section when it becomes active
-  useEffect(() => {
-    sidebarNavigation.forEach(section => {
-      const hasActiveItem = section.items.some(item => 
-        item.href.replace('#', '') === activeSection
-      );
-      if (hasActiveItem && !expandedSections.includes(section.title)) {
-        setExpandedSections(prev => [...prev, section.title]);
-      }
-    });
-  }, [activeSection]);
 
   const toggleSection = (title: string) => {
     setExpandedSections(prev => 
@@ -155,63 +184,55 @@ export default function Docs() {
     );
   };
 
+  const scrollToSection = (href: string) => {
+    const element = document.querySelector(href);
+    if (element) {
+      element.scrollIntoView({ behavior: 'smooth' });
+      setMobileMenuOpen(false);
+    }
+  };
+
   return (
     <div className="min-h-screen bg-background">
       {/* Header */}
-      <header className="sticky top-0 z-50 bg-background border-b border-border">
-        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
-          <div className="flex h-16 items-center justify-between">
-            <div className="flex items-center gap-2">
-              <Link to="/" className="flex items-center gap-2">
-                <span className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary">
-                  <FlagIcon className="h-5 w-5 text-primary-foreground" />
-                </span>
-                <span className="text-lg font-bold text-foreground">Togglely</span>
-              </Link>
-              <span className="text-muted-foreground">|</span>
-              <span className="text-sm text-muted-foreground">Documentation</span>
-            </div>
-            <div className="flex items-center gap-4">
-              <ThemeToggle />
-              <a 
-                href="/login?demo=true" 
-                className="hidden sm:flex items-center gap-1 text-sm text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400"
-              >
-                <PlayIcon className="h-4 w-4" />
-                Live Demo
-              </a>
-              <a 
-                href="https://github.com/nuvooo/togglely/" 
-                target="_blank" 
-                rel="noopener noreferrer"
-                className="flex items-center gap-1 text-sm text-gray-600 dark:text-gray-400 hover:text-primary-600 dark:hover:text-primary-400"
-              >
-                <svg className="h-4 w-4" fill="currentColor" viewBox="0 0 24 24">
-                  <path fillRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clipRule="evenodd" />
-                </svg>
-                GitHub
-              </a>
-              <Link 
-                to="/login"
-                className="rounded-md bg-primary-600 px-3 py-1.5 text-sm font-semibold text-white hover:bg-primary-500"
-              >
-                Sign In
-              </Link>
-            </div>
+      <header className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur">
+        <div className="flex h-16 items-center justify-between px-6 lg:px-8 max-w-7xl mx-auto">
+          <div className="flex items-center gap-4">
+            <Link to="/" className="flex items-center gap-2">
+              <div className="flex h-9 w-9 items-center justify-center rounded-xl bg-primary">
+                <FlagIcon className="h-5 w-5 text-primary-foreground" />
+              </div>
+              <span className="text-xl font-bold">Togglely</span>
+            </Link>
+            <span className="hidden sm:block text-muted-foreground">/</span>
+            <span className="hidden sm:block text-muted-foreground">Documentation</span>
+          </div>
+          <div className="flex items-center gap-4">
+            <ThemeToggle />
+            <Link to="/login?demo=true" className="hidden sm:inline-flex items-center gap-2 text-sm font-medium text-muted-foreground hover:text-foreground">
+              <PlayIcon className="h-4 w-4" />
+              Live Demo
+            </Link>
+            <Link 
+              to="/register" 
+              className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground hover:bg-primary/90"
+            >
+              Get Started
+            </Link>
           </div>
         </div>
       </header>
 
-      <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+      <div className="mx-auto max-w-7xl px-6 lg:px-8">
         <div className="flex gap-8 py-8">
           {/* Sidebar */}
           <aside className="hidden lg:block w-64 flex-shrink-0">
-            <nav className="sticky top-24 space-y-1 max-h-[calc(100vh-8rem)] overflow-y-auto">
+            <nav className="sticky top-24 space-y-1">
               {sidebarNavigation.map((section) => (
                 <div key={section.title} className="mb-4">
                   <button
                     onClick={() => toggleSection(section.title)}
-                    className="flex w-full items-center justify-between py-2 text-sm font-semibold text-foreground"
+                    className="flex w-full items-center justify-between py-2 text-sm font-semibold text-foreground hover:text-primary transition-colors"
                   >
                     {section.title}
                     {expandedSections.includes(section.title) ? (
@@ -221,22 +242,21 @@ export default function Docs() {
                     )}
                   </button>
                   {expandedSections.includes(section.title) && (
-                    <ul className="ml-2 space-y-1 border-l border-border">
+                    <div className="ml-2 mt-1 space-y-1 border-l border-border pl-4">
                       {section.items.map((item) => (
-                        <li key={item.name}>
-                          <a
-                            href={item.href}
-                            className={`block py-1 pl-4 text-sm transition-colors ${
-                              activeSection === item.href.replace('#', '')
-                                ? 'text-primary font-medium border-l-2 border-primary -ml-[2px]'
-                                : 'text-muted-foreground hover:text-foreground'
-                            }`}
-                          >
-                            {item.name}
-                          </a>
-                        </li>
+                        <button
+                          key={item.name}
+                          onClick={() => scrollToSection(item.href)}
+                          className={`block w-full text-left py-1.5 text-sm transition-colors ${
+                            activeSection === item.href.replace('#', '')
+                              ? 'text-primary font-medium'
+                              : 'text-muted-foreground hover:text-foreground'
+                          }`}
+                        >
+                          {item.name}
+                        </button>
                       ))}
-                    </ul>
+                    </div>
                   )}
                 </div>
               ))}
@@ -244,232 +264,350 @@ export default function Docs() {
           </aside>
 
           {/* Main Content */}
-          <main className="flex-1 min-w-0">
-            <div className="prose prose-slate max-w-none">
-              <h1 id="introduction" className="text-4xl font-bold text-foreground mb-6">
-                Togglely Documentation
-              </h1>
+          <main className="flex-1 min-w-0 max-w-3xl">
+            <div className="prose prose-gray dark:prose-invert max-w-none">
               
-              <p className="text-lg text-muted-foreground mb-8">
-                Welcome to Togglely! This guide will help you get started with feature flags, 
-                from basic setup to advanced targeting and multi-tenant deployments.
-              </p>
-
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4 mb-12 not-prose">
-                <a href="#quickstart" className="group block p-6 bg-muted rounded-xl border border-border hover:border-primary hover:shadow-md transition-all">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="p-2 bg-primary/10 rounded-lg">
-                      <BookOpenIcon className="h-5 w-5 text-primary" />
-                    </div>
-                    <h3 className="font-semibold text-foreground group-hover:text-primary">Quick Start</h3>
-                  </div>
-                  <p className="text-sm text-muted-foreground">Get up and running with Togglely in 5 minutes</p>
-                </a>
-                
-                <a href="#sdk-js" className="group block p-6 bg-muted rounded-xl border border-border hover:border-primary hover:shadow-md transition-all">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="p-2 bg-primary/10 rounded-lg">
-                      <CodeBracketIcon className="h-5 w-5 text-primary" />
-                    </div>
-                    <h3 className="font-semibold text-foreground group-hover:text-primary">SDKs</h3>
-                  </div>
-                  <p className="text-sm text-muted-foreground">Integrate Togglely into your application</p>
-                </a>
-                
-                <a href="#docker" className="group block p-6 bg-muted rounded-xl border border-border hover:border-primary hover:shadow-md transition-all">
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="p-2 bg-primary/10 rounded-lg">
-                      <ServerIcon className="h-5 w-5 text-primary" />
-                    </div>
-                    <h3 className="font-semibold text-foreground group-hover:text-primary">Deployment</h3>
-                  </div>
-                  <p className="text-sm text-muted-foreground">Deploy with Docker or Coolify</p>
-                </a>
-                
-                <a 
-                  href="https://github.com/nuvooo/togglely/" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="group block p-6 bg-muted rounded-xl border border-border hover:border-primary hover:shadow-md transition-all"
-                >
-                  <div className="flex items-center gap-3 mb-3">
-                    <div className="p-2 bg-primary/10 rounded-lg">
-                      <svg className="h-5 w-5 text-primary" fill="currentColor" viewBox="0 0 24 24">
-                        <path fillRule="evenodd" d="M12 2C6.477 2 2 6.484 2 12.017c0 4.425 2.865 8.18 6.839 9.504.5.092.682-.217.682-.483 0-.237-.008-.868-.013-1.703-2.782.605-3.369-1.343-3.369-1.343-.454-1.158-1.11-1.466-1.11-1.466-.908-.62.069-.608.069-.608 1.003.07 1.531 1.032 1.531 1.032.892 1.53 2.341 1.088 2.91.832.092-.647.35-1.088.636-1.338-2.22-.253-4.555-1.113-4.555-4.951 0-1.093.39-1.988 1.029-2.688-.103-.253-.446-1.272.098-2.65 0 0 .84-.27 2.75 1.026A9.564 9.564 0 0112 6.844c.85.004 1.705.115 2.504.337 1.909-1.296 2.747-1.027 2.747-1.027.546 1.379.202 2.398.1 2.651.64.7 1.028 1.595 1.028 2.688 0 3.848-2.339 4.695-4.566 4.943.359.309.678.92.678 1.855 0 1.338-.012 2.419-.012 2.747 0 .268.18.58.688.482A10.019 10.019 0 0022 12.017C22 6.484 17.522 2 12 2z" clipRule="evenodd" />
-                      </svg>
-                    </div>
-                    <h3 className="font-semibold text-foreground group-hover:text-primary">GitHub</h3>
-                  </div>
-                  <p className="text-sm text-muted-foreground">View source code and contribute</p>
-                </a>
-              </div>
-
-              <h2 id="quickstart" className="text-2xl font-bold text-foreground mt-12 mb-4">
-                Quick Start
-              </h2>
-              
-              <p className="text-gray-600 dark:text-gray-400 mb-4">
-                The fastest way to try Togglely is using our live demo or running it locally with Docker.
-              </p>
-
-              <h3 className="text-xl font-semibold text-foreground mt-8 mb-3">Option 1: Live Demo</h3>
-              <p className="text-gray-600 dark:text-gray-400 mb-4">
-                Try Togglely instantly without installation{' '}
-                <Link to="/login?demo=true" className="text-primary hover:underline">
-                  here
-                </Link>
-              </p>
-
-              <h3 className="text-xl font-semibold text-foreground mt-8 mb-3">Option 2: Docker Compose</h3>
-              <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto">
-                <pre className="text-sm text-gray-300">
-                  <code>{codeSnippets.docker}</code>
-                </pre>
-              </div>
-
-              <h2 id="installation" className="text-2xl font-bold text-gray-900 dark:text-white mt-12 mb-4">
-                Installation
-              </h2>
-              
-              <h3 className="text-xl font-semibold text-foreground mt-8 mb-3">System Requirements</h3>
-              <ul className="list-disc list-inside text-muted-foreground space-y-2">
-                <li>Node.js 20+ (for development)</li>
-                <li>MongoDB 7+ with replica set</li>
-                <li>Redis 7+</li>
-                <li>Docker & Docker Compose (recommended)</li>
-              </ul>
-
-              <h2 id="flags" className="text-2xl font-bold text-gray-900 dark:text-white mt-12 mb-4">
-                Feature Flags
-              </h2>
-              
-              <p className="text-gray-600 dark:text-gray-400 mb-4">
-                Feature flags are the core concept of Togglely. They allow you to control feature availability 
-                without deploying new code.
-              </p>
-
-              <h3 className="text-xl font-semibold text-foreground mt-8 mb-3">Flag Types</h3>
-              <ul className="list-disc list-inside text-muted-foreground space-y-2">
-                <li><strong>Boolean:</strong> Simple on/off switches (true/false)</li>
-                <li><strong>String:</strong> Text values like theme colors or messages</li>
-                <li><strong>Number:</strong> Numeric values like limits or thresholds</li>
-                <li><strong>JSON:</strong> Complex configuration objects</li>
-              </ul>
-
-              <h2 id="environments" className="text-2xl font-bold text-gray-900 dark:text-white mt-12 mb-4">
-                Environments
-              </h2>
-              
-              <p className="text-gray-600 dark:text-gray-400 mb-4">
-                Environments allow you to manage flags differently across Development, Staging, and Production. 
-                Each environment has its own set of flag values.
-              </p>
-
-              <h2 id="multitenancy" className="text-2xl font-bold text-gray-900 dark:text-white mt-12 mb-4">
-                Multi-Tenancy
-              </h2>
-              
-              <p className="text-gray-600 dark:text-gray-400 mb-4">
-                Togglely supports multi-tenant projects through the concept of <strong>Brands</strong>. 
-                This is perfect for SaaS applications where different customers need different feature configurations.
-              </p>
-              
-              <div className="bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900/50 rounded-lg p-4 mt-4">
-                <p className="text-sm text-amber-800 dark:text-amber-400">
-                  <strong>Note:</strong> When converting a project from Multi-Tenant to Single-Tenant, 
-                  all brand-specific configurations will be deleted.
+              {/* Introduction */}
+              <section id="introduction" className="mb-16">
+                <h1 className="text-4xl font-bold tracking-tight mb-4">Introduction</h1>
+                <p className="text-lg text-muted-foreground leading-relaxed">
+                  Togglely is an open-source feature flag management platform designed for modern development teams. 
+                  It allows you to deploy code more frequently and safely by decoupling feature releases from code deployments.
                 </p>
-              </div>
+                
+                <div className="mt-8 grid grid-cols-1 sm:grid-cols-2 gap-4 not-prose">
+                  <div className="p-4 rounded-lg border border-border bg-card">
+                    <ShieldIcon className="h-6 w-6 text-primary mb-2" />
+                    <h3 className="font-semibold">Self-Hosted</h3>
+                    <p className="text-sm text-muted-foreground">Your data stays in your infrastructure</p>
+                  </div>
+                  <div className="p-4 rounded-lg border border-border bg-card">
+                    <CodeBracketIcon className="h-6 w-6 text-primary mb-2" />
+                    <h3 className="font-semibold">Open Source</h3>
+                    <p className="text-sm text-muted-foreground">MIT Licensed, fully customizable</p>
+                  </div>
+                  <div className="p-4 rounded-lg border border-border bg-card">
+                    <UsersIcon className="h-6 w-6 text-primary mb-2" />
+                    <h3 className="font-semibold">Multi-Tenant</h3>
+                    <p className="text-sm text-muted-foreground">Organizations & Brands support</p>
+                  </div>
+                  <div className="p-4 rounded-lg border border-border bg-card">
+                    <ServerIcon className="h-6 w-6 text-primary mb-2" />
+                    <h3 className="font-semibold">Enterprise Ready</h3>
+                    <p className="text-sm text-muted-foreground">RBAC, audit logs, API keys</p>
+                  </div>
+                </div>
+              </section>
 
-              <h2 id="sdk-js" className="text-2xl font-bold text-gray-900 dark:text-white mt-12 mb-4">
-                JavaScript/TypeScript SDK
-              </h2>
-              
-              <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto">
-                <pre className="text-sm text-gray-300">
-                  <code>{codeSnippets.js}</code>
-                </pre>
-              </div>
+              {/* Quick Start */}
+              <section id="quickstart" className="mb-16">
+                <h2 className="text-3xl font-bold tracking-tight mb-4">Quick Start</h2>
+                <p className="text-muted-foreground mb-6">
+                  Get Togglely running locally in under 5 minutes using Docker Compose.
+                </p>
 
-              <h2 id="sdk-rest" className="text-2xl font-bold text-gray-900 dark:text-white mt-12 mb-4">
-                REST API
-              </h2>
-              
-              <div className="bg-gray-900 rounded-lg p-4 overflow-x-auto">
-                <pre className="text-sm text-gray-300">
-                  <code>{codeSnippets.rest}</code>
-                </pre>
-              </div>
+                <h3 className="text-xl font-semibold mt-8 mb-4">1. Clone and Configure</h3>
+                <CodeBlock code={codeSnippets.docker} language="bash" />
 
-              <h2 id="docker" className="text-2xl font-bold text-gray-900 dark:text-white mt-12 mb-4">
-                Docker Deployment
-              </h2>
-              
-              <p className="text-gray-600 dark:text-gray-400 mb-4">
-                The recommended way to deploy Togglely is using Docker Compose. 
-                This sets up the complete stack including MongoDB and Redis.
-              </p>
+                <h3 className="text-xl font-semibold mt-8 mb-4">2. Install SDK</h3>
+                <CodeBlock code={`npm install @togglely/sdk-core
+# or
+yarn add @togglely/sdk-core`} language="bash" />
 
-              <h2 id="coolify" className="text-2xl font-bold text-gray-900 dark:text-white mt-12 mb-4">
-                Coolify Deployment
-              </h2>
-              
-              <p className="text-gray-600 dark:text-gray-400 mb-4">
-                Togglely is ready for Coolify deployment. Use the provided <code>docker-compose.coolify.yml</code> 
-                for easy self-hosting on your own infrastructure.
-              </p>
+                <h3 className="text-xl font-semibold mt-8 mb-4">3. Use in Your App</h3>
+                <CodeBlock code={codeSnippets.js} language="typescript" />
+              </section>
 
-              <h2 id="env" className="text-2xl font-bold text-gray-900 dark:text-white mt-12 mb-4">
-                Environment Variables
-              </h2>
-              
-              <table className="min-w-full divide-y divide-border mt-4">
-                <thead>
-                  <tr>
-                    <th className="py-2 text-left text-sm font-semibold text-foreground">Variable</th>
-                    <th className="py-2 text-left text-sm font-semibold text-foreground">Description</th>
-                    <th className="py-2 text-left text-sm font-semibold text-foreground">Required</th>
-                  </tr>
-                </thead>
-                <tbody className="divide-y divide-border">
-                  <tr>
-                    <td className="py-2 text-sm font-mono text-foreground">DATABASE_URL</td>
-                    <td className="py-2 text-sm text-muted-foreground">MongoDB connection string</td>
-                    <td className="py-2 text-sm text-muted-foreground">Yes</td>
-                  </tr>
-                  <tr>
-                    <td className="py-2 text-sm font-mono text-foreground">REDIS_URL</td>
-                    <td className="py-2 text-sm text-muted-foreground">Redis connection string</td>
-                    <td className="py-2 text-sm text-muted-foreground">Yes</td>
-                  </tr>
-                  <tr>
-                    <td className="py-2 text-sm font-mono text-foreground">JWT_SECRET</td>
-                    <td className="py-2 text-sm text-muted-foreground">Secret for JWT tokens</td>
-                    <td className="py-2 text-sm text-muted-foreground">Yes</td>
-                  </tr>
-                  <tr>
-                    <td className="py-2 text-sm font-mono text-foreground">SMTP_HOST</td>
-                    <td className="py-2 text-sm text-muted-foreground">SMTP server for emails</td>
-                    <td className="py-2 text-sm text-muted-foreground">Optional</td>
-                  </tr>
-                </tbody>
-              </table>
+              {/* Installation */}
+              <section id="installation" className="mb-16">
+                <h2 className="text-3xl font-bold tracking-tight mb-4">Installation</h2>
+                
+                <h3 className="text-xl font-semibold mt-8 mb-4">Prerequisites</h3>
+                <ul className="list-disc list-inside space-y-2 text-muted-foreground">
+                  <li>Docker and Docker Compose</li>
+                  <li>Node.js 18+ (for SDK development)</li>
+                  <li>MongoDB 5.0+ (or use the included Docker container)</li>
+                  <li>Redis 6+ (optional, for caching)</li>
+                </ul>
 
-              <div className="mt-12 p-6 bg-muted rounded-xl border border-border">
-                <h3 className="text-lg font-semibold text-foreground mb-2">Need Help?</h3>
+                <h3 className="text-xl font-semibold mt-8 mb-4">Configuration</h3>
                 <p className="text-muted-foreground mb-4">
-                  If you need assistance or want to report an issue, visit our GitHub repository.
+                  Create a <code>.env</code> file with the following variables:
                 </p>
-                <a 
-                  href="https://github.com/nuvooo/togglely/issues" 
-                  target="_blank" 
-                  rel="noopener noreferrer"
-                  className="inline-flex items-center gap-2 text-primary-600 dark:text-primary-400 hover:text-primary-700 dark:hover:text-primary-300 font-medium"
-                >
-                  Open an Issue on GitHub
-                  <ChevronRightIcon className="h-4 w-4" />
-                </a>
-              </div>
+                <CodeBlock code={codeSnippets.env} language="env" />
+              </section>
+
+              {/* Feature Flags */}
+              <section id="flags" className="mb-16">
+                <h2 className="text-3xl font-bold tracking-tight mb-4">Feature Flags</h2>
+                <p className="text-muted-foreground mb-6">
+                  Feature flags (or feature toggles) allow you to enable or disable functionality without deploying new code.
+                </p>
+
+                <h3 className="text-xl font-semibold mt-8 mb-4">Flag Types</h3>
+                <ul className="space-y-3">
+                  <li className="flex items-start gap-3">
+                    <span className="font-mono text-sm bg-primary/10 text-primary px-2 py-1 rounded">BOOLEAN</span>
+                    <span className="text-muted-foreground">Simple on/off toggle</span>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <span className="font-mono text-sm bg-primary/10 text-primary px-2 py-1 rounded">STRING</span>
+                    <span className="text-muted-foreground">Text values like themes, configs</span>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <span className="font-mono text-sm bg-primary/10 text-primary px-2 py-1 rounded">NUMBER</span>
+                    <span className="text-muted-foreground">Numeric values for limits, thresholds</span>
+                  </li>
+                  <li className="flex items-start gap-3">
+                    <span className="font-mono text-sm bg-primary/10 text-primary px-2 py-1 rounded">JSON</span>
+                    <span className="text-muted-foreground">Complex configuration objects</span>
+                  </li>
+                </ul>
+              </section>
+
+              {/* Environments */}
+              <section id="environments" className="mb-16">
+                <h2 className="text-3xl font-bold tracking-tight mb-4">Environments</h2>
+                <p className="text-muted-foreground mb-6">
+                  Environments allow you to manage flags separately for different stages of your deployment pipeline.
+                </p>
+
+                <h3 className="text-xl font-semibold mt-8 mb-4">Default Environments</h3>
+                <p className="text-muted-foreground">
+                  Each project comes with three default environments:
+                </p>
+                <ul className="list-disc list-inside space-y-2 text-muted-foreground mt-4">
+                  <li><strong>Development</strong> - For local development and testing</li>
+                  <li><strong>Staging</strong> - For pre-production validation</li>
+                  <li><strong>Production</strong> - For live users</li>
+                </ul>
+
+                <div className="mt-6 p-4 rounded-lg bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-900">
+                  <p className="text-sm text-amber-800 dark:text-amber-400">
+                    <strong>Tip:</strong> Environment-specific values override the default flag value. 
+                    This lets you enable a feature in development while keeping it off in production.
+                  </p>
+                </div>
+              </section>
+
+              {/* Organizations */}
+              <section id="organizations" className="mb-16">
+                <h2 className="text-3xl font-bold tracking-tight mb-4">Organizations</h2>
+                <p className="text-muted-foreground mb-6">
+                  Organizations are the top-level container in Togglely. They contain projects, members, and API keys.
+                </p>
+
+                <h3 className="text-xl font-semibold mt-8 mb-4">Creating an Organization</h3>
+                <ol className="list-decimal list-inside space-y-2 text-muted-foreground">
+                  <li>Sign up or log in to Togglely</li>
+                  <li>Click "New Organization" on the organizations page</li>
+                  <li>Enter a name and unique slug</li>
+                  <li>Invite team members</li>
+                </ol>
+
+                <h3 className="text-xl font-semibold mt-8 mb-4">Projects</h3>
+                <p className="text-muted-foreground">
+                  Each organization can have multiple projects. Projects contain feature flags and environments.
+                  There are two project types:
+                </p>
+                <ul className="list-disc list-inside space-y-2 text-muted-foreground mt-4">
+                  <li><strong>Single</strong> - Standard project with feature flags</li>
+                  <li><strong>Multi</strong> - Supports multiple brands/tenants with brand-specific flags</li>
+                </ul>
+              </section>
+
+              {/* Roles */}
+              <section id="roles" className="mb-16">
+                <h2 className="text-3xl font-bold tracking-tight mb-4">Roles & Permissions</h2>
+                <p className="text-muted-foreground mb-6">
+                  Togglely uses role-based access control (RBAC) to manage permissions within organizations.
+                </p>
+
+                <div className="space-y-4">
+                  <div className="p-4 rounded-lg border border-border">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="font-semibold">OWNER</span>
+                      <span className="text-xs bg-purple-100 text-purple-800 dark:bg-purple-900 dark:text-purple-300 px-2 py-0.5 rounded-full">Full Access</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Can manage organization settings, delete organization, manage billing, and all other actions.
+                    </p>
+                  </div>
+                  <div className="p-4 rounded-lg border border-border">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="font-semibold">ADMIN</span>
+                      <span className="text-xs bg-blue-100 text-blue-800 dark:bg-blue-900 dark:text-blue-300 px-2 py-0.5 rounded-full">Manager</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Can create projects, manage members, manage API keys, and configure settings. Cannot delete organization.
+                    </p>
+                  </div>
+                  <div className="p-4 rounded-lg border border-border">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="font-semibold">MEMBER</span>
+                      <span className="text-xs bg-green-100 text-green-800 dark:bg-green-900 dark:text-green-300 px-2 py-0.5 rounded-full">Developer</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Can create and manage feature flags, toggle values. Cannot manage organization settings or members.
+                    </p>
+                  </div>
+                  <div className="p-4 rounded-lg border border-border">
+                    <div className="flex items-center gap-2 mb-2">
+                      <span className="font-semibold">VIEWER</span>
+                      <span className="text-xs bg-gray-100 text-gray-800 dark:bg-gray-800 dark:text-gray-300 px-2 py-0.5 rounded-full">Read Only</span>
+                    </div>
+                    <p className="text-sm text-muted-foreground">
+                      Can view flags and their values. Cannot make any changes.
+                    </p>
+                  </div>
+                </div>
+              </section>
+
+              {/* SDK */}
+              <section id="sdk-js" className="mb-16">
+                <h2 className="text-3xl font-bold tracking-tight mb-4">JavaScript/TypeScript SDK</h2>
+                <p className="text-muted-foreground mb-6">
+                  The official JavaScript SDK provides a simple interface for evaluating feature flags with built-in caching and offline support.
+                </p>
+
+                <h3 className="text-xl font-semibold mt-8 mb-4">Installation</h3>
+                <CodeBlock code={`npm install @togglely/sdk-core`} language="bash" />
+
+                <h3 className="text-xl font-semibold mt-8 mb-4">Basic Usage</h3>
+                <CodeBlock code={codeSnippets.js} language="typescript" />
+              </section>
+
+              {/* SDK Config */}
+              <section id="sdk-config" className="mb-16">
+                <h2 className="text-3xl font-bold tracking-tight mb-4">SDK Configuration</h2>
+                
+                <h3 className="text-xl font-semibold mt-8 mb-4">Configuration Options</h3>
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border">
+                      <th className="text-left py-2 font-semibold">Option</th>
+                      <th className="text-left py-2 font-semibold">Type</th>
+                      <th className="text-left py-2 font-semibold">Description</th>
+                    </tr>
+                  </thead>
+                  <tbody className="text-muted-foreground">
+                    <tr className="border-b border-border/50">
+                      <td className="py-2 font-mono">apiKey</td>
+                      <td className="py-2">string</td>
+                      <td className="py-2">Your SDK API key</td>
+                    </tr>
+                    <tr className="border-b border-border/50">
+                      <td className="py-2 font-mono">project</td>
+                      <td className="py-2">string</td>
+                      <td className="py-2">Project identifier</td>
+                    </tr>
+                    <tr className="border-b border-border/50">
+                      <td className="py-2 font-mono">environment</td>
+                      <td className="py-2">string</td>
+                      <td className="py-2">Environment name (dev, staging, prod)</td>
+                    </tr>
+                    <tr className="border-b border-border/50">
+                      <td className="py-2 font-mono">baseUrl</td>
+                      <td className="py-2">string</td>
+                      <td className="py-2">Custom API base URL (for self-hosted)</td>
+                    </tr>
+                    <tr className="border-b border-border/50">
+                      <td className="py-2 font-mono">refreshInterval</td>
+                      <td className="py-2">number</td>
+                      <td className="py-2">Cache refresh interval in ms (default: 60000)</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </section>
+
+              {/* REST API */}
+              <section id="sdk-rest" className="mb-16">
+                <h2 className="text-3xl font-bold tracking-tight mb-4">REST API</h2>
+                <p className="text-muted-foreground mb-6">
+                  The REST API allows you to evaluate feature flags from any language or platform.
+                </p>
+
+                <h3 className="text-xl font-semibold mt-8 mb-4">Evaluate Flags</h3>
+                <CodeBlock code={codeSnippets.rest} language="bash" />
+
+                <h3 className="text-xl font-semibold mt-8 mb-4">Response</h3>
+                <CodeBlock code={`{
+  "flags": {
+    "new-feature": {
+      "key": "new-feature",
+      "enabled": true,
+      "value": true,
+      "type": "BOOLEAN"
+    },
+    "theme-color": {
+      "key": "theme-color",
+      "enabled": true,
+      "value": "dark",
+      "type": "STRING"
+    }
+  }
+}`} language="json" />
+              </section>
+
+              {/* Docker */}
+              <section id="docker" className="mb-16">
+                <h2 className="text-3xl font-bold tracking-tight mb-4">Docker Compose</h2>
+                <p className="text-muted-foreground mb-6">
+                  The easiest way to run Togglely is with Docker Compose. This sets up the backend, frontend, MongoDB, and Redis.
+                </p>
+
+                <CodeBlock code={codeSnippets.docker} language="bash" />
+
+                <h3 className="text-xl font-semibold mt-8 mb-4">Services</h3>
+                <ul className="list-disc list-inside space-y-2 text-muted-foreground">
+                  <li><strong>frontend</strong> - React app served via Nginx (port 80)</li>
+                  <li><strong>backend</strong> - NestJS API (port 4000)</li>
+                  <li><strong>mongodb</strong> - Database for storing flags and configs</li>
+                  <li><strong>redis</strong> - Caching layer (optional)</li>
+                </ul>
+              </section>
+
+              {/* Environment Variables */}
+              <section id="env" className="mb-16">
+                <h2 className="text-3xl font-bold tracking-tight mb-4">Environment Variables</h2>
+                <CodeBlock code={codeSnippets.env} language="env" />
+
+                <h3 className="text-xl font-semibold mt-8 mb-4">Required Variables</h3>
+                <ul className="list-disc list-inside space-y-2 text-muted-foreground">
+                  <li><code className="bg-muted px-1 rounded">DATABASE_URL</code> - MongoDB connection string</li>
+                  <li><code className="bg-muted px-1 rounded">JWT_SECRET</code> - Secret for signing JWT tokens</li>
+                </ul>
+
+                <h3 className="text-xl font-semibold mt-8 mb-4">Email Configuration (Optional)</h3>
+                <p className="text-muted-foreground">
+                  Configure SMTP settings to enable email notifications for invites and password resets.
+                </p>
+              </section>
+
+              {/* Coolify */}
+              <section id="coolify" className="mb-16">
+                <h2 className="text-3xl font-bold tracking-tight mb-4">Deploying with Coolify</h2>
+                <p className="text-muted-foreground mb-6">
+                  Coolify is an open-source alternative to Heroku/Netlify that makes self-hosting easy.
+                </p>
+
+                <h3 className="text-xl font-semibold mt-8 mb-4">One-Click Deploy</h3>
+                <ol className="list-decimal list-inside space-y-3 text-muted-foreground">
+                  <li>Install Coolify on your server</li>
+                  <li>Create a new resource and select "Public Repository"</li>
+                  <li>Enter <code>https://github.com/nuvooo/togglely</code></li>
+                  <li>Configure environment variables</li>
+                  <li>Deploy!</li>
+                </ol>
+
+                <div className="mt-6 p-4 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900">
+                  <p className="text-sm text-blue-800 dark:text-blue-400">
+                    <strong>Note:</strong> Make sure to set up MongoDB and Redis as separate services in Coolify, 
+                    or use managed services like MongoDB Atlas.
+                  </p>
+                </div>
+              </section>
+
             </div>
           </main>
         </div>
