@@ -152,7 +152,7 @@ export default function OrganizationMembers() {
     if (!orgId) return;
 
     try {
-      const response = await api.patch(`/organizations/${orgId}/members/${userId}`, {
+      await api.patch(`/organizations/${orgId}/members/${userId}`, {
         role: newRole,
       });
       setMembers(members.map(m => m.userId === userId ? { ...m, role: newRole as any } : m));
