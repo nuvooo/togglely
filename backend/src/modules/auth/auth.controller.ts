@@ -1,4 +1,4 @@
-import { Controller, Post, Get, Patch, Body, Param, Req, UseGuards, NotFoundException, ConflictException, Inject } from '@nestjs/common';
+import { Controller, Post, Get, Patch, Body, Param, Req, UseGuards, NotFoundException, ConflictException, ForbiddenException, Inject } from '@nestjs/common';
 import { ApiTags, ApiBody, ApiResponse, ApiBearerAuth } from '@nestjs/swagger';
 import { AuthService } from './auth.service';
 import { AuthGuard } from '../../shared/auth.guard';
