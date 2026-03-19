@@ -58,6 +58,12 @@ interface Brand {
   description: string | null;
 }
 
+interface OrganizationMember {
+  id: string;
+  userId: string;
+  role: 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER';
+}
+
 export default function ProjectSettings() {
   const { t: _t } = useTranslation();
   const { projectId } = useParams<{ projectId: string }>();
@@ -70,6 +76,7 @@ export default function ProjectSettings() {
   const [isDeleting, setIsDeleting] = useState(false);
   const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [currentUserRole, setCurrentUserRole] = useState<string | null>(null);
   
   // Form states
   const [name, setName] = useState('');
@@ -116,6 +123,18 @@ export default function ProjectSettings() {
         
         setEnvironments(envsRes.data.environments || []);
         setBrands(brandsRes.data.brands || []);
+        
+        // Get current user's role in this organization
+        const orgId = projectData.organizationId;
+        if (orgId) {
+          const [membersRes, meRes] = await Promise.all([
+            api.get(`/organizations/${orgId}/members`),
+            api.get('/auth/me'),
+          ]);
+          const members = membersRes.data.members || membersRes.data || [];
+          const myMembership = members.find((m: OrganizationMember) => m.userId === meRes.data.user?.id);
+          setCurrentUserRole(myMembership?.role || null);
+        }
       } catch (error) {
         console.error('Failed to fetch project:', error);
         setMessage({ type: 'error', text: 'Failed to load project' });
@@ -467,24 +486,26 @@ export default function ProjectSettings() {
             </CardContent>
           </Card>
 
-          {/* Danger Zone */}
-          <Card className="border-destructive/50">
-            <CardHeader>
-              <CardTitle className="text-destructive flex items-center gap-2">
-                <AlertTriangle className="w-5 h-5" />
-                Danger Zone
-              </CardTitle>
-              <CardDescription>
-                Once you delete a project, there is no going back. Please be certain.
-              </CardDescription>
-            </CardHeader>
-            <CardContent>
-              <Button variant="destructive" onClick={() => setShowDeleteDialog(true)}>
-                <Trash2 className="w-4 h-4 mr-2" />
-                Delete Project
-              </Button>
-            </CardContent>
-          </Card>
+          {/* Danger Zone - Only visible to OWNER/ADMIN */}
+          {(currentUserRole === 'OWNER' || currentUserRole === 'ADMIN') && (
+            <Card className="border-destructive/50">
+              <CardHeader>
+                <CardTitle className="text-destructive flex items-center gap-2">
+                  <AlertTriangle className="w-5 h-5" />
+                  Danger Zone
+                </CardTitle>
+                <CardDescription>
+                  Once you delete a project, there is no going back. Please be certain.
+                </CardDescription>
+              </CardHeader>
+              <CardContent>
+                <Button variant="destructive" onClick={() => setShowDeleteDialog(true)}>
+                  <Trash2 className="w-4 h-4 mr-2" />
+                  Delete Project
+                </Button>
+              </CardContent>
+            </Card>
+          )}
         </TabsContent>
 
         <TabsContent value="environments">
@@ -497,13 +518,19 @@ export default function ProjectSettings() {
                   </div>
                   <div>
                     <CardTitle>Environments</CardTitle>
-                    <CardDescription>Manage deployment environments</CardDescription>
+                    <CardDescription>
+                      {(currentUserRole === 'OWNER' || currentUserRole === 'ADMIN') 
+                        ? 'Manage deployment environments' 
+                        : 'View deployment environments'}
+                    </CardDescription>
                   </div>
                 </div>
-                <Button onClick={() => { setEditingEnv(null); setEnvName(''); setEnvKey(''); setShowEnvDialog(true); }}>
-                  <Plus className="w-4 h-4 mr-2" />
-                  Add Environment
-                </Button>
+                {(currentUserRole === 'OWNER' || currentUserRole === 'ADMIN') && (
+                  <Button onClick={() => { setEditingEnv(null); setEnvName(''); setEnvKey(''); setShowEnvDialog(true); }}>
+                    <Plus className="w-4 h-4 mr-2" />
+                    Add Environment
+                  </Button>
+                )}
               </div>
             </CardHeader>
             <CardContent>
@@ -520,47 +547,51 @@ export default function ProjectSettings() {
                       </div>
                     </div>
                     <div className="flex items-center gap-2">
-                      <div className="flex items-center border rounded-md overflow-hidden mr-2">
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 rounded-none border-r"
-                          disabled={index === 0}
-                          onClick={() => handleReorderEnvironment(env.id, 'up')}
-                        >
-                          <ArrowUp className="h-3 w-3" />
-                        </Button>
-                        <Button
-                          variant="ghost"
-                          size="icon"
-                          className="h-8 w-8 rounded-none"
-                          disabled={index === environments.length - 1}
-                          onClick={() => handleReorderEnvironment(env.id, 'down')}
-                        >
-                          <ArrowDown className="h-3 w-3" />
-                        </Button>
-                      </div>
+                      {(currentUserRole === 'OWNER' || currentUserRole === 'ADMIN') && (
+                        <>
+                          <div className="flex items-center border rounded-md overflow-hidden mr-2">
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 rounded-none border-r"
+                              disabled={index === 0}
+                              onClick={() => handleReorderEnvironment(env.id, 'up')}
+                            >
+                              <ArrowUp className="h-3 w-3" />
+                            </Button>
+                            <Button
+                              variant="ghost"
+                              size="icon"
+                              className="h-8 w-8 rounded-none"
+                              disabled={index === environments.length - 1}
+                              onClick={() => handleReorderEnvironment(env.id, 'down')}
+                            >
+                              <ArrowDown className="h-3 w-3" />
+                            </Button>
+                          </div>
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => openEditEnv(env)}>
+                                <Edit2 className="w-4 h-4 mr-2" />
+                                Rename
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                className="text-destructive"
+                                onClick={() => handleDeleteEnvironment(env.id)}
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        </>
+                      )}
                       <Badge variant="secondary">{env.flagCount} flags</Badge>
-                      <DropdownMenu>
-                        <DropdownMenuTrigger asChild>
-                          <Button variant="ghost" size="icon">
-                            <MoreVertical className="h-4 w-4" />
-                          </Button>
-                        </DropdownMenuTrigger>
-                        <DropdownMenuContent align="end">
-                          <DropdownMenuItem onClick={() => openEditEnv(env)}>
-                            <Edit2 className="w-4 h-4 mr-2" />
-                            Rename
-                          </DropdownMenuItem>
-                          <DropdownMenuItem 
-                            className="text-destructive"
-                            onClick={() => handleDeleteEnvironment(env.id)}
-                          >
-                            <Trash2 className="w-4 h-4 mr-2" />
-                            Delete
-                          </DropdownMenuItem>
-                        </DropdownMenuContent>
-                      </DropdownMenu>
                     </div>
                   </div>
                 ))}
@@ -580,13 +611,19 @@ export default function ProjectSettings() {
                     </div>
                     <div>
                       <CardTitle>Brands</CardTitle>
-                      <CardDescription>Manage brands for multi-tenant project</CardDescription>
+                      <CardDescription>
+                        {(currentUserRole === 'OWNER' || currentUserRole === 'ADMIN') 
+                          ? 'Manage brands for multi-tenant project'
+                          : 'View brands for this project'}
+                      </CardDescription>
                     </div>
                   </div>
-                  <Button onClick={() => { setEditingBrand(null); setBrandName(''); setBrandKey(''); setBrandDescription(''); setShowBrandDialog(true); }}>
-                    <Plus className="w-4 h-4 mr-2" />
-                    Add Brand
-                  </Button>
+                  {(currentUserRole === 'OWNER' || currentUserRole === 'ADMIN') && (
+                    <Button onClick={() => { setEditingBrand(null); setBrandName(''); setBrandKey(''); setBrandDescription(''); setShowBrandDialog(true); }}>
+                      <Plus className="w-4 h-4 mr-2" />
+                      Add Brand
+                    </Button>
+                  )}
                 </div>
               </CardHeader>
               <CardContent>
@@ -610,26 +647,28 @@ export default function ProjectSettings() {
                         >
                           Manage Flags
                         </Button>
-                        <DropdownMenu>
-                          <DropdownMenuTrigger asChild>
-                            <Button variant="ghost" size="icon">
-                              <MoreVertical className="h-4 w-4" />
-                            </Button>
-                          </DropdownMenuTrigger>
-                          <DropdownMenuContent align="end">
-                            <DropdownMenuItem onClick={() => openEditBrand(brand)}>
-                              <Edit2 className="w-4 h-4 mr-2" />
-                              Edit
-                            </DropdownMenuItem>
-                            <DropdownMenuItem 
-                              className="text-destructive"
-                              onClick={() => handleDeleteBrand(brand.id)}
-                            >
-                              <Trash2 className="w-4 h-4 mr-2" />
-                              Delete
-                            </DropdownMenuItem>
-                          </DropdownMenuContent>
-                        </DropdownMenu>
+                        {(currentUserRole === 'OWNER' || currentUserRole === 'ADMIN') && (
+                          <DropdownMenu>
+                            <DropdownMenuTrigger asChild>
+                              <Button variant="ghost" size="icon">
+                                <MoreVertical className="h-4 w-4" />
+                              </Button>
+                            </DropdownMenuTrigger>
+                            <DropdownMenuContent align="end">
+                              <DropdownMenuItem onClick={() => openEditBrand(brand)}>
+                                <Edit2 className="w-4 h-4 mr-2" />
+                                Edit
+                              </DropdownMenuItem>
+                              <DropdownMenuItem 
+                                className="text-destructive"
+                                onClick={() => handleDeleteBrand(brand.id)}
+                              >
+                                <Trash2 className="w-4 h-4 mr-2" />
+                                Delete
+                              </DropdownMenuItem>
+                            </DropdownMenuContent>
+                          </DropdownMenu>
+                        )}
                       </div>
                     </div>
                   ))}

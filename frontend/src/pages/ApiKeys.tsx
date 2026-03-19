@@ -54,6 +54,7 @@ interface ApiKey {
 interface Organization {
   id: string;
   name: string;
+  role?: string;
 }
 
 export default function ApiKeys() {
@@ -87,13 +88,22 @@ export default function ApiKeys() {
         api.get('/organizations'),
       ]);
       setApiKeys(Array.isArray(keysRes.data) ? keysRes.data : keysRes.data.apiKeys || []);
-      setOrganizations(orgsRes.data.organizations || orgsRes.data || []);
+      // Store organizations with their roles
+      const orgs = orgsRes.data.organizations || orgsRes.data || [];
+      setOrganizations(orgs);
     } catch (error) {
       console.error('Failed to fetch data:', error);
     } finally {
       setIsLoading(false);
     }
   };
+
+  const canManageApiKeys = (orgId: string) => {
+    const org = organizations.find(o => o.id === orgId);
+    return org?.role === 'OWNER' || org?.role === 'ADMIN';
+  };
+
+  const userCanCreateKeys = organizations.some(o => o.role === 'OWNER' || o.role === 'ADMIN');
 
   useEffect(() => {
     fetchData();
@@ -208,12 +218,14 @@ export default function ApiKeys() {
           </p>
         </div>
         <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
-          <DialogTrigger asChild>
-            <Button>
-              <PlusIcon className="w-4 h-4 mr-2" />
-              Create API Key
-            </Button>
-          </DialogTrigger>
+          {userCanCreateKeys && (
+            <DialogTrigger asChild>
+              <Button>
+                <PlusIcon className="w-4 h-4 mr-2" />
+                Create API Key
+              </Button>
+            </DialogTrigger>
+          )}
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
               <DialogTitle>Create New API Key</DialogTitle>
@@ -366,12 +378,16 @@ export default function ApiKeys() {
             <KeyIcon className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
             <h3 className="text-lg font-semibold">No API keys</h3>
             <p className="text-sm text-muted-foreground mt-1 mb-6">
-              Get started by creating a new API key.
+              {userCanCreateKeys 
+                ? "Get started by creating a new API key."
+                : "Only organization owners and admins can create API keys."}
             </p>
-            <Button onClick={() => setIsModalOpen(true)}>
-              <PlusIcon className="w-4 h-4 mr-2" />
-              Create API Key
-            </Button>
+            {userCanCreateKeys && (
+              <Button onClick={() => setIsModalOpen(true)}>
+                <PlusIcon className="w-4 h-4 mr-2" />
+                Create API Key
+              </Button>
+            )}
           </CardContent>
         </Card>
       ) : (
@@ -437,28 +453,30 @@ export default function ApiKeys() {
                       </div>
                     </div>
 
-                    {/* Actions Dropdown - Using Shadcn DropdownMenu */}
-                    <DropdownMenu>
-                      <DropdownMenuTrigger asChild>
-                        <Button variant="ghost" size="icon">
-                          <MoreVertical className="h-4 w-4" />
-                        </Button>
-                      </DropdownMenuTrigger>
-                      <DropdownMenuContent align="end">
-                        <DropdownMenuItem onClick={() => copyKeyToClipboard(apiKey.key)}>
-                          <Copy className="mr-2 h-4 w-4" />
-                          Copy key
-                        </DropdownMenuItem>
-                        <DropdownMenuItem 
-                          className="text-destructive focus:text-destructive"
-                          onClick={() => revokeApiKey(apiKey.id)}
-                          disabled={isRevoking === apiKey.id || !apiKey.isActive}
-                        >
-                          <TrashIcon className="mr-2 h-4 w-4" />
-                          {isRevoking === apiKey.id ? 'Revoking...' : 'Revoke key'}
-                        </DropdownMenuItem>
-                      </DropdownMenuContent>
-                    </DropdownMenu>
+                    {/* Actions Dropdown - Only show revoke for OWNER/ADMIN */}
+                    {canManageApiKeys(apiKey.organization?.id || '') && (
+                      <DropdownMenu>
+                        <DropdownMenuTrigger asChild>
+                          <Button variant="ghost" size="icon">
+                            <MoreVertical className="h-4 w-4" />
+                          </Button>
+                        </DropdownMenuTrigger>
+                        <DropdownMenuContent align="end">
+                          <DropdownMenuItem onClick={() => copyKeyToClipboard(apiKey.key)}>
+                            <Copy className="mr-2 h-4 w-4" />
+                            Copy key
+                          </DropdownMenuItem>
+                          <DropdownMenuItem 
+                            className="text-destructive focus:text-destructive"
+                            onClick={() => revokeApiKey(apiKey.id)}
+                            disabled={isRevoking === apiKey.id || !apiKey.isActive}
+                          >
+                            <TrashIcon className="mr-2 h-4 w-4" />
+                            {isRevoking === apiKey.id ? 'Revoking...' : 'Revoke key'}
+                          </DropdownMenuItem>
+                        </DropdownMenuContent>
+                      </DropdownMenu>
+                    )}
                   </div>
                 </CardContent>
               </Card>
