@@ -36,7 +36,10 @@ const sidebarNavigation = [
   {
     title: 'SDKs & Integration',
     items: [
-      { name: 'JavaScript/TypeScript SDK', href: '#sdk-js' },
+      { name: 'JavaScript/TypeScript', href: '#sdk-js' },
+      { name: 'React', href: '#sdk-react' },
+      { name: 'Svelte', href: '#sdk-svelte' },
+      { name: 'Vue', href: '#sdk-vue' },
       { name: 'SDK Configuration', href: '#sdk-config' },
       { name: 'REST API', href: '#sdk-rest' },
     ],
@@ -86,6 +89,132 @@ const theme = await client.getValue('theme', {
   plan: 'premium',
   region: 'eu'
 });`,
+
+  react: `import { useEffect, useState } from 'react';
+import { TogglelyClient } from '@togglely/sdk-core';
+
+// Initialize client outside component
+const togglely = new TogglelyClient({
+  apiKey: process.env.REACT_APP_TOGGLELY_KEY,
+  project: 'my-app',
+  environment: 'production'
+});
+
+function App() {
+  const [isReady, setIsReady] = useState(false);
+
+  useEffect(() => {
+    togglely.init().then(() => setIsReady(true));
+  }, []);
+
+  if (!isReady) return <div>Loading...</div>;
+
+  return (
+    <div>
+      {togglely.getValueSync('new-feature') ? (
+        <NewFeature />
+      ) : (
+        <OldFeature />
+      )}
+    </div>
+  );
+}
+
+// Or with Hook
+function useFeatureFlag(key, context) {
+  const [value, setValue] = useState(null);
+  
+  useEffect(() => {
+    togglely.getValue(key, context).then(setValue);
+  }, [key, JSON.stringify(context)]);
+  
+  return value;
+}`,
+
+  svelte: `<script>
+  import { onMount } from 'svelte';
+  import { TogglelyClient } from '@togglely/sdk-core';
+
+  const togglely = new TogglelyClient({
+    apiKey: import.meta.env.VITE_TOGGLELY_KEY,
+    project: 'my-app',
+    environment: 'production'
+  });
+
+  let isEnabled = false;
+  let isReady = false;
+
+  onMount(async () => {
+    await togglely.init();
+    isEnabled = togglely.getValueSync('new-feature');
+    isReady = true;
+  });
+</script>
+
+{#if !isReady}
+  <div>Loading...</div>
+{:else if isEnabled}
+  <NewFeature />
+{:else}
+  <OldFeature />
+{/if}
+
+<!-- Or with store -->
+<script context="module">
+  import { writable } from 'svelte/store';
+  
+  export function featureFlag(key, context = {}) {
+    const { subscribe, set } = writable(null);
+    
+    togglely.getValue(key, context).then(set);
+    
+    return { subscribe };
+  }
+</script>`,
+
+  vue: `<template>
+  <div v-if="!isReady">Loading...</div>
+  <NewFeature v-else-if="isEnabled" />
+  <OldFeature v-else />
+</template>
+
+<script setup>
+import { ref, onMounted } from 'vue';
+import { TogglelyClient } from '@togglely/sdk-core';
+
+const togglely = new TogglelyClient({
+  apiKey: import.meta.env.VITE_TOGGLELY_KEY,
+  project: 'my-app',
+  environment: 'production'
+});
+
+const isReady = ref(false);
+const isEnabled = ref(false);
+
+onMounted(async () => {
+  await togglely.init();
+  isEnabled.value = togglely.getValueSync('new-feature');
+  isReady.value = true;
+});
+</script>
+
+<!-- Or with Composable -->
+<script>
+// composables/useFeatureFlag.js
+import { ref, onMounted } from 'vue';
+
+export function useFeatureFlag(key, context = {}) {
+  const value = ref(null);
+  const isReady = ref(false);
+
+  onMounted(async () => {
+    value.value = await togglely.getValue(key, context);
+    isReady.value = true;
+  });
+
+  return { value, isReady };
+}
+</script>`,
 
   rest: `curl -X POST https://api.togglely.de/api/sdk/flags \
   -H "Authorization: Bearer YOUR_API_KEY" \
@@ -472,6 +601,66 @@ yarn add @togglely/sdk-core`} language="bash" />
 
                 <h3 className="text-xl font-semibold mt-8 mb-4">Basic Usage</h3>
                 <CodeBlock code={codeSnippets.js} language="typescript" />
+              </section>
+
+              {/* React SDK */}
+              <section id="sdk-react" className="mb-16">
+                <h2 className="text-3xl font-bold tracking-tight mb-4">React Integration</h2>
+                <p className="text-muted-foreground mb-6">
+                  Use Togglely with React using hooks and context for seamless feature flag management.
+                </p>
+
+                <h3 className="text-xl font-semibold mt-8 mb-4">Installation</h3>
+                <CodeBlock code={`npm install @togglely/sdk-core`} language="bash" />
+
+                <h3 className="text-xl font-semibold mt-8 mb-4">Usage with Hooks</h3>
+                <CodeBlock code={codeSnippets.react} language="tsx" />
+
+                <div className="mt-6 p-4 rounded-lg bg-blue-50 dark:bg-blue-950/30 border border-blue-200 dark:border-blue-900">
+                  <p className="text-sm text-blue-800 dark:text-blue-400">
+                    <strong>Tip:</strong> Initialize the client outside your components to ensure a single instance across re-renders.
+                  </p>
+                </div>
+              </section>
+
+              {/* Svelte SDK */}
+              <section id="sdk-svelte" className="mb-16">
+                <h2 className="text-3xl font-bold tracking-tight mb-4">Svelte Integration</h2>
+                <p className="text-muted-foreground mb-6">
+                  Integrate Togglely with Svelte using reactive statements and stores.
+                </p>
+
+                <h3 className="text-xl font-semibold mt-8 mb-4">Installation</h3>
+                <CodeBlock code={`npm install @togglely/sdk-core`} language="bash" />
+
+                <h3 className="text-xl font-semibold mt-8 mb-4">Component Usage</h3>
+                <CodeBlock code={codeSnippets.svelte} language="svelte" />
+
+                <div className="mt-6 p-4 rounded-lg bg-orange-50 dark:bg-orange-950/30 border border-orange-200 dark:border-orange-900">
+                  <p className="text-sm text-orange-800 dark:text-orange-400">
+                    <strong>Tip:</strong> Create a Svelte store wrapper for reactive flag updates across your app.
+                  </p>
+                </div>
+              </section>
+
+              {/* Vue SDK */}
+              <section id="sdk-vue" className="mb-16">
+                <h2 className="text-3xl font-bold tracking-tight mb-4">Vue.js Integration</h2>
+                <p className="text-muted-foreground mb-6">
+                  Use Togglely with Vue 3 using the Composition API and custom composables.
+                </p>
+
+                <h3 className="text-xl font-semibold mt-8 mb-4">Installation</h3>
+                <CodeBlock code={`npm install @togglely/sdk-core`} language="bash" />
+
+                <h3 className="text-xl font-semibold mt-8 mb-4">Usage with Composition API</h3>
+                <CodeBlock code={codeSnippets.vue} language="vue" />
+
+                <div className="mt-6 p-4 rounded-lg bg-green-50 dark:bg-green-950/30 border border-green-200 dark:border-green-900">
+                  <p className="text-sm text-green-800 dark:text-green-400">
+                    <strong>Tip:</strong> Create a reusable <code>useFeatureFlag</code> composable for cleaner component code.
+                  </p>
+                </div>
               </section>
 
               {/* SDK Config */}
