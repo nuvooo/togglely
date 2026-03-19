@@ -1,14 +1,13 @@
 import { Link } from 'react-router-dom';
 import { 
   FlagIcon, 
-  BoltIcon, 
   UsersIcon, 
-  GlobeAltIcon, 
+  GlobeIcon, 
   KeyIcon, 
-  ChartBarIcon,
+  BarChart3Icon,
   ShieldCheckIcon,
   CheckCircleIcon,
-  DocumentTextIcon,
+  FileTextIcon,
   PlayIcon,
   RocketIcon,
   LockIcon,
@@ -47,7 +46,7 @@ const features = [
   {
     name: 'Complete Audit Trail',
     description: 'Track every change with detailed audit logs. Know who changed what, when, and why.',
-    icon: ChartBarIcon,
+    icon: BarChart3Icon,
   },
   {
     name: 'Multi-Tenant Architecture',
@@ -227,7 +226,7 @@ export default function LandingPage() {
               <span className="font-semibold">TypeScript</span>
             </div>
             <div className="flex items-center gap-2 text-muted-foreground">
-              <GlobeAltIcon className="h-6 w-6" />
+              <GlobeIcon className="h-6 w-6" />
               <span className="font-semibold">REST API</span>
             </div>
             <div className="flex items-center gap-2 text-muted-foreground">
