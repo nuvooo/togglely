@@ -273,6 +273,7 @@ export class AuthController {
       throw new NotFoundException('User not found');
     }
 
+    // Get all pending invites for this user's email
     const pendingInvites = await this.prisma.organizationInvite.findMany({
       where: {
         email: user.email,
@@ -287,8 +288,19 @@ export class AuthController {
       orderBy: { createdAt: 'desc' },
     });
 
+    // Filter out invites where user is already a member
+    const memberships = await this.prisma.organizationMember.findMany({
+      where: { userId: req.user.userId },
+      select: { organizationId: true },
+    });
+    const memberOrgIds = new Set(memberships.map(m => m.organizationId));
+
+    const filteredInvites = pendingInvites.filter(
+      invite => !memberOrgIds.has(invite.organizationId)
+    );
+
     return {
-      invites: pendingInvites.map(invite => ({
+      invites: filteredInvites.map(invite => ({
         id: invite.id,
         token: invite.token,
         organizationId: invite.organizationId,
