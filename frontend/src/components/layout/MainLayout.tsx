@@ -5,6 +5,7 @@ import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { LanguageSwitcher } from '@/components/LanguageSwitcher';
 import { ThemeToggle } from '@/components/ThemeToggle';
+import PendingInvitesBanner from '@/components/PendingInvitesBanner';
 import {
   DropdownMenu,
   DropdownMenuContent,
@@ -195,6 +196,9 @@ export default function MainLayout() {
           </div>
         )}
       </header>
+
+      {/* Pending Invites Banner */}
+      <PendingInvitesBanner />
 
       {/* Main Content */}
       <main className="container py-8">

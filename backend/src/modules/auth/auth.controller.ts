@@ -260,6 +260,46 @@ export class AuthController {
     return { success: true, message: 'Account created and joined organization' };
   }
 
+  // Get pending invites for current user
+  @Get('pending-invites')
+  @UseGuards(AuthGuard)
+  async getPendingInvites(@Req() req: any) {
+    const user = await this.prisma.user.findUnique({
+      where: { id: req.user.userId },
+      select: { email: true },
+    });
+
+    if (!user) {
+      throw new NotFoundException('User not found');
+    }
+
+    const pendingInvites = await this.prisma.organizationInvite.findMany({
+      where: {
+        email: user.email,
+        acceptedAt: null,
+        expiresAt: { gt: new Date() },
+      },
+      include: {
+        organization: {
+          select: { id: true, name: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return {
+      invites: pendingInvites.map(invite => ({
+        id: invite.id,
+        token: invite.token,
+        organizationId: invite.organizationId,
+        organizationName: invite.organization.name,
+        role: invite.role,
+        createdAt: invite.createdAt,
+        expiresAt: invite.expiresAt,
+      })),
+    };
+  }
+
   // Email verification
   @Get('verify-email/:token')
   async verifyEmail(@Param('token') token: string) {
