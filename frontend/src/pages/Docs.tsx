@@ -275,7 +275,7 @@ function CodeBlock({ code, language }: { code: string; language: string }) {
 export default function Docs() {
   const [activeSection, setActiveSection] = useState('introduction');
   const [expandedSections, setExpandedSections] = useState<string[]>(['Getting Started']);
-  const [_mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [, setMobileMenuOpen] = useState(false);
   const observerRef = useRef<IntersectionObserver | null>(null);
 
   useEffect(() => {

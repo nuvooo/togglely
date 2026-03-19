@@ -62,98 +62,195 @@ const highlights = [
 ];
 
 const codeExamples = {
-  react: `import { useEffect, useState } from 'react';
-import { TogglelyClient } from '@togglely/sdk-core';
+  react: `import { 
+  TogglelyProvider, 
+  useToggle, 
+  useStringToggle,
+  useTogglelyState,
+  useTogglelyContext 
+} from '@togglely/sdk-react';
 
-const togglely = new TogglelyClient({
-  apiKey: process.env.REACT_APP_TOGGLELY_KEY,
-  project: 'my-app',
-  environment: 'production'
-});
-
-function FeatureFlag({ flagKey, children }) {
-  const [isEnabled, setIsEnabled] = useState(false);
-
-  useEffect(() => {
-    togglely.init().then(() => {
-      setIsEnabled(togglely.getValueSync(flagKey));
-    });
-  }, [flagKey]);
-
-  return isEnabled ? children : null;
+// Wrap your app with the provider
+function App() {
+  return (
+    <TogglelyProvider
+      apiKey={process.env.REACT_APP_TOGGLELY_KEY}
+      environment="production"
+      baseUrl="https://api.togglely.de"
+    >
+      <Dashboard />
+    </TogglelyProvider>
+  );
 }
 
-// Usage
-<FeatureFlag flagKey="new-dashboard">
+// Use hooks in your components
+function Dashboard() {
+  // Boolean toggle with default fallback
+  const newDashboard = useToggle('new-dashboard', false);
+  
+  // String toggle
+  const theme = useStringToggle('theme', 'light');
+  
+  // Number and JSON toggles also available
+  const limit = useNumberToggle('max-items', 10);
+  const config = useJSONToggle('ui-config', {});
+  
+  // Access ready/offline state
+  const { isReady, isOffline } = useTogglelyState();
+  
+  // Set user context for targeting
+  const { setContext } = useTogglelyContext();
+  
+  useEffect(() => {
+    setContext({ userId: currentUser.id, plan: currentUser.plan });
+  }, []);
+
+  if (!isReady) return <div>Loading...</div>;
+  return newDashboard ? <NewDashboard theme={theme} /> : <OldDashboard />;
+}
+
+// Or use the FeatureToggle component
+import { FeatureToggle } from '@togglely/sdk-react';
+
+<FeatureToggle toggle="new-dashboard" fallback={<OldDashboard />}>
   <NewDashboard />
-</FeatureFlag>`,
+</FeatureToggle>`,
 
-  vue: `<script setup>
-import { ref, onMounted } from 'vue';
-import { TogglelyClient } from '@togglely/sdk-core';
+  vue: `// main.js - Plugin setup
+import { createApp } from 'vue';
+import { createTogglely } from '@togglely/sdk-vue';
+import App from './App.vue';
 
-const togglely = new TogglelyClient({
+const app = createApp(App);
+
+app.use(createTogglely({
   apiKey: import.meta.env.VITE_TOGGLELY_KEY,
-  project: 'my-app',
-  environment: 'production'
-});
+  environment: 'production',
+  baseUrl: 'https://api.togglely.de'
+}));
 
-const showFeature = ref(false);
+app.mount('#app');
 
-onMounted(async () => {
-  await togglely.init();
-  showFeature.value = togglely.getValueSync('new-dashboard');
-});
-</script>
+// In your component
+<script setup>
+import { 
+  useToggle, 
+  useStringToggle,
+  useToggles, 
+  useTogglelyState,
+  useTogglelyContext 
+} from '@togglely/sdk-vue';
+
+// Returns Ref<boolean> - access with .value in script
+const newDashboard = useToggle('new-dashboard', false);
+const theme = useStringToggle('theme', 'light');
+
+// Get all toggles as readonly ref
+const allToggles = useToggles();
+
+// State is readonly ref
+const state = useTogglelyState();
+
+// Set context for targeting
+const { setContext } = useTogglelyContext();
+setContext({ userId: currentUser.id, plan: currentUser.plan });
+<\/script>
 
 <template>
-  <NewDashboard v-if="showFeature" />
+  <!-- Refs auto-unwrapped in template -->
+  <div v-if="!state.isReady">Loading...</div>
+  <NewDashboard 
+    v-else-if="newDashboard" 
+    :theme="theme"
+  />
   <OldDashboard v-else />
 </template>`,
 
-  svelte: `<script>
-  import { onMount } from 'svelte';
-  import { TogglelyClient } from '@togglely/sdk-core';
-
-  const togglely = new TogglelyClient({
+  svelte: `<!-- main.js -->
+<script>
+  import { initTogglely } from '@togglely/sdk-svelte';
+  
+  initTogglely({
     apiKey: import.meta.env.VITE_TOGGLELY_KEY,
-    project: 'my-app',
-    environment: 'production'
-  });
-
-  let showFeature = false;
-
-  onMount(async () => {
-    await togglely.init();
-    showFeature = togglely.getValueSync('new-dashboard');
+    environment: 'production',
+    baseUrl: 'https://api.togglely.de'
   });
 </script>
 
-{#if showFeature}
-  <NewDashboard />
+<!-- Any component -->
+<script>
+  import { 
+    toggle,           // Store for boolean
+    stringToggle,     // Store for string
+    toggles,          // Store for all toggles
+    togglelyState,    // Store for state
+    setTogglelyContext 
+  } from '@togglely/sdk-svelte';
+  
+  // Create stores (reactive with $ prefix)
+  const newDashboard = toggle('new-dashboard', false);
+  const theme = stringToggle('theme', 'light');
+  const state = togglelyState();
+  
+  // Set user context for targeting
+  setTogglelyContext({ 
+    userId: $user.id, 
+    plan: $user.plan 
+  });
+</script>
+
+{#if !$state.isReady}
+  <div>Loading toggles...</div>
+{:else if $newDashboard}
+  <NewDashboard theme={$theme} />
 {:else}
   <OldDashboard />
-{/if}`,
+{/if}
+
+<!-- Or use the featureToggle action -->
+<script>
+  import { featureToggle } from '@togglely/sdk-svelte';
+</script>
+
+<div use:featureToggle={'beta-banner'}>
+  Beta Feature
+</div>`,
 
   vanilla: `import { TogglelyClient } from '@togglely/sdk-core';
 
 const client = new TogglelyClient({
   apiKey: process.env.TOGGLELY_API_KEY,
   project: 'my-app',
-  environment: 'production'
+  environment: 'production',
+  baseUrl: 'https://api.togglely.de',
+  // Optional: enable offline fallback
+  offlineFallback: true,
+  offlineJsonPath: '/toggles.json'
 });
 
-// Initialize
+// Initialize (fetches flags from API)
 await client.init();
 
-// Check if feature is enabled
-const isEnabled = client.getValueSync('new-dashboard');
+// Check if feature is enabled (boolean)
+const isEnabled = await client.isEnabled('new-dashboard', false);
 
-if (isEnabled) {
-  showNewDashboard();
-} else {
-  showOldDashboard();
-}`
+// Get typed values
+const theme = await client.getString('theme', 'light');
+const limit = await client.getNumber('max-items', 10);
+const config = await client.getJSON('ui-config', {});
+
+// With user context for targeting
+const hasAccess = await client.isEnabled('premium-feature', false, {
+  userId: 'user-123',
+  email: 'user@example.com',
+  plan: 'premium',
+  region: 'eu'
+});
+
+// Listen for real-time updates
+client.on('update', () => {
+  console.log('Toggles updated at:', client.getState().lastFetch);
+});`
 };
 
 export default function LandingPage() {
@@ -167,11 +264,11 @@ export default function LandingPage() {
   }, []);
 
   const frameworkTabs = [
-    { key: 'react', label: 'React', color: 'text-blue-400' },
-    { key: 'vue', label: 'Vue', color: 'text-green-400' },
-    { key: 'svelte', label: 'Svelte', color: 'text-orange-400' },
-    { key: 'vanilla', label: 'Vanilla JS', color: 'text-yellow-400' },
-  ] as const;
+    { key: 'react' as const, label: 'React', color: 'text-blue-400' },
+    { key: 'vue' as const, label: 'Vue', color: 'text-green-400' },
+    { key: 'svelte' as const, label: 'Svelte', color: 'text-orange-400' },
+    { key: 'vanilla' as const, label: 'Vanilla JS', color: 'text-yellow-400' },
+  ];
 
   return (
     <div className="min-h-screen bg-background">
