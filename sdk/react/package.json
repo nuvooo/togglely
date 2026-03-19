@@ -1,6 +1,6 @@
 {
   "name": "@togglely/sdk-react",
-  "version": "1.2.3",
+  "version": "1.2.4",
   "description": "React SDK for Togglely - Feature toggles with hooks",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
