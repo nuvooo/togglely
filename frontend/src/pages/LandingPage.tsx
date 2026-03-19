@@ -15,7 +15,8 @@ import {
   SparklesIcon,
   ServerIcon,
   Code2Icon,
-  LayersIcon
+  LayersIcon,
+  FileTextIcon
 } from 'lucide-react';
 import { ThemeToggle } from '@/components/ThemeToggle';
 import { useEffect, useState } from 'react';
