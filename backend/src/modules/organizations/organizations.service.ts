@@ -188,6 +188,12 @@ export class OrganizationsService {
   }
 
   async addMember(orgId: string, email: string, role: string) {
+    // Check if organization exists
+    const organization = await this.prisma.organization.findUnique({
+      where: { id: orgId },
+    });
+    if (!organization) throw new NotFoundException('Organization not found');
+
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) throw new NotFoundException('User not found');
 

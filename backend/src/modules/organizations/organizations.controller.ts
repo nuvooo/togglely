@@ -25,34 +25,13 @@ export class OrganizationsController {
     return { organization: org };
   }
 
-  @Get(':id')
-  async findOne(@Param('id') id: string) {
-    const org = await this.orgsService.findOne(id);
-    return { organization: org };
-  }
-
   @Post()
   async create(@Body() body: { name: string; slug?: string }, @Req() req: any) {
     const org = await this.orgsService.create(body.name, body.slug, req.user.userId);
     return { organization: org };
   }
 
-  @Patch(':id')
-  async update(
-    @Param('id') id: string,
-    @Body() body: { name?: string; description?: string },
-  ) {
-    const org = await this.orgsService.update(id, body);
-    return { organization: org };
-  }
-
-  @Delete(':id')
-  async delete(@Param('id') id: string) {
-    await this.orgsService.delete(id);
-    return { success: true };
-  }
-
-  // Members
+  // Members - Define BEFORE the generic :id route to avoid shadowing
   @Get(':id/members')
   async getMembers(@Param('id') id: string) {
     const members = await this.orgsService.getMembers(id);
@@ -74,6 +53,27 @@ export class OrganizationsController {
     @Param('userId') userId: string,
   ) {
     await this.orgsService.removeMember(id, userId);
+    return { success: true };
+  }
+
+  @Get(':id')
+  async findOne(@Param('id') id: string) {
+    const org = await this.orgsService.findOne(id);
+    return { organization: org };
+  }
+
+  @Patch(':id')
+  async update(
+    @Param('id') id: string,
+    @Body() body: { name?: string; description?: string },
+  ) {
+    const org = await this.orgsService.update(id, body);
+    return { organization: org };
+  }
+
+  @Delete(':id')
+  async delete(@Param('id') id: string) {
+    await this.orgsService.delete(id);
     return { success: true };
   }
 }
