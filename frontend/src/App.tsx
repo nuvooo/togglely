@@ -8,6 +8,9 @@ import Login from './pages/Login';
 import Register from './pages/Register';
 import ForgotPassword from './pages/ForgotPassword';
 import ResetPassword from './pages/ResetPassword';
+import InviteAccept from './pages/InviteAccept';
+import VerifyEmail from './pages/VerifyEmail';
+import ResendVerification from './pages/ResendVerification';
 import OrganizationList from './pages/organizations/OrganizationList';
 import OrganizationDetail from './pages/organizations/OrganizationDetail';
 import OrganizationSettings from './pages/organizations/OrganizationSettings';
@@ -34,6 +37,9 @@ function App() {
       <Route path="/register" element={!token ? <Register /> : <Navigate to="/dashboard" />} />
       <Route path="/forgot-password" element={!token ? <ForgotPassword /> : <Navigate to="/dashboard" />} />
       <Route path="/reset-password" element={!token ? <ResetPassword /> : <Navigate to="/dashboard" />} />
+      <Route path="/invite/:token" element={<InviteAccept />} />
+      <Route path="/verify-email/:token" element={<VerifyEmail />} />
+      <Route path="/resend-verification" element={!token ? <ResendVerification /> : <Navigate to="/dashboard" />} />
       <Route path="/docs" element={<Docs />} />
       <Route path="/docs/*" element={<Docs />} />
       

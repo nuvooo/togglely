@@ -1,7 +1,8 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Req, UseGuards, Res } from '@nestjs/common';
 import { ProjectsService } from './projects.service';
 import { CreateProjectDto } from './dto/create-project.dto';
 import { AuthGuard } from '../../shared/auth.guard';
+import { Response } from 'express';
 
 @Controller('projects')
 @UseGuards(AuthGuard)
@@ -60,5 +61,33 @@ export class ProjectsController {
   async delete(@Param('id') id: string, @Req() req: any) {
     await this.projectsService.delete(id, req.user.userId);
     return { success: true };
+  }
+
+  // Import/Export Feature Flags
+  @Get(':id/export')
+  async exportFlags(
+    @Param('id') id: string,
+    @Res() res: Response,
+  ) {
+    const exportData = await this.projectsService.exportFlags(id);
+    
+    res.setHeader('Content-Type', 'application/json');
+    res.setHeader('Content-Disposition', `attachment; filename="${exportData.projectName}-flags.json"`);
+    res.send(JSON.stringify(exportData, null, 2));
+  }
+
+  @Post(':id/import')
+  async importFlags(
+    @Param('id') id: string,
+    @Body() body: { flags: any[]; options?: { overwrite?: boolean; skipExisting?: boolean } },
+    @Req() req: any,
+  ) {
+    const result = await this.projectsService.importFlags(id, req.user.userId, body.flags, body.options);
+    return { 
+      success: true, 
+      imported: result.imported,
+      skipped: result.skipped,
+      errors: result.errors 
+    };
   }
 }

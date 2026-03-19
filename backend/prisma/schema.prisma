@@ -8,16 +8,18 @@ datasource db {
 }
 
 model User {
-  id               String    @id @default(auto()) @map("_id") @db.ObjectId
-  email            String    @unique
-  password         String
-  firstName        String
-  lastName         String
-  isActive         Boolean   @default(true)
-  resetToken       String?
-  resetTokenExpiry DateTime?
-  createdAt        DateTime  @default(now())
-  updatedAt        DateTime  @updatedAt
+  id                String    @id @default(auto()) @map("_id") @db.ObjectId
+  email             String    @unique
+  password          String
+  firstName         String
+  lastName          String
+  isActive          Boolean   @default(true)
+  emailVerified     Boolean   @default(false)
+  emailVerifyToken  String?
+  resetToken        String?
+  resetTokenExpiry  DateTime?
+  createdAt         DateTime  @default(now())
+  updatedAt         DateTime  @updatedAt
 
   // Relations
   memberships    OrganizationMember[]
@@ -25,6 +27,7 @@ model User {
   auditLogs      AuditLog[]
   createdFlags   FeatureFlag[] @relation("CreatedFlags")
   updatedFlags   FeatureFlag[] @relation("UpdatedFlags")
+  acceptedInvites OrganizationInvite[] @relation(name: "AcceptedInvites")
 
   @@map("users")
 }
@@ -45,6 +48,7 @@ model Organization {
   auditLogs    AuditLog[]
   environments Environment[]
   featureFlags FeatureFlag[]
+  invites      OrganizationInvite[]
 
   @@map("organizations")
 }
@@ -304,4 +308,24 @@ model AuditLog {
   @@index([userId])
   @@index([createdAt])
   @@map("audit_logs")
+}
+
+model OrganizationInvite {
+  id             String           @id @default(auto()) @map("_id") @db.ObjectId
+  email          String
+  organizationId String           @db.ObjectId
+  role           OrganizationRole @default(MEMBER)
+  token          String           @unique
+  expiresAt      DateTime
+  createdAt      DateTime         @default(now())
+  acceptedAt     DateTime?
+  acceptedById   String?          @db.ObjectId
+
+  // Relations
+  organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
+  acceptedBy   User?        @relation(name: "AcceptedInvites", fields: [acceptedById], references: [id])
+
+  @@unique([organizationId, email])
+  @@index([organizationId])
+  @@map("organization_invites")
 }

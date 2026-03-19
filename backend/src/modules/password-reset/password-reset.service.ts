@@ -1,11 +1,15 @@
 import { Injectable, NotFoundException } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma.service';
+import { MailService } from '../mail/mail.service';
 import * as bcrypt from 'bcryptjs';
 import * as crypto from 'crypto';
 
 @Injectable()
 export class PasswordResetService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly mailService: MailService,
+  ) {}
 
   async requestReset(email: string) {
     const user = await this.prisma.user.findUnique({ where: { email } });
@@ -26,6 +30,12 @@ export class PasswordResetService {
     });
 
     console.log(`Password reset token for ${email}: ${token}`);
+    
+    try {
+      await this.mailService.sendPasswordResetEmail(email, token);
+    } catch (error) {
+      console.error(`Failed to send password reset email to ${email}:`, error);
+    }
   }
 
   async resetPassword(token: string, newPassword: string) {

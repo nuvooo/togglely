@@ -53,6 +53,7 @@ export default function OrganizationMembers() {
   const [inviteEmail, setInviteEmail] = useState('');
   const [inviteRole, setInviteRole] = useState('MEMBER');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [inviteUrl, setInviteUrl] = useState<string | null>(null);
 
   useEffect(() => {
     if (!orgId) return;
@@ -83,17 +84,31 @@ export default function OrganizationMembers() {
     
     setIsInviting(true);
     setMessage(null);
+    setInviteUrl(null);
 
     try {
-      const response = await api.post(`/organizations/${orgId}/members`, {
+      const response = await api.post(`/organizations/${orgId}/invites`, {
         email: inviteEmail,
         role: inviteRole,
       });
-      setMembers([...members, response.data]);
-      setShowInviteDialog(false);
-      setInviteEmail('');
-      setInviteRole('MEMBER');
-      setMessage({ type: 'success', text: 'Member invited successfully' });
+      
+      if (response.data.inviteUrl) {
+        // New user invite created
+        setInviteUrl(window.location.origin + response.data.inviteUrl);
+        setMessage({ 
+          type: 'success', 
+          text: 'Invite created! Send the link below to the user.' 
+        });
+      } else {
+        // Existing user added directly
+        setShowInviteDialog(false);
+        setInviteEmail('');
+        setInviteRole('MEMBER');
+        setMessage({ type: 'success', text: response.data.message || 'Member added successfully' });
+        // Refresh members list
+        const membersRes = await api.get(`/organizations/${orgId}/members`);
+        setMembers(membersRes.data.members || membersRes.data || []);
+      }
     } catch (error: any) {
       console.error('Failed to invite member:', error);
       setMessage({ 
@@ -253,7 +268,13 @@ export default function OrganizationMembers() {
       </Card>
 
       {/* Invite Dialog */}
-      <Dialog open={showInviteDialog} onOpenChange={setShowInviteDialog}>
+      <Dialog open={showInviteDialog} onOpenChange={(open) => {
+        setShowInviteDialog(open);
+        if (!open) {
+          setInviteUrl(null);
+          setMessage(null);
+        }
+      }}>
         <DialogContent>
           <DialogHeader>
             <DialogTitle>Invite Member</DialogTitle>
@@ -261,42 +282,88 @@ export default function OrganizationMembers() {
               Invite a new member to {organization.name}
             </DialogDescription>
           </DialogHeader>
-          <form onSubmit={handleInvite}>
+          
+          {inviteUrl ? (
             <div className="space-y-4 py-4">
-              <div className="space-y-2">
-                <Label htmlFor="email">Email Address</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  value={inviteEmail}
-                  onChange={(e) => setInviteEmail(e.target.value)}
-                  placeholder="colleague@example.com"
-                  required
-                />
+              <div className={`p-4 rounded-lg bg-green-50 text-green-800 border border-green-200`}>
+                {message?.text}
               </div>
               <div className="space-y-2">
-                <Label htmlFor="role">Role</Label>
-                <Select value={inviteRole} onValueChange={setInviteRole}>
-                  <SelectTrigger>
-                    <SelectValue placeholder="Select a role" />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="ADMIN">Admin - Can manage projects and members</SelectItem>
-                    <SelectItem value="MEMBER">Member - Can create and manage feature flags</SelectItem>
-                    <SelectItem value="VIEWER">Viewer - Read-only access</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label>Invite Link</Label>
+                <div className="flex gap-2">
+                  <Input 
+                    value={inviteUrl} 
+                    readOnly 
+                    className="flex-1"
+                  />
+                  <Button 
+                    type="button"
+                    onClick={() => {
+                      navigator.clipboard.writeText(inviteUrl);
+                      setMessage({ type: 'success', text: 'Link copied to clipboard!' });
+                    }}
+                  >
+                    Copy
+                  </Button>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  Send this link to {inviteEmail}. They will be able to create an account and join your organization.
+                </p>
               </div>
+              <DialogFooter>
+                <Button type="button" onClick={() => {
+                  setShowInviteDialog(false);
+                  setInviteUrl(null);
+                  setInviteEmail('');
+                  setMessage(null);
+                }}>
+                  Done
+                </Button>
+              </DialogFooter>
             </div>
-            <DialogFooter>
-              <Button type="button" variant="outline" onClick={() => setShowInviteDialog(false)} disabled={isInviting}>
-                Cancel
-              </Button>
-              <Button type="submit" disabled={isInviting || !inviteEmail}>
-                {isInviting ? 'Inviting...' : 'Invite Member'}
-              </Button>
-            </DialogFooter>
-          </form>
+          ) : (
+            <form onSubmit={handleInvite}>
+              <div className="space-y-4 py-4">
+                {message && message.type === 'error' && (
+                  <div className="p-4 rounded-lg bg-destructive/10 text-destructive border border-destructive/20">
+                    {message.text}
+                  </div>
+                )}
+                <div className="space-y-2">
+                  <Label htmlFor="email">Email Address</Label>
+                  <Input
+                    id="email"
+                    type="email"
+                    value={inviteEmail}
+                    onChange={(e) => setInviteEmail(e.target.value)}
+                    placeholder="colleague@example.com"
+                    required
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="role">Role</Label>
+                  <Select value={inviteRole} onValueChange={setInviteRole}>
+                    <SelectTrigger>
+                      <SelectValue placeholder="Select a role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="ADMIN">Admin - Can manage projects and members</SelectItem>
+                      <SelectItem value="MEMBER">Member - Can create and manage feature flags</SelectItem>
+                      <SelectItem value="VIEWER">Viewer - Read-only access</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+              </div>
+              <DialogFooter>
+                <Button type="button" variant="outline" onClick={() => setShowInviteDialog(false)} disabled={isInviting}>
+                  Cancel
+                </Button>
+                <Button type="submit" disabled={isInviting || !inviteEmail}>
+                  {isInviting ? 'Creating Invite...' : 'Create Invite'}
+                </Button>
+              </DialogFooter>
+            </form>
+          )}
         </DialogContent>
       </Dialog>
     </div>

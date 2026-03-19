@@ -1,8 +1,9 @@
-import { Injectable, UnauthorizedException, Logger } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger, ConflictException } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
 import * as jwt from 'jsonwebtoken';
+import { randomUUID } from 'crypto';
 
 @Injectable()
 export class AuthService {
@@ -57,21 +58,34 @@ export class AuthService {
     };
   }
 
-  async register(email: string, password: string, name: string) {
+  async register(
+    email: string, 
+    password: string, 
+    name: string,
+    firstName?: string,
+    lastName?: string,
+    emailVerified: boolean = false
+  ) {
     const existing = await this.prisma.user.findUnique({ where: { email } });
     if (existing) throw new UnauthorizedException('Email already exists');
 
     const passwordHash = await bcrypt.hash(password, 10);
-    const [firstName, ...lastNameParts] = name.split(' ');
-    const lastName = lastNameParts.join(' ') || '';
+    const [parsedFirstName, ...lastNameParts] = name.split(' ');
+    const finalFirstName = firstName || parsedFirstName;
+    const finalLastName = lastName || lastNameParts.join(' ') || '';
+    
+    // Create verification token if email not verified
+    const emailVerifyToken = emailVerified ? null : randomUUID();
     
     // Create user
     const user = await this.prisma.user.create({
       data: { 
         email, 
         password: passwordHash, 
-        firstName, 
-        lastName 
+        firstName: finalFirstName, 
+        lastName: finalLastName,
+        emailVerified,
+        emailVerifyToken,
       },
     });
 
@@ -88,7 +102,9 @@ export class AuthService {
       user: { 
         id: user.id, 
         email: user.email, 
-        name 
+        name: `${finalFirstName} ${finalLastName}`,
+        emailVerified,
+        emailVerifyToken: emailVerified ? undefined : emailVerifyToken, // Return token for testing
       } 
     };
   }

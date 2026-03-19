@@ -16,7 +16,6 @@ import {
   Settings,
   Loader2,
   MoreVertical,
-  Trash2,
   Users,
   Globe
 } from 'lucide-react';
@@ -43,14 +42,12 @@ export default function OrganizationDetail() {
   const [searchParams] = useSearchParams();
   const { 
     currentOrganization, 
-    fetchOrganizationById, 
-    deleteOrganization,
+    fetchOrganizationById,
     createProject,
     deleteProject,
     isLoading 
   } = useOrganizationStore();
   const [searchQuery, setSearchQuery] = useState('');
-  const [showDeleteDialog, setShowDeleteDialog] = useState(false);
   const [showCreateProjectDialog, setShowCreateProjectDialog] = useState(false);
   const [newProjectName, setNewProjectName] = useState('');
   const [newProjectKey, setNewProjectKey] = useState('');
@@ -119,16 +116,6 @@ export default function OrganizationDetail() {
       console.error('Failed to delete project:', error);
     } finally {
       setIsDeletingProject(false);
-    }
-  };
-
-  const handleDelete = async () => {
-    if (!orgId) return;
-    try {
-      await deleteOrganization(orgId);
-      navigate('/organizations');
-    } catch (error) {
-      console.error('Failed to delete organization:', error);
     }
   };
 
@@ -405,42 +392,6 @@ export default function OrganizationDetail() {
           </DialogFooter>
         </DialogContent>
       </Dialog>
-
-      {/* Danger Zone */}
-      <Card className="border-destructive/50">
-        <CardHeader>
-          <CardTitle className="text-destructive flex items-center gap-2">
-            <Trash2 className="w-5 h-5" />
-            {t('organization-detail.danger-zone.title')}
-          </CardTitle>
-          <CardDescription>
-            {t('organization-detail.danger-zone.description')}
-          </CardDescription>
-        </CardHeader>
-        <CardContent>
-          <Dialog open={showDeleteDialog} onOpenChange={setShowDeleteDialog}>
-            <DialogTrigger asChild>
-              <Button variant="destructive">{t('organization-detail.danger-zone.delete-button')}</Button>
-            </DialogTrigger>
-            <DialogContent>
-              <DialogHeader>
-                <DialogTitle>{t('organization-detail.delete-dialog.title')}</DialogTitle>
-                <DialogDescription dangerouslySetInnerHTML={{ 
-                  __html: t('organization-detail.delete-dialog.description', { name: currentOrganization.name }) 
-                }} />
-              </DialogHeader>
-              <DialogFooter>
-                <Button variant="outline" onClick={() => setShowDeleteDialog(false)}>
-                  {t('organization-detail.delete-dialog.cancel')}
-                </Button>
-                <Button variant="destructive" onClick={handleDelete}>
-                  {t('organization-detail.delete-dialog.confirm')}
-                </Button>
-              </DialogFooter>
-            </DialogContent>
-          </Dialog>
-        </CardContent>
-      </Card>
     </div>
   );
 }

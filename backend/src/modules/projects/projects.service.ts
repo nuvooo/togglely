@@ -350,4 +350,160 @@ export class ProjectsService {
     // 8. Finally delete the project
     await this.prisma.project.delete({ where: { id: projectId } });
   }
+
+  // Import/Export Feature Flags
+  async exportFlags(projectId: string) {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: { environments: true },
+    });
+
+    if (!project) throw new NotFoundException('Project not found');
+
+    const flags = await this.prisma.featureFlag.findMany({
+      where: { projectId },
+      include: {
+        flagEnvironments: {
+          include: { environment: true },
+        },
+      },
+    });
+
+    const exportData = {
+      version: '1.0',
+      exportedAt: new Date().toISOString(),
+      projectName: project.name,
+      projectKey: project.key,
+      environments: project.environments.map(e => ({
+        id: e.id,
+        name: e.name,
+        key: e.key,
+      })),
+      flags: flags.map(f => ({
+        key: f.key,
+        name: f.name,
+        description: f.description,
+        flagType: f.flagType,
+        environments: f.flagEnvironments
+          .filter(fe => !fe.brandId)
+          .map(fe => ({
+            environmentKey: fe.environment.key,
+            enabled: fe.enabled,
+            defaultValue: fe.defaultValue,
+          })),
+      })),
+    };
+
+    return exportData;
+  }
+
+  async importFlags(
+    projectId: string,
+    userId: string,
+    flags: any[],
+    options: { overwrite?: boolean; skipExisting?: boolean } = {}
+  ) {
+    const project = await this.prisma.project.findUnique({
+      where: { id: projectId },
+      include: { environments: true },
+    });
+
+    if (!project) throw new NotFoundException('Project not found');
+
+    // Check permissions
+    const membership = await this.prisma.organizationMember.findFirst({
+      where: { 
+        userId, 
+        organizationId: project.organizationId, 
+        role: { in: ['OWNER', 'ADMIN'] } 
+      },
+    });
+    
+    if (!membership) {
+      throw new ForbiddenException('Access denied');
+    }
+
+    const results = { imported: 0, skipped: 0, errors: [] as string[] };
+
+    for (const flagData of flags) {
+      try {
+        // Check if flag already exists
+        const existingFlag = await this.prisma.featureFlag.findFirst({
+          where: { projectId, key: flagData.key.toLowerCase() },
+        });
+
+        if (existingFlag && options.skipExisting) {
+          results.skipped++;
+          continue;
+        }
+
+        // Create or update flag
+        let flag;
+        if (existingFlag && options.overwrite) {
+          flag = await this.prisma.featureFlag.update({
+            where: { id: existingFlag.id },
+            data: {
+              name: flagData.name,
+              description: flagData.description,
+              flagType: flagData.flagType,
+              updatedById: userId,
+            },
+          });
+        } else if (!existingFlag) {
+          flag = await this.prisma.featureFlag.create({
+            data: {
+              key: flagData.key.toLowerCase(),
+              name: flagData.name,
+              description: flagData.description,
+              flagType: flagData.flagType,
+              projectId,
+              organizationId: project.organizationId,
+              createdById: userId,
+            },
+          });
+        } else {
+          results.skipped++;
+          continue;
+        }
+
+        // Create/update flag environments
+        for (const envData of flagData.environments || []) {
+          const env = project.environments.find(e => e.key === envData.environmentKey);
+          if (!env) {
+            results.errors.push(`Environment '${envData.environmentKey}' not found for flag '${flagData.key}'`);
+            continue;
+          }
+
+          const existingFlagEnv = await this.prisma.flagEnvironment.findFirst({
+            where: { flagId: flag.id, environmentId: env.id, brandId: null },
+          });
+
+          if (existingFlagEnv) {
+            await this.prisma.flagEnvironment.update({
+              where: { id: existingFlagEnv.id },
+              data: {
+                enabled: envData.enabled,
+                defaultValue: envData.defaultValue,
+              },
+            });
+          } else {
+            await this.prisma.flagEnvironment.create({
+              data: {
+                flagId: flag.id,
+                environmentId: env.id,
+                enabled: envData.enabled,
+                defaultValue: envData.defaultValue,
+              },
+            });
+          }
+        }
+
+        results.imported++;
+      } catch (error: any) {
+        results.errors.push(`Failed to import flag '${flagData.key}': ${error.message}`);
+      }
+    }
+
+    return results;
+  }
 }

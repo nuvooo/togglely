@@ -1,11 +1,17 @@
-import { Controller, Get, Post, Patch, Delete, Body, Param, Req, UseGuards } from '@nestjs/common';
+import { Controller, Get, Post, Patch, Delete, Body, Param, Req, UseGuards, ForbiddenException } from '@nestjs/common';
 import { OrganizationsService } from './organizations.service';
 import { AuthGuard } from '../../shared/auth.guard';
+import { PrismaService } from '../../shared/prisma.service';
+import { randomUUID } from 'crypto';
+import * as bcrypt from 'bcryptjs';
 
 @Controller('organizations')
 @UseGuards(AuthGuard)
 export class OrganizationsController {
-  constructor(private readonly orgsService: OrganizationsService) {}
+  constructor(
+    private readonly orgsService: OrganizationsService,
+    private readonly prisma: PrismaService,
+  ) {}
 
   @Get()
   async findAll(@Req() req: any) {
@@ -53,6 +59,126 @@ export class OrganizationsController {
     @Param('userId') userId: string,
   ) {
     await this.orgsService.removeMember(id, userId);
+    return { success: true };
+  }
+
+  // Invites
+  @Post(':id/invites')
+  async createInvite(
+    @Param('id') id: string,
+    @Body() body: { email: string; role?: string },
+    @Req() req: any,
+  ) {
+    // Check permissions
+    const membership = await this.prisma.organizationMember.findFirst({
+      where: {
+        userId: req.user.userId,
+        organizationId: id,
+        role: { in: ['OWNER', 'ADMIN'] },
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('Only owners and admins can invite members');
+    }
+
+    // Check if user already exists
+    const existingUser = await this.prisma.user.findUnique({
+      where: { email: body.email },
+    });
+
+    if (existingUser) {
+      // Add existing user directly
+      const existingMember = await this.prisma.organizationMember.findFirst({
+        where: { organizationId: id, userId: existingUser.id },
+      });
+
+      if (existingMember) {
+        throw new ForbiddenException('User is already a member');
+      }
+
+      await this.prisma.organizationMember.create({
+        data: {
+          userId: existingUser.id,
+          organizationId: id,
+          role: (body.role || 'MEMBER') as any,
+        },
+      });
+
+      return { success: true, message: 'User added to organization' };
+    }
+
+    // Create invite token
+    const token = randomUUID();
+    const expiresAt = new Date();
+    expiresAt.setDate(expiresAt.getDate() + 7); // 7 days expiry
+
+    const invite = await this.prisma.organizationInvite.create({
+      data: {
+        email: body.email,
+        organizationId: id,
+        role: (body.role || 'MEMBER') as any,
+        token,
+        expiresAt,
+      },
+    });
+
+    // TODO: Send email with invite link
+    // For now, return the token
+    return {
+      success: true,
+      inviteToken: token,
+      inviteUrl: `/invite/${token}`,
+      message: 'Invite created. Send the invite URL to the user.',
+    };
+  }
+
+  @Get(':id/invites')
+  async getInvites(@Param('id') id: string, @Req() req: any) {
+    // Check permissions
+    const membership = await this.prisma.organizationMember.findFirst({
+      where: {
+        userId: req.user.userId,
+        organizationId: id,
+        role: { in: ['OWNER', 'ADMIN'] },
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('Only owners and admins can view invites');
+    }
+
+    const invites = await this.prisma.organizationInvite.findMany({
+      where: { organizationId: id },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return { invites };
+  }
+
+  @Delete(':id/invites/:inviteId')
+  async cancelInvite(
+    @Param('id') id: string,
+    @Param('inviteId') inviteId: string,
+    @Req() req: any,
+  ) {
+    // Check permissions
+    const membership = await this.prisma.organizationMember.findFirst({
+      where: {
+        userId: req.user.userId,
+        organizationId: id,
+        role: { in: ['OWNER', 'ADMIN'] },
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException('Only owners and admins can cancel invites');
+    }
+
+    await this.prisma.organizationInvite.delete({
+      where: { id: inviteId, organizationId: id },
+    });
+
     return { success: true };
   }
 
