@@ -1,6 +1,6 @@
 import { Injectable, NotFoundException, UnauthorizedException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma.service';
-import { Flag } from '../../domain/flag.entity';
+import { getDefaultFlagValue, isOriginAllowed, toSdkFlagResponse } from './sdk.helpers';
 
 @Injectable()
 export class SdkService {
@@ -50,16 +50,7 @@ export class SdkService {
 
     // Check origin if project has allowedOrigins
     if (origin && project.allowedOrigins && project.allowedOrigins.length > 0) {
-      const allowed = project.allowedOrigins.some((allowed: string) => {
-        if (allowed === '*') return true;
-        if (allowed === origin) return true;
-        // Support wildcards like *.example.com
-        if (allowed.startsWith('*.')) {
-          const domain = allowed.slice(2);
-          return origin.endsWith(domain);
-        }
-        return false;
-      });
+      const allowed = isOriginAllowed(origin, project.allowedOrigins);
 
       if (!allowed) {
         this.logger.debug(`[SDK Service] ERROR: Origin ${origin} not in allowedOrigins`);
@@ -153,33 +144,19 @@ export class SdkService {
           environmentId: environment.id,
           brandId: brandId || null,
           enabled: false,
-          defaultValue: flag.flagType === 'BOOLEAN' ? 'false' : 
-                       flag.flagType === 'NUMBER' ? '0' : 
-                       flag.flagType === 'JSON' ? '{}' : '',
+          defaultValue: getDefaultFlagValue(flag.flagType),
         },
       });
     }
     
     this.logger.debug(`[SDK Service] FlagEnvironment: enabled=${flagEnv.enabled}, value=${flagEnv.defaultValue}`);
 
-    const domainFlag = Flag.reconstitute({
-      id: flag.id,
-      key: flag.key,
-      name: flag.name,
-      description: flag.description,
-      type: flag.flagType as any,
-      projectId: flag.projectId,
-      organizationId: project.organizationId,
-      createdById: flag.createdById || '',
-      createdAt: flag.createdAt,
-      updatedAt: flag.updatedAt,
-    });
-
-    return {
-      value: domainFlag.parseValue(flagEnv.defaultValue),
-      enabled: flagEnv.enabled,
-      flagType: flag.flagType,
-    };
+    return toSdkFlagResponse(
+      flag,
+      project.organizationId,
+      flagEnv.defaultValue,
+      flagEnv.enabled,
+    );
   }
 
   async evaluateAllFlags(
@@ -250,11 +227,7 @@ export class SdkService {
             environmentId: environment.id,
             brandId: brandId,
             enabled: globalEnv?.enabled ?? false,
-            defaultValue: globalEnv?.defaultValue ?? (
-              flag.flagType === 'BOOLEAN' ? 'false' : 
-              flag.flagType === 'NUMBER' ? '0' : 
-              flag.flagType === 'JSON' ? '{}' : ''
-            ),
+            defaultValue: globalEnv?.defaultValue ?? getDefaultFlagValue(flag.flagType),
           },
         });
       } else if (!flagEnv && !brandId) {
@@ -265,31 +238,17 @@ export class SdkService {
             environmentId: environment.id,
             brandId: null,
             enabled: false,
-            defaultValue: flag.flagType === 'BOOLEAN' ? 'false' : 
-                         flag.flagType === 'NUMBER' ? '0' : 
-                         flag.flagType === 'JSON' ? '{}' : '',
+            defaultValue: getDefaultFlagValue(flag.flagType),
           },
         });
       }
 
-      const domainFlag = Flag.reconstitute({
-        id: flag.id,
-        key: flag.key,
-        name: flag.name,
-        description: flag.description,
-        type: flag.flagType as any,
-        projectId: flag.projectId,
-        organizationId: project.organizationId,
-        createdById: flag.createdById || '',
-        createdAt: flag.createdAt,
-        updatedAt: flag.updatedAt,
-      });
-
-      results[flag.key] = {
-        value: domainFlag.parseValue(flagEnv.defaultValue),
-        enabled: flagEnv.enabled,
-        flagType: flag.flagType,
-      };
+      results[flag.key] = toSdkFlagResponse(
+        flag,
+        project.organizationId,
+        flagEnv.defaultValue,
+        flagEnv.enabled,
+      );
     }
 
     return results;
