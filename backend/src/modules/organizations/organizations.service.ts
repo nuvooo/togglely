@@ -1,9 +1,12 @@
-import { Injectable, NotFoundException, ConflictException } from '@nestjs/common';
+import { Injectable, BadRequestException, NotFoundException, ConflictException } from '@nestjs/common';
+import { OrganizationRole } from '@prisma/client';
 import { PrismaService } from '../../shared/prisma.service';
 import { randomUUID } from 'crypto';
 
 @Injectable()
 export class OrganizationsService {
+  private static readonly allowedRoles = new Set<OrganizationRole>(['OWNER', 'ADMIN', 'MEMBER']);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async findAll(userId: string) {
@@ -109,7 +112,7 @@ export class OrganizationsService {
       data: {
         userId,
         organizationId: org.id,
-        role: 'OWNER' as any,
+        role: 'OWNER',
       },
     });
 
@@ -213,7 +216,7 @@ export class OrganizationsService {
       data: {
         userId: user.id,
         organizationId: orgId,
-        role: role as any,
+        role: this.parseOrganizationRole(role),
       },
       include: { user: { select: { id: true, email: true, firstName: true, lastName: true } } },
     });
@@ -233,5 +236,13 @@ export class OrganizationsService {
     await this.prisma.organizationMember.delete({
       where: { id: member.id },
     });
+  }
+
+  private parseOrganizationRole(role: string): OrganizationRole {
+    if (!OrganizationsService.allowedRoles.has(role as OrganizationRole)) {
+      throw new BadRequestException(`Invalid organization role: ${role}`);
+    }
+
+    return role as OrganizationRole;
   }
 }
