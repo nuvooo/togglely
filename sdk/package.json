@@ -12,7 +12,7 @@
   ],
   "scripts": {
     "build": "npm run build --workspaces",
-    "test": "npm run test --workspaces",
+    "test": "npm run test --workspaces --if-present",
     "publish:core": "npm publish --workspace=core --access=public",
     "publish:vanilla": "npm publish --workspace=vanilla --access=public",
     "publish:react": "npm publish --workspace=react --access=public",
