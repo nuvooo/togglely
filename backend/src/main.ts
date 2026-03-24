@@ -6,8 +6,14 @@ import cors from 'cors';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { SdkService } from './modules/sdk/sdk.service';
-
-
+import { SDK_ERROR_CODES } from './modules/sdk/sdk.constants';
+import {
+  extractEffectiveBrandKey,
+  extractSdkApiKey,
+  extractSdkOrigin,
+  mapSdkError,
+  setSdkCorsHeaders,
+} from './modules/sdk/sdk-http.utils';
 
 async function bootstrap() {
   const logger = new Logger('Bootstrap');
@@ -111,29 +117,13 @@ async function bootstrap() {
   });
   
   // SDK endpoints with DEBUG logging
-  
-  // Helper function to set CORS headers for SDK responses
-  const setSdkCorsHeaders = (res: any, origin?: string) => {
-    const allowedOrigin = origin || '*';
-    res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key, X-Requested-With');
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.setHeader('Vary', 'Origin');
-  };
-  
+
   // Get single flag - MUST be registered BEFORE the list endpoint!
   httpAdapter.get('/sdk/flags/:projectKey/:environmentKey/:flagKey', async (req, res) => {
     const { projectKey, environmentKey, flagKey } = req.params;
-    const { brandKey, tenantId, apiKey: queryApiKey } = req.query;
-    const effectiveBrandKey = brandKey || tenantId;
-    
-    // Accept apiKey from query param OR Authorization: Bearer header OR X-API-Key header
-    const authHeader = req.headers['authorization'] as string | undefined;
-    const bearerKey = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
-    const headerApiKey = req.headers['x-api-key'] as string | undefined;
-    const apiKey = (queryApiKey as string | undefined) || bearerKey || headerApiKey;
-    const origin = req.headers['origin'] as string | undefined;
+    const effectiveBrandKey = extractEffectiveBrandKey(req.query);
+    const apiKey = extractSdkApiKey(req);
+    const origin = extractSdkOrigin(req);
     
     // Always set CORS headers first
     setSdkCorsHeaders(res, origin);
@@ -143,8 +133,8 @@ async function bootstrap() {
     
     try {
       if (!apiKey) {
-        console.log('[SDK] ERROR: No API key provided');
-        return res.status(401).json({ error: 'API key required', code: 'MISSING_API_KEY' });
+        logger.debug('[SDK] ERROR: No API key provided');
+        return res.status(401).json({ error: 'API key required', code: SDK_ERROR_CODES.missingApiKey });
       }
       
       const result = await sdkService.evaluateFlag(
@@ -160,35 +150,17 @@ async function bootstrap() {
       res.json(result);
     } catch (error: any) {
       logger.error(`[SDK] Error for ${flagKey}:`, error.message);
-      
-      if (error.status === 401 || error.message?.includes('Invalid API key')) {
-        return res.status(401).json({ error: error.message || 'Invalid API key', code: 'INVALID_API_KEY' });
-      }
-      if (error.status === 403 || error.message?.includes('Origin not allowed')) {
-        return res.status(403).json({ error: error.message || 'Origin not allowed', code: 'ORIGIN_NOT_ALLOWED' });
-      }
-      if (error.message?.includes('Project not found')) {
-        return res.status(404).json({ error: 'Project not found', code: 'PROJECT_NOT_FOUND' });
-      }
-      if (error.message?.includes('Environment not found')) {
-        return res.status(404).json({ error: 'Environment not found', code: 'ENV_NOT_FOUND' });
-      }
-      res.status(500).json({ error: error.message || 'Internal error', code: 'INTERNAL_ERROR' });
+      const response = mapSdkError(error);
+      res.status(response.status).json(response.body);
     }
   });
   
   // Get all flags for project/environment
   httpAdapter.get('/sdk/flags/:projectKey/:environmentKey', async (req, res) => {
     const { projectKey, environmentKey } = req.params;
-    const { brandKey, tenantId, apiKey: queryApiKey } = req.query;
-    const effectiveBrandKey = brandKey || tenantId;
-    
-    // Accept apiKey from query param OR Authorization: Bearer header OR X-API-Key header
-    const authHeader = req.headers['authorization'] as string | undefined;
-    const bearerKey = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
-    const headerApiKey = req.headers['x-api-key'] as string | undefined;
-    const apiKey = (queryApiKey as string | undefined) || bearerKey || headerApiKey;
-    const origin = req.headers['origin'] as string | undefined;
+    const effectiveBrandKey = extractEffectiveBrandKey(req.query);
+    const apiKey = extractSdkApiKey(req);
+    const origin = extractSdkOrigin(req);
     
     // Always set CORS headers first
     setSdkCorsHeaders(res, origin);
@@ -198,8 +170,8 @@ async function bootstrap() {
     
     try {
       if (!apiKey) {
-        console.log('[SDK] ERROR: No API key provided');
-        return res.status(401).json({ error: 'API key required', code: 'MISSING_API_KEY' });
+        logger.debug('[SDK] ERROR: No API key provided');
+        return res.status(401).json({ error: 'API key required', code: SDK_ERROR_CODES.missingApiKey });
       }
       
       const results = await sdkService.getAllFlags(
@@ -214,20 +186,8 @@ async function bootstrap() {
       res.json(results);
     } catch (error: any) {
       logger.error(`[SDK] Error:`, error.message);
-      
-      if (error.status === 401 || error.message?.includes('Invalid API key')) {
-        return res.status(401).json({ error: error.message || 'Invalid API key', code: 'INVALID_API_KEY' });
-      }
-      if (error.status === 403 || error.message?.includes('Origin not allowed')) {
-        return res.status(403).json({ error: error.message || 'Origin not allowed', code: 'ORIGIN_NOT_ALLOWED' });
-      }
-      if (error.message?.includes('Project not found')) {
-        return res.status(404).json({ error: 'Project not found', code: 'PROJECT_NOT_FOUND' });
-      }
-      if (error.message?.includes('Environment not found')) {
-        return res.status(404).json({ error: 'Environment not found', code: 'ENV_NOT_FOUND' });
-      }
-      res.status(500).json({ error: error.message || 'Internal error', code: 'INTERNAL_ERROR' });
+      const response = mapSdkError(error);
+      res.status(response.status).json(response.body);
     }
   });
   
