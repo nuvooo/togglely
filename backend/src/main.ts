@@ -1,5 +1,5 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, Logger } from '@nestjs/common';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import cors from 'cors';
@@ -10,6 +10,7 @@ import { SdkService } from './modules/sdk/sdk.service';
 
 
 async function bootstrap() {
+  const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
   
   // Swagger UI needs relaxed CSP (inline scripts) — apply BEFORE helmet
@@ -31,9 +32,9 @@ async function bootstrap() {
     ? corsOriginsEnv.split(',').map(o => o.trim()).filter(o => o)
     : [];
   
-  console.log('[CORS] Configuration:');
-  console.log(`[CORS] CORS_ORIGINS env: "${corsOriginsEnv}"`);
-  console.log(`[CORS] Parsed origins:`, corsOrigins.length > 0 ? corsOrigins : 'ALLOWING ALL (*)');
+  logger.log('[CORS] Configuration:');
+  logger.debug(`[CORS] CORS_ORIGINS env: "${corsOriginsEnv}"`);
+  logger.debug(`[CORS] Parsed origins:`, corsOrigins.length > 0 ? corsOrigins : 'ALLOWING ALL (*)');
   
   // Check if we should allow all origins
   const allowAll = corsOrigins.length === 0 || corsOrigins.includes('*');
@@ -42,19 +43,19 @@ async function bootstrap() {
     origin: (origin, callback) => {
       // Allow requests with no origin (mobile apps, curl, server-side, etc.)
       if (!origin) {
-        console.log(`[CORS] Allowing request with no origin (curl/mobile)`);
+        logger.debug(`[CORS] Allowing request with no origin (curl/mobile)`);
         return callback(null, true);
       }
       
       // If CORS_ORIGINS is empty or contains *, allow all
       if (allowAll) {
-        console.log(`[CORS] Allowing origin: ${origin} (wildcard mode)`);
+        logger.debug(`[CORS] Allowing origin: ${origin} (wildcard mode)`);
         return callback(null, true);
       }
       
       // Always allow localhost origins for development
       if (origin.match(/^https?:\/\/localhost(:\d+)?$/)) {
-        console.log(`[CORS] Allowing localhost origin: ${origin}`);
+        logger.debug(`[CORS] Allowing localhost origin: ${origin}`);
         return callback(null, true);
       }
       
@@ -70,13 +71,14 @@ async function bootstrap() {
       });
       
       if (allowed) {
-        console.log(`[CORS] Allowing origin: ${origin}`);
+        logger.debug(`[CORS] Allowing origin: ${origin}`);
         callback(null, true);
-      } else {
-        console.warn(`[CORS] BLOCKED origin: ${origin}`);
-        console.warn(`[CORS] Allowed origins:`, corsOrigins);
-        callback(new Error(`Origin ${origin} not allowed`));
+        return;
       }
+
+      logger.warn(`[CORS] BLOCKED origin: ${origin}`);
+      logger.warn(`[CORS] Allowed origins: ${JSON.stringify(corsOrigins)}`);
+      callback(new Error(`Origin ${origin} not allowed`));
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -136,8 +138,8 @@ async function bootstrap() {
     // Always set CORS headers first
     setSdkCorsHeaders(res, origin);
     
-    console.log(`[SDK] Request: /sdk/flags/${projectKey}/${environmentKey}/${flagKey}`);
-    console.log(`[SDK] API Key present: ${!!apiKey}, Origin: ${origin || 'none'}`);
+    logger.debug(`[SDK] Request: /sdk/flags/${projectKey}/${environmentKey}/${flagKey}`);
+    logger.debug(`[SDK] API Key present: ${!!apiKey}, Origin: ${origin || 'none'}`);
     
     try {
       if (!apiKey) {
@@ -154,10 +156,10 @@ async function bootstrap() {
         origin,
       );
       
-      console.log(`[SDK] Success: ${flagKey} =`, result);
+      logger.debug(`[SDK] Success: ${flagKey} =`, result);
       res.json(result);
     } catch (error: any) {
-      console.error(`[SDK] Error for ${flagKey}:`, error.message);
+      logger.error(`[SDK] Error for ${flagKey}:`, error.message);
       
       if (error.status === 401 || error.message?.includes('Invalid API key')) {
         return res.status(401).json({ error: error.message || 'Invalid API key', code: 'INVALID_API_KEY' });
@@ -191,8 +193,8 @@ async function bootstrap() {
     // Always set CORS headers first
     setSdkCorsHeaders(res, origin);
     
-    console.log(`[SDK] Request: /sdk/flags/${projectKey}/${environmentKey}`);
-    console.log(`[SDK] API Key present: ${!!apiKey}, Origin: ${origin || 'none'}`);
+    logger.debug(`[SDK] Request: /sdk/flags/${projectKey}/${environmentKey}`);
+    logger.debug(`[SDK] API Key present: ${!!apiKey}, Origin: ${origin || 'none'}`);
     
     try {
       if (!apiKey) {
@@ -208,10 +210,10 @@ async function bootstrap() {
         origin,
       );
       
-      console.log(`[SDK] Success: ${Object.keys(results).length} flags returned`);
+      logger.debug(`[SDK] Success: ${Object.keys(results).length} flags returned`);
       res.json(results);
     } catch (error: any) {
-      console.error(`[SDK] Error:`, error.message);
+      logger.error(`[SDK] Error:`, error.message);
       
       if (error.status === 401 || error.message?.includes('Invalid API key')) {
         return res.status(401).json({ error: error.message || 'Invalid API key', code: 'INVALID_API_KEY' });
@@ -346,6 +348,6 @@ SwaggerModule.setup('api/swagger', app, document, {
   
   const port = process.env.PORT || 4000;
   await app.listen(port, '0.0.0.0');
-  console.log(`🚀 Togglely API running on http://0.0.0.0:${port}`);
+  logger.log(`🚀 Togglely API running on http://0.0.0.0:${port}`);
 }
 bootstrap();

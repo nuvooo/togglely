@@ -1,9 +1,11 @@
-import { Injectable, NotFoundException, UnauthorizedException, ForbiddenException } from '@nestjs/common';
+import { Injectable, NotFoundException, UnauthorizedException, ForbiddenException, Logger } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma.service';
 import { Flag } from '../../domain/flag.entity';
 
 @Injectable()
 export class SdkService {
+  private readonly logger = new Logger(SdkService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   private async validateApiKeyAndOrigin(
@@ -11,7 +13,7 @@ export class SdkService {
     projectKey: string,
     origin?: string,
   ): Promise<void> {
-    console.log(`[SDK Service] Validating API key for project: ${projectKey}`);
+    this.logger.debug(`[SDK Service] Validating API key for project: ${projectKey}`);
     
     // Find API key
     const keyRecord = await this.prisma.apiKey.findFirst({
@@ -31,20 +33,20 @@ export class SdkService {
     });
 
     if (!keyRecord) {
-      console.log(`[SDK Service] ERROR: API key not found or inactive`);
+      this.logger.debug(`[SDK Service] ERROR: API key not found or inactive`);
       throw new UnauthorizedException('Invalid API key');
     }
     
-    console.log(`[SDK Service] API key found, org: ${keyRecord.organizationId}`);
+    this.logger.debug(`[SDK Service] API key found, org: ${keyRecord.organizationId}`);
 
     // Check if key belongs to project's organization
     const project = keyRecord.organization.projects[0];
     if (!project) {
-      console.log(`[SDK Service] ERROR: Project ${projectKey} not found in organization`);
+      this.logger.debug(`[SDK Service] ERROR: Project ${projectKey} not found in organization`);
       throw new UnauthorizedException('API key does not have access to this project');
     }
     
-    console.log(`[SDK Service] Project found: ${project.id}, allowedOrigins:`, project.allowedOrigins);
+    this.logger.debug(`[SDK Service] Project found: ${project.id}, allowedOrigins:`, project.allowedOrigins);
 
     // Check origin if project has allowedOrigins
     if (origin && project.allowedOrigins && project.allowedOrigins.length > 0) {
@@ -60,10 +62,10 @@ export class SdkService {
       });
 
       if (!allowed) {
-        console.log(`[SDK Service] ERROR: Origin ${origin} not in allowedOrigins`);
+        this.logger.debug(`[SDK Service] ERROR: Origin ${origin} not in allowedOrigins`);
         throw new ForbiddenException('Origin not allowed');
       }
-      console.log(`[SDK Service] Origin ${origin} allowed`);
+      this.logger.debug(`[SDK Service] Origin ${origin} allowed`);
     }
   }
 
@@ -75,7 +77,7 @@ export class SdkService {
     brandKey?: string,
     origin?: string,
   ) {
-    console.log(`[SDK Service] evaluateFlag: ${flagKey} for ${projectKey}/${environmentKey}`);
+    this.logger.debug(`[SDK Service] evaluateFlag: ${flagKey} for ${projectKey}/${environmentKey}`);
     
     // Validate API key first
     await this.validateApiKeyAndOrigin(apiKey, projectKey, origin);
@@ -86,30 +88,30 @@ export class SdkService {
     });
     
     if (!project) {
-      console.log(`[SDK Service] ERROR: Project ${projectKey} not found`);
+      this.logger.debug(`[SDK Service] ERROR: Project ${projectKey} not found`);
       throw new NotFoundException('Project not found');
     }
-    console.log(`[SDK Service] Project found: ${project.id}`);
+    this.logger.debug(`[SDK Service] Project found: ${project.id}`);
 
     const environment = await this.prisma.environment.findFirst({
       where: { projectId: project.id, key: environmentKey },
     });
     
     if (!environment) {
-      console.log(`[SDK Service] ERROR: Environment ${environmentKey} not found`);
+      this.logger.debug(`[SDK Service] ERROR: Environment ${environmentKey} not found`);
       throw new NotFoundException('Environment not found');
     }
-    console.log(`[SDK Service] Environment found: ${environment.id}`);
+    this.logger.debug(`[SDK Service] Environment found: ${environment.id}`);
 
     const flag = await this.prisma.featureFlag.findFirst({
       where: { projectId: project.id, key: flagKey },
     });
     
     if (!flag) {
-      console.log(`[SDK Service] WARNING: Flag ${flagKey} not found, returning disabled`);
+      this.logger.debug(`[SDK Service] WARNING: Flag ${flagKey} not found, returning disabled`);
       return { value: false, enabled: false, flagType: 'BOOLEAN' };
     }
-    console.log(`[SDK Service] Flag found: ${flag.id}, type: ${flag.flagType}`);
+    this.logger.debug(`[SDK Service] Flag found: ${flag.id}, type: ${flag.flagType}`);
 
     let brandId: string | null = null;
     if (brandKey && project.type === 'MULTI') {
@@ -127,9 +129,9 @@ export class SdkService {
       
       if (brand) {
         brandId = brand.id;
-        console.log(`[SDK Service] Brand found: ${brand.id} (key: ${brand.key})`);
+        this.logger.debug(`[SDK Service] Brand found: ${brand.id} (key: ${brand.key})`);
       } else {
-        console.log(`[SDK Service] Brand not found for key/id: ${brandKey}`);
+        this.logger.debug(`[SDK Service] Brand not found for key/id: ${brandKey}`);
       }
     }
 
@@ -144,7 +146,7 @@ export class SdkService {
     
     // Auto-create if missing
     if (!flagEnv) {
-      console.log(`[SDK Service] FlagEnvironment not found, auto-creating with disabled state`);
+      this.logger.debug(`[SDK Service] FlagEnvironment not found, auto-creating with disabled state`);
       flagEnv = await this.prisma.flagEnvironment.create({
         data: {
           flagId: flag.id,
@@ -158,7 +160,7 @@ export class SdkService {
       });
     }
     
-    console.log(`[SDK Service] FlagEnvironment: enabled=${flagEnv.enabled}, value=${flagEnv.defaultValue}`);
+    this.logger.debug(`[SDK Service] FlagEnvironment: enabled=${flagEnv.enabled}, value=${flagEnv.defaultValue}`);
 
     const domainFlag = Flag.reconstitute({
       id: flag.id,
@@ -226,7 +228,7 @@ export class SdkService {
 
     const results: Record<string, any> = {};
 
-    console.log(`[SDK getAllFlags] Processing ${flags.length} flags, brandId: ${brandId}, envId: ${environment.id}`);
+    this.logger.debug(`[SDK getAllFlags] Processing ${flags.length} flags, brandId: ${brandId}, envId: ${environment.id}`);
     
     for (const flag of flags) {
       // Find matching flag environment for this brand
