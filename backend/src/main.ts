@@ -1,15 +1,22 @@
 import { NestFactory } from '@nestjs/core';
-import { ValidationPipe } from '@nestjs/common';
+import { ValidationPipe, Logger } from '@nestjs/common';
 import helmet from 'helmet';
 import morgan from 'morgan';
 import cors from 'cors';
 import { SwaggerModule, DocumentBuilder } from '@nestjs/swagger';
 import { AppModule } from './app.module';
 import { SdkService } from './modules/sdk/sdk.service';
-
-
+import { SDK_ERROR_CODES } from './modules/sdk/sdk.constants';
+import {
+  extractEffectiveBrandKey,
+  extractSdkApiKey,
+  extractSdkOrigin,
+  mapSdkError,
+  setSdkCorsHeaders,
+} from './modules/sdk/sdk-http.utils';
 
 async function bootstrap() {
+  const logger = new Logger('Bootstrap');
   const app = await NestFactory.create(AppModule);
   
   // Swagger UI needs relaxed CSP (inline scripts) — apply BEFORE helmet
@@ -31,9 +38,9 @@ async function bootstrap() {
     ? corsOriginsEnv.split(',').map(o => o.trim()).filter(o => o)
     : [];
   
-  console.log('[CORS] Configuration:');
-  console.log(`[CORS] CORS_ORIGINS env: "${corsOriginsEnv}"`);
-  console.log(`[CORS] Parsed origins:`, corsOrigins.length > 0 ? corsOrigins : 'ALLOWING ALL (*)');
+  logger.log('[CORS] Configuration:');
+  logger.debug(`[CORS] CORS_ORIGINS env: "${corsOriginsEnv}"`);
+  logger.debug(`[CORS] Parsed origins:`, corsOrigins.length > 0 ? corsOrigins : 'ALLOWING ALL (*)');
   
   // Check if we should allow all origins
   const allowAll = corsOrigins.length === 0 || corsOrigins.includes('*');
@@ -42,19 +49,19 @@ async function bootstrap() {
     origin: (origin, callback) => {
       // Allow requests with no origin (mobile apps, curl, server-side, etc.)
       if (!origin) {
-        console.log(`[CORS] Allowing request with no origin (curl/mobile)`);
+        logger.debug(`[CORS] Allowing request with no origin (curl/mobile)`);
         return callback(null, true);
       }
       
       // If CORS_ORIGINS is empty or contains *, allow all
       if (allowAll) {
-        console.log(`[CORS] Allowing origin: ${origin} (wildcard mode)`);
+        logger.debug(`[CORS] Allowing origin: ${origin} (wildcard mode)`);
         return callback(null, true);
       }
       
       // Always allow localhost origins for development
       if (origin.match(/^https?:\/\/localhost(:\d+)?$/)) {
-        console.log(`[CORS] Allowing localhost origin: ${origin}`);
+        logger.debug(`[CORS] Allowing localhost origin: ${origin}`);
         return callback(null, true);
       }
       
@@ -70,13 +77,14 @@ async function bootstrap() {
       });
       
       if (allowed) {
-        console.log(`[CORS] Allowing origin: ${origin}`);
+        logger.debug(`[CORS] Allowing origin: ${origin}`);
         callback(null, true);
-      } else {
-        console.warn(`[CORS] BLOCKED origin: ${origin}`);
-        console.warn(`[CORS] Allowed origins:`, corsOrigins);
-        callback(new Error(`Origin ${origin} not allowed`));
+        return;
       }
+
+      logger.warn(`[CORS] BLOCKED origin: ${origin}`);
+      logger.warn(`[CORS] Allowed origins: ${JSON.stringify(corsOrigins)}`);
+      callback(new Error(`Origin ${origin} not allowed`));
     },
     credentials: true,
     methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
@@ -109,40 +117,24 @@ async function bootstrap() {
   });
   
   // SDK endpoints with DEBUG logging
-  
-  // Helper function to set CORS headers for SDK responses
-  const setSdkCorsHeaders = (res: any, origin?: string) => {
-    const allowedOrigin = origin || '*';
-    res.setHeader('Access-Control-Allow-Origin', allowedOrigin);
-    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PUT, PATCH, DELETE, OPTIONS');
-    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization, X-API-Key, X-Requested-With');
-    res.setHeader('Access-Control-Allow-Credentials', 'true');
-    res.setHeader('Vary', 'Origin');
-  };
-  
+
   // Get single flag - MUST be registered BEFORE the list endpoint!
   httpAdapter.get('/sdk/flags/:projectKey/:environmentKey/:flagKey', async (req, res) => {
     const { projectKey, environmentKey, flagKey } = req.params;
-    const { brandKey, tenantId, apiKey: queryApiKey } = req.query;
-    const effectiveBrandKey = brandKey || tenantId;
-    
-    // Accept apiKey from query param OR Authorization: Bearer header OR X-API-Key header
-    const authHeader = req.headers['authorization'] as string | undefined;
-    const bearerKey = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
-    const headerApiKey = req.headers['x-api-key'] as string | undefined;
-    const apiKey = (queryApiKey as string | undefined) || bearerKey || headerApiKey;
-    const origin = req.headers['origin'] as string | undefined;
+    const effectiveBrandKey = extractEffectiveBrandKey(req.query);
+    const apiKey = extractSdkApiKey(req);
+    const origin = extractSdkOrigin(req);
     
     // Always set CORS headers first
     setSdkCorsHeaders(res, origin);
     
-    console.log(`[SDK] Request: /sdk/flags/${projectKey}/${environmentKey}/${flagKey}`);
-    console.log(`[SDK] API Key present: ${!!apiKey}, Origin: ${origin || 'none'}`);
+    logger.debug(`[SDK] Request: /sdk/flags/${projectKey}/${environmentKey}/${flagKey}`);
+    logger.debug(`[SDK] API Key present: ${!!apiKey}, Origin: ${origin || 'none'}`);
     
     try {
       if (!apiKey) {
-        console.log('[SDK] ERROR: No API key provided');
-        return res.status(401).json({ error: 'API key required', code: 'MISSING_API_KEY' });
+        logger.debug('[SDK] ERROR: No API key provided');
+        return res.status(401).json({ error: 'API key required', code: SDK_ERROR_CODES.missingApiKey });
       }
       
       const result = await sdkService.evaluateFlag(
@@ -154,50 +146,32 @@ async function bootstrap() {
         origin,
       );
       
-      console.log(`[SDK] Success: ${flagKey} =`, result);
+      logger.debug(`[SDK] Success: ${flagKey} =`, result);
       res.json(result);
     } catch (error: any) {
-      console.error(`[SDK] Error for ${flagKey}:`, error.message);
-      
-      if (error.status === 401 || error.message?.includes('Invalid API key')) {
-        return res.status(401).json({ error: error.message || 'Invalid API key', code: 'INVALID_API_KEY' });
-      }
-      if (error.status === 403 || error.message?.includes('Origin not allowed')) {
-        return res.status(403).json({ error: error.message || 'Origin not allowed', code: 'ORIGIN_NOT_ALLOWED' });
-      }
-      if (error.message?.includes('Project not found')) {
-        return res.status(404).json({ error: 'Project not found', code: 'PROJECT_NOT_FOUND' });
-      }
-      if (error.message?.includes('Environment not found')) {
-        return res.status(404).json({ error: 'Environment not found', code: 'ENV_NOT_FOUND' });
-      }
-      res.status(500).json({ error: error.message || 'Internal error', code: 'INTERNAL_ERROR' });
+      logger.error(`[SDK] Error for ${flagKey}:`, error.message);
+      const response = mapSdkError(error);
+      res.status(response.status).json(response.body);
     }
   });
   
   // Get all flags for project/environment
   httpAdapter.get('/sdk/flags/:projectKey/:environmentKey', async (req, res) => {
     const { projectKey, environmentKey } = req.params;
-    const { brandKey, tenantId, apiKey: queryApiKey } = req.query;
-    const effectiveBrandKey = brandKey || tenantId;
-    
-    // Accept apiKey from query param OR Authorization: Bearer header OR X-API-Key header
-    const authHeader = req.headers['authorization'] as string | undefined;
-    const bearerKey = authHeader?.startsWith('Bearer ') ? authHeader.slice(7) : undefined;
-    const headerApiKey = req.headers['x-api-key'] as string | undefined;
-    const apiKey = (queryApiKey as string | undefined) || bearerKey || headerApiKey;
-    const origin = req.headers['origin'] as string | undefined;
+    const effectiveBrandKey = extractEffectiveBrandKey(req.query);
+    const apiKey = extractSdkApiKey(req);
+    const origin = extractSdkOrigin(req);
     
     // Always set CORS headers first
     setSdkCorsHeaders(res, origin);
     
-    console.log(`[SDK] Request: /sdk/flags/${projectKey}/${environmentKey}`);
-    console.log(`[SDK] API Key present: ${!!apiKey}, Origin: ${origin || 'none'}`);
+    logger.debug(`[SDK] Request: /sdk/flags/${projectKey}/${environmentKey}`);
+    logger.debug(`[SDK] API Key present: ${!!apiKey}, Origin: ${origin || 'none'}`);
     
     try {
       if (!apiKey) {
-        console.log('[SDK] ERROR: No API key provided');
-        return res.status(401).json({ error: 'API key required', code: 'MISSING_API_KEY' });
+        logger.debug('[SDK] ERROR: No API key provided');
+        return res.status(401).json({ error: 'API key required', code: SDK_ERROR_CODES.missingApiKey });
       }
       
       const results = await sdkService.getAllFlags(
@@ -208,24 +182,12 @@ async function bootstrap() {
         origin,
       );
       
-      console.log(`[SDK] Success: ${Object.keys(results).length} flags returned`);
+      logger.debug(`[SDK] Success: ${Object.keys(results).length} flags returned`);
       res.json(results);
     } catch (error: any) {
-      console.error(`[SDK] Error:`, error.message);
-      
-      if (error.status === 401 || error.message?.includes('Invalid API key')) {
-        return res.status(401).json({ error: error.message || 'Invalid API key', code: 'INVALID_API_KEY' });
-      }
-      if (error.status === 403 || error.message?.includes('Origin not allowed')) {
-        return res.status(403).json({ error: error.message || 'Origin not allowed', code: 'ORIGIN_NOT_ALLOWED' });
-      }
-      if (error.message?.includes('Project not found')) {
-        return res.status(404).json({ error: 'Project not found', code: 'PROJECT_NOT_FOUND' });
-      }
-      if (error.message?.includes('Environment not found')) {
-        return res.status(404).json({ error: 'Environment not found', code: 'ENV_NOT_FOUND' });
-      }
-      res.status(500).json({ error: error.message || 'Internal error', code: 'INTERNAL_ERROR' });
+      logger.error(`[SDK] Error:`, error.message);
+      const response = mapSdkError(error);
+      res.status(response.status).json(response.body);
     }
   });
   
@@ -346,6 +308,6 @@ SwaggerModule.setup('api/swagger', app, document, {
   
   const port = process.env.PORT || 4000;
   await app.listen(port, '0.0.0.0');
-  console.log(`🚀 Togglely API running on http://0.0.0.0:${port}`);
+  logger.log(`🚀 Togglely API running on http://0.0.0.0:${port}`);
 }
 bootstrap();

@@ -1,5 +1,11 @@
 {
+  "scripts": {
+    "biome:check": "npx @biomejs/biome check .",
+    "biome:write": "npx @biomejs/biome check --write .",
+    "format": "npm run biome:write"
+  },
   "devDependencies": {
+    "@biomejs/biome": "^1.9.4",
     "@cypress/code-coverage": "^4.0.1",
     "cypress": "^15.11.0",
     "cypress-vite": "^1.8.0",

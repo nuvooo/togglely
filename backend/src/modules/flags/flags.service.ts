@@ -1,11 +1,15 @@
-import { Injectable, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
+import { Injectable, Logger, NotFoundException, ConflictException, ForbiddenException } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma.service';
 import { Flag } from '../../domain/flag.entity';
 import { CreateFlagDto } from './dto/create-flag.dto';
 import { UpdateFlagValueDto } from './dto/update-flag-value.dto';
+import { getDefaultFlagValue } from '../sdk/sdk.helpers';
+import { isPrismaUniqueConstraintError } from '../../shared/prisma-errors';
 
 @Injectable()
 export class FlagsService {
+  private readonly logger = new Logger(FlagsService.name);
+
   constructor(private readonly prisma: PrismaService) {}
 
   async findAll(userId: string, projectId?: string, environmentId?: string) {
@@ -95,14 +99,11 @@ export class FlagsService {
               environmentId: env.id,
               brandId: null,
               enabled: false,
-              defaultValue: flag.flagType === 'BOOLEAN' ? 'false' : 
-                           flag.flagType === 'NUMBER' ? '0' : 
-                           flag.flagType === 'JSON' ? '{}' : '',
+              defaultValue: getDefaultFlagValue(flag.flagType),
             },
           });
-        } catch (e) {
-          // Ignore unique constraint errors
-          if (e.code !== 'P2002') throw e;
+        } catch (error) {
+          if (!isPrismaUniqueConstraintError(error)) throw error;
         }
       }
     }
@@ -290,7 +291,7 @@ export class FlagsService {
           environmentId,
           brandId: null,
           enabled: newEnabled,
-          defaultValue: flag.flagType === 'BOOLEAN' ? String(newEnabled) : 'false',
+          defaultValue: flag.flagType === 'BOOLEAN' ? String(newEnabled) : getDefaultFlagValue(flag.flagType),
         },
       });
     } catch (e: any) {
@@ -325,7 +326,7 @@ export class FlagsService {
   }
 
   async updateEnvironment(flagId: string, envId: string, data: { isEnabled?: boolean; defaultValue?: string }) {
-    console.log(`[updateEnvironment] flagId: ${flagId}, envId: ${envId}, data:`, data);
+    this.logger.debug(`[updateEnvironment] flagId=${flagId}, envId=${envId}`);
     
     // Find the flag to check its type
     const flag = await this.prisma.featureFlag.findUnique({
@@ -338,14 +339,14 @@ export class FlagsService {
     let existing = await this.prisma.flagEnvironment.findFirst({
       where: { id: envId },
     });
-    console.log(`[updateEnvironment] Find by id=${envId}:`, existing ? `found (brandId=${existing.brandId})` : 'not found');
+    this.logger.debug(`[updateEnvironment] direct lookup result: ${existing ? 'found' : 'not found'}`);
 
     // Try 2: Find by flagId + environmentId (for non-brand envs)
     if (!existing) {
       existing = await this.prisma.flagEnvironment.findFirst({
         where: { flagId, environmentId: envId, brandId: null },
       });
-      console.log(`[updateEnvironment] Find by flagId+envId:`, existing ? 'found' : 'not found');
+      this.logger.debug(`[updateEnvironment] fallback lookup result: ${existing ? 'found' : 'not found'}`);
     }
 
     // Try 3: Find any flagEnv for this flag in this environment (regardless of brand)
@@ -354,7 +355,7 @@ export class FlagsService {
         where: { flagId },
         include: { environment: true },
       });
-      console.log(`[updateEnvironment] All flagEnvs for flagId ${flagId}:`, allEnvs.map(e => ({ id: e.id, envId: e.environmentId, brandId: e.brandId })));
+      this.logger.debug(`[updateEnvironment] scanning ${allEnvs.length} candidate environments`);
       
       // Find one matching the envId (either by environment.id or flagEnvironment.id)
       existing = allEnvs.find(fe => 
@@ -363,7 +364,7 @@ export class FlagsService {
     }
 
     if (existing) {
-      console.log(`[updateEnvironment] Updating id=${existing.id} with:`, data);
+      this.logger.debug(`[updateEnvironment] updating flagEnvironment ${existing.id}`);
       
       // For BOOLEAN flags, sync enabled and defaultValue
       let updateData: any = {
@@ -387,7 +388,7 @@ export class FlagsService {
       });
     }
 
-    console.error(`[updateEnvironment] NOT FOUND - flagId: ${flagId}, envId: ${envId}`);
+    this.logger.warn(`[updateEnvironment] flag environment not found for flagId=${flagId}, envId=${envId}`);
     throw new NotFoundException('Flag environment not found');
   }
 
@@ -435,7 +436,7 @@ export class FlagsService {
         environmentId,
         brandId,
         enabled: enabled ?? false,
-        defaultValue: defaultValue ?? 'false',
+        defaultValue: defaultValue ?? getDefaultFlagValue(flag.flagType),
       },
     });
   }

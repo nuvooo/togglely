@@ -181,11 +181,10 @@ describe('TogglelyClient', () => {
   });
 
   describe('toggle accessors', () => {
-    it('should use stale-while-revalidate pattern with batching', async () => {
+    it('should batch reads and avoid implicit refetch in manual mode', async () => {
       jest.useFakeTimers();
-      const client = new TogglelyClient({ ...mockConfig, autoFetch: false });
+      const client = new TogglelyClient({ ...mockConfig, autoFetch: false, refreshStrategy: 'manual' });
       
-      // Mock the bulk endpoint (refresh) that returns all flags
       (global.fetch as jest.Mock).mockResolvedValueOnce({
         ok: true,
         json: async () => ({ 
@@ -193,21 +192,13 @@ describe('TogglelyClient', () => {
         })
       });
       
-      // First call - no cache, waits for batch
       const promise1 = client.isEnabled('bool-flag', false);
-      
-      // Advance timers to trigger the batch
       jest.advanceTimersByTime(20);
-      
       const value1 = await promise1;
       expect(value1).toBe(true);
       
-      // Second call - should return cached value immediately (stale-while-revalidate)
       const value2 = await client.isEnabled('bool-flag', false);
-      // Returns cached value immediately
       expect(value2).toBe(true);
-      
-      // Should have made only 1 API call (batching)
       expect(global.fetch).toHaveBeenCalledTimes(1);
       
       client.destroy();

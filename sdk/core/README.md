@@ -56,6 +56,9 @@ interface TogglelyConfig {
   brandKey?: string;        // Brand key for multi-brand projects
   tenantId?: string;        // Tenant ID (alias for brandKey)
   context?: object;         // Initial targeting context
+  refreshStrategy?: 'manual' | 'interval' | 'stale-while-revalidate';
+  refreshIntervalMs?: number;
+  minRefreshIntervalMs?: number;
 }
 ```
 
@@ -231,6 +234,33 @@ client.setContext({
   country: 'US',
 });
 ```
+
+## Refresh Strategy
+
+The SDK now uses a professionalized refresh model:
+
+- `manual` (default): cached reads never trigger network requests implicitly
+- `interval`: background refresh runs on a fixed interval
+- `stale-while-revalidate`: cached reads may schedule a throttled background refresh
+
+```typescript
+const client = new TogglelyClient({
+  apiKey: 'your-api-key',
+  project: 'my-project',
+  environment: 'production',
+  baseUrl: 'https://togglely.io',
+  refreshStrategy: 'manual',
+  refreshIntervalMs: 30000,
+  minRefreshIntervalMs: 5000,
+});
+```
+
+Recommended defaults for most apps:
+- frontend apps: `manual`
+- dashboards/internal tools: `interval`
+- highly interactive apps with cache tolerance: `stale-while-revalidate`
+
+`update` events are emitted only when the toggle payload actually changes.
 
 ## Events
 

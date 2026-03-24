@@ -1,43 +1,31 @@
 /**
  * Togglely Core SDK - Framework agnostic feature flag management
- * 
- * Features:
- * - Real-time feature flag evaluation
- * - Offline fallback via JSON file, environment variables, or window object
- * - Multi-brand/tenant support
- * - Type-safe flag access
- * - Build-time JSON generation for offline-first deployment
+ *
+ * Professionalized refresh model:
+ * - Cached reads are side-effect free by default
+ * - Network refresh is explicit and configurable
+ * - Optional interval refresh strategy
+ * - Optional stale-while-revalidate with cooldown
+ * - update events only emit on actual toggle changes
  */
 
-// ==================== Types ====================
-
 export interface TogglelyConfig {
-  /** API Key from your Togglely dashboard */
   apiKey: string;
-  /** Project key */
   project: string;
-  /** Environment key (e.g., 'development', 'production') */
   environment: string;
-  /** Base URL of your Togglely instance */
   baseUrl: string;
-  /** Request timeout in milliseconds (default: 5000) */
   timeout?: number;
-  /** Enable offline fallback (default: true) */
   offlineFallback?: boolean;
-  /** Path to offline JSON file for fallback (optional) */
   offlineJsonPath?: string;
-  /** Inline offline toggles data (optional) */
   offlineToggles?: Record<string, ToggleValue>;
-  /** Prefix for environment variables (default: 'TOGGLELY_') */
   envPrefix?: string;
-  /** Auto-fetch toggles on init (default: true) */
   autoFetch?: boolean;
-  /** Brand/Tenant key for multi-brand projects (optional) */
   brandKey?: string;
-  /** Alias for brandKey - Tenant ID for multi-brand projects (optional) */
   tenantId?: string;
-  /** Initial context for targeting (optional) */
   context?: ToggleContext;
+  refreshStrategy?: 'manual' | 'interval' | 'stale-while-revalidate';
+  refreshIntervalMs?: number;
+  minRefreshIntervalMs?: number;
 }
 
 export interface ToggleContext {
@@ -68,16 +56,18 @@ export interface TogglelyState {
 export type TogglelyEventType = 'ready' | 'update' | 'error' | 'offline' | 'online';
 export type TogglelyEventHandler = (state: TogglelyState) => void;
 
-// ==================== Togglely Client ====================
-
 export class TogglelyClient {
-  private config: TogglelyConfig & { 
-    timeout: number; 
-    offlineFallback: boolean; 
-    envPrefix: string; 
+  private config: TogglelyConfig & {
+    timeout: number;
+    offlineFallback: boolean;
+    envPrefix: string;
     autoFetch: boolean;
     offlineJsonPath: string | undefined;
+    refreshStrategy: 'manual' | 'interval' | 'stale-while-revalidate';
+    refreshIntervalMs: number;
+    minRefreshIntervalMs: number;
   };
+
   private toggles: Map<string, ToggleValue> = new Map();
   private context: ToggleContext = {};
   private state: TogglelyState = {
@@ -87,16 +77,16 @@ export class TogglelyClient {
     lastFetch: null
   };
   private eventHandlers: Map<TogglelyEventType, Set<TogglelyEventHandler>> = new Map();
-  private offlineTogglesLoaded: boolean = false;
-  
-  // Request batching
+  private offlineTogglesLoaded = false;
+
   private pendingKeys: Set<string> = new Set();
   private pendingPromises: Map<string, Array<{ resolve: (value: ToggleValue | null) => void; reject: (error: any) => void }>> = new Map();
   private batchTimeout: ReturnType<typeof setTimeout> | null = null;
   private refreshTimeout: ReturnType<typeof setTimeout> | null = null;
-  private lastRefreshTime: number = 0;
-  private readonly BATCH_DELAY = 10; // ms to wait for batching requests
-  private readonly MIN_REFRESH_INTERVAL = 5000; // Minimum 5s between background refreshes
+  private intervalHandle: ReturnType<typeof setInterval> | null = null;
+  private inFlightRefresh: Promise<void> | null = null;
+  private lastRefreshTime = 0;
+  private readonly BATCH_DELAY = 10;
 
   constructor(config: TogglelyConfig) {
     this.config = {
@@ -105,41 +95,34 @@ export class TogglelyClient {
       envPrefix: 'TOGGLELY_',
       autoFetch: true,
       offlineJsonPath: undefined,
+      refreshStrategy: 'manual',
+      refreshIntervalMs: 30000,
+      minRefreshIntervalMs: 5000,
       ...config
-    } as TogglelyConfig & { 
-      timeout: number; 
-      offlineFallback: boolean; 
-      envPrefix: string; 
-      autoFetch: boolean;
-      offlineJsonPath: string | undefined;
     };
-    
-    // Initialize event handlers
+
     this.eventHandlers.set('ready', new Set());
     this.eventHandlers.set('update', new Set());
     this.eventHandlers.set('error', new Set());
     this.eventHandlers.set('offline', new Set());
     this.eventHandlers.set('online', new Set());
-    
-    // Set initial context if provided (including brandKey/tenantId)
+
     const initialContext: ToggleContext = { ...config.context };
     if (config.brandKey) initialContext.brandKey = config.brandKey;
     if (config.tenantId) initialContext.tenantId = config.tenantId;
     this.context = initialContext;
-    
-    // Load offline toggles first (if enabled)
+
     if (this.config.offlineFallback) {
       this.loadOfflineToggles();
     }
-    
-    // Initial fetch (if enabled)
+
     if (this.config.autoFetch) {
-      this.refresh();
+      this.refresh().catch(() => {});
     }
+
+    this.setupRefreshStrategy();
   }
 
-  // ==================== Event Handling ====================
-  
   on(event: TogglelyEventType, handler: TogglelyEventHandler): () => void {
     const handlers = this.eventHandlers.get(event);
     if (handlers) {
@@ -158,11 +141,9 @@ export class TogglelyClient {
   private emit(event: TogglelyEventType): void {
     const handlers = this.eventHandlers.get(event);
     if (handlers) {
-      handlers.forEach(handler => handler({ ...this.state }));
+      handlers.forEach((handler) => handler({ ...this.state }));
     }
   }
-
-  // ==================== Context ====================
 
   setContext(context: ToggleContext): void {
     this.context = { ...this.context, ...context };
@@ -176,8 +157,6 @@ export class TogglelyClient {
     this.context = {};
   }
 
-  // ==================== State ====================
-
   getState(): TogglelyState {
     return { ...this.state };
   }
@@ -190,68 +169,30 @@ export class TogglelyClient {
     return this.state.isOffline;
   }
 
-  // ==================== Toggle Accessors ====================
-
-  /**
-   * Check if a boolean feature flag is enabled
-   * @param key - The flag key
-   * @param defaultValue - Default value if flag not found
-   * @returns Promise<boolean>
-   */
   async isEnabled(key: string, defaultValue: boolean = false): Promise<boolean> {
     const value = await this.getValue(key);
-    
-    if (value === null) {
-      return defaultValue;
-    }
-    
-    // enabled is the primary on/off switch for a flag.
-    // value.value holds the flag's configured value (used for non-boolean use-cases).
-    // For boolean flags: 
-    // - If NOT enabled (toggle is OFF globally for environment), return false
-    // - If ENABLED (toggle is ON), return the boolean value itself (true/false)
+    if (value === null) return defaultValue;
     if (typeof value.value === 'boolean') {
       return value.enabled && value.value;
     }
-
-    // Fallback for non-boolean flags or if value is missing
     return value.enabled;
   }
 
-  /**
-   * Get a string feature flag value
-   * @param key - The flag key
-   * @param defaultValue - Default value if flag not found or disabled
-   * @returns Promise<string>
-   */
   async getString(key: string, defaultValue: string = ''): Promise<string> {
     const value = await this.getValue(key);
     if (value === null || !value.enabled) return defaultValue;
     return String(value.value);
   }
 
-  /**
-   * Get a number feature flag value
-   * @param key - The flag key
-   * @param defaultValue - Default value if flag not found or disabled
-   * @returns Promise<number>
-   */
   async getNumber(key: string, defaultValue: number = 0): Promise<number> {
     const value = await this.getValue(key);
     if (value === null || !value.enabled) return defaultValue;
     return Number(value.value);
   }
 
-  /**
-   * Get a JSON feature flag value
-   * @param key - The flag key
-   * @param defaultValue - Default value if flag not found or disabled
-   * @returns Promise<T>
-   */
   async getJSON<T = any>(key: string, defaultValue: T = {} as T): Promise<T> {
     const value = await this.getValue(key);
     if (value === null || !value.enabled) return defaultValue;
-    
     if (typeof value.value === 'string') {
       try {
         return JSON.parse(value.value) as T;
@@ -259,31 +200,18 @@ export class TogglelyClient {
         return defaultValue;
       }
     }
-    
     return value.value as T;
   }
 
-  /**
-   * Get raw toggle value
-   * Uses stale-while-revalidate pattern: returns cached value immediately if available,
-   * then refreshes from server in background.
-   * Uses request batching: multiple getValue() calls within a short timeframe are batched into a single request.
-   * @param key - The flag key
-   * @returns Promise<ToggleValue | null>
-   */
   async getValue(key: string): Promise<ToggleValue | null> {
-    // Check if we have a cached value first (stale-while-revalidate pattern)
     const cachedValue = this.toggles.get(key);
     if (cachedValue !== undefined) {
-      // Only trigger background refresh if enough time has passed
-      const now = Date.now();
-      if (now - this.lastRefreshTime > this.MIN_REFRESH_INTERVAL) {
+      if (this.config.refreshStrategy === 'stale-while-revalidate') {
         this.scheduleBackgroundRefresh();
       }
       return cachedValue;
     }
 
-    // Check if there's already a pending promise for this key (deduplication)
     const existingPromise = this.pendingPromises.get(key);
     if (existingPromise) {
       return new Promise((resolve, reject) => {
@@ -291,60 +219,57 @@ export class TogglelyClient {
       });
     }
 
-    // Add key to batch and create a promise
     this.pendingKeys.add(key);
-    
+
     return new Promise((resolve, reject) => {
-      // Store the promise callbacks
       const promises = this.pendingPromises.get(key) || [];
       promises.push({ resolve, reject });
       this.pendingPromises.set(key, promises);
-
-      // Schedule the batch execution
       this.scheduleBatchExecution();
     });
   }
 
-  /**
-   * Schedule a background refresh of all toggles (for stale-while-revalidate)
-   * Throttled to prevent too frequent updates
-   */
-  private scheduleBackgroundRefresh(): void {
-    if (this.refreshTimeout) {
-      return; // Already scheduled
+  private setupRefreshStrategy(): void {
+    if (this.config.refreshStrategy !== 'interval') {
+      return;
     }
-    
+
+    this.intervalHandle = setInterval(() => {
+      this.refresh().catch(() => {});
+    }, this.config.refreshIntervalMs);
+  }
+
+  private shouldRefreshNow(): boolean {
+    return Date.now() - this.lastRefreshTime >= this.config.minRefreshIntervalMs;
+  }
+
+  private scheduleBackgroundRefresh(): void {
+    if (this.refreshTimeout || !this.shouldRefreshNow()) {
+      return;
+    }
+
     this.refreshTimeout = setTimeout(() => {
       this.refreshTimeout = null;
-      this.lastRefreshTime = Date.now();
-      // Refresh all toggles in background
       this.refresh().catch(() => {});
     }, this.BATCH_DELAY);
   }
 
-  /**
-   * Schedule the batch execution for pending keys
-   */
   private scheduleBatchExecution(): void {
     if (this.batchTimeout) {
-      return; // Already scheduled
+      return;
     }
-    
+
     this.batchTimeout = setTimeout(() => {
       this.executeBatch();
     }, this.BATCH_DELAY);
   }
 
-  /**
-   * Execute the batch: fetch all pending keys in a single request
-   */
   private async executeBatch(): Promise<void> {
     this.batchTimeout = null;
-    
+
     const keys = Array.from(this.pendingKeys);
     const promises = new Map(this.pendingPromises);
-    
-    // Clear pending collections
+
     this.pendingKeys.clear();
     this.pendingPromises.clear();
 
@@ -353,26 +278,18 @@ export class TogglelyClient {
     }
 
     try {
-      // Fetch all toggles at once (more efficient than individual requests)
       await this.refresh();
-      
-      // Update last refresh time to prevent immediate background refresh
-      this.lastRefreshTime = Date.now();
-      
-      // Resolve all pending promises with the fetched values
+
       for (const key of keys) {
         const keyPromises = promises.get(key) || [];
         const value = this.toggles.get(key) || null;
-        
         for (const { resolve } of keyPromises) {
           resolve(value);
         }
       }
     } catch (error) {
-      // Reject all pending promises
       for (const key of keys) {
         const keyPromises = promises.get(key) || [];
-        
         for (const { reject } of keyPromises) {
           reject(error);
         }
@@ -380,10 +297,6 @@ export class TogglelyClient {
     }
   }
 
-  /**
-   * Get all toggles
-   * @returns Record<string, ToggleValue>
-   */
   getAllToggles(): Record<string, ToggleValue> {
     const result: Record<string, ToggleValue> = {};
     this.toggles.forEach((value, key) => {
@@ -392,18 +305,8 @@ export class TogglelyClient {
     return result;
   }
 
-  // ==================== Offline Fallback ====================
-
-  /**
-   * Load offline toggles from multiple sources (in priority order):
-   * 1. Inline offlineToggles from config
-   * 2. JSON file (if offlineJsonPath is set)
-   * 3. window.__TOGGLELY_TOGGLES (browser)
-   * 4. Environment variables (Node.js)
-   */
   private loadOfflineToggles(): void {
     try {
-      // Priority 1: Inline offline toggles from config
       if (this.config.offlineToggles && Object.keys(this.config.offlineToggles).length > 0) {
         for (const [key, value] of Object.entries(this.config.offlineToggles)) {
           this.toggles.set(key, value);
@@ -413,12 +316,10 @@ export class TogglelyClient {
         return;
       }
 
-      // Priority 2: JSON file (browser only - fetch synchronously not possible, will try async)
       if (this.config.offlineJsonPath && typeof window !== 'undefined') {
         this.loadOfflineJsonFile(this.config.offlineJsonPath);
       }
 
-      // Priority 3: Browser environment - check window.__TOGGLELY_TOGGLES
       if (typeof window !== 'undefined' && (window as any).__TOGGLELY_TOGGLES) {
         const offlineToggles = (window as any).__TOGGLELY_TOGGLES;
         for (const [key, value] of Object.entries(offlineToggles)) {
@@ -429,16 +330,11 @@ export class TogglelyClient {
         return;
       }
 
-      // Priority 4: Node.js / Bun / Deno environment - check process.env
       if (typeof process !== 'undefined' && process.env) {
         const prefix = this.config.envPrefix;
         for (const [envKey, envValue] of Object.entries(process.env)) {
           if (envKey?.startsWith(prefix) && envValue !== undefined) {
-            const toggleKey = envKey
-              .slice(prefix.length)
-              .toLowerCase()
-              .replace(/_/g, '-');
-            
+            const toggleKey = envKey.slice(prefix.length).toLowerCase().replace(/_/g, '-');
             this.toggles.set(toggleKey, this.parseOfflineValue(envValue));
           }
         }
@@ -450,13 +346,9 @@ export class TogglelyClient {
     }
   }
 
-  /**
-   * Load offline toggles from JSON file (async)
-   */
   private async loadOfflineJsonFile(path: string): Promise<void> {
     try {
       if (typeof window !== 'undefined') {
-        // Browser - fetch the JSON file
         const response = await fetch(path);
         if (response.ok) {
           const data = await response.json();
@@ -467,11 +359,9 @@ export class TogglelyClient {
           console.log('[Togglely] Loaded offline toggles from JSON file:', path);
         }
       } else if (typeof require !== 'undefined') {
-        // Node.js - require the JSON file
         const fs = require('fs');
         const pathModule = require('path');
         const fullPath = pathModule.resolve(path);
-        
         if (fs.existsSync(fullPath)) {
           const data = JSON.parse(fs.readFileSync(fullPath, 'utf-8'));
           for (const [key, value] of Object.entries(data)) {
@@ -486,31 +376,14 @@ export class TogglelyClient {
     }
   }
 
-  private getOfflineToggle(key: string): ToggleValue | null {
-    if (!this.config.offlineFallback) return null;
-    
-    const cached = this.toggles.get(key);
-    if (cached) {
-      if (!this.state.isOffline) {
-        this.state.isOffline = true;
-        this.emit('offline');
-      }
-      return cached;
-    }
-    
-    return null;
-  }
-
   private parseOfflineValue(value: any): ToggleValue {
     if (typeof value === 'string') {
       const lower = value.toLowerCase();
       if (lower === 'true') return { value: true, enabled: true };
       if (lower === 'false') return { value: false, enabled: true };
-      
       if (!isNaN(Number(value))) {
         return { value: Number(value), enabled: true };
       }
-      
       try {
         const parsed = JSON.parse(value);
         return { value: parsed, enabled: true };
@@ -518,32 +391,37 @@ export class TogglelyClient {
         return { value, enabled: true };
       }
     }
-    
     return { value, enabled: true };
   }
 
-  // ==================== Refresh / Polling ====================
-
-  /**
-   * Refresh all toggles from the server
-   */
   async refresh(): Promise<void> {
+    if (this.inFlightRefresh) {
+      return this.inFlightRefresh;
+    }
+
+    this.inFlightRefresh = this.performRefresh().finally(() => {
+      this.inFlightRefresh = null;
+    });
+
+    return this.inFlightRefresh;
+  }
+
+  private async performRefresh(): Promise<void> {
     try {
       const params = new URLSearchParams();
-      // Support both brandKey and tenantId for maximum compatibility
       if (this.context.brandKey) params.set('brandKey', String(this.context.brandKey));
       if (this.context.tenantId) params.set('tenantId', String(this.context.tenantId));
       if (Object.keys(this.context).length > 0) {
         params.set('context', JSON.stringify(this.context));
       }
-      
+
       const headers: Record<string, string> = {
         'Content-Type': 'application/json'
       };
       if (this.config.apiKey) {
         headers['Authorization'] = `Bearer ${this.config.apiKey}`;
       }
-      
+
       const response = await this.fetchWithTimeout(
         `${this.config.baseUrl}/sdk/flags/${encodeURIComponent(this.config.project)}/${encodeURIComponent(this.config.environment)}?${params.toString()}`,
         { headers }
@@ -554,41 +432,53 @@ export class TogglelyClient {
       }
 
       const data: AllTogglesResponse = await response.json();
-      
-      this.toggles.clear();
-      for (const [key, value] of Object.entries(data)) {
-        this.toggles.set(key, value);
-      }
-      
+      const changed = this.replaceTogglesIfChanged(data);
+
       this.state.lastFetch = new Date();
       this.state.lastError = null;
       this.lastRefreshTime = Date.now();
-      
+
       if (!this.state.isReady) {
         this.state.isReady = true;
         this.emit('ready');
       }
-      
+
       if (this.state.isOffline) {
         this.state.isOffline = false;
         this.emit('online');
       }
-      
-      this.emit('update');
-      
+
+      if (changed) {
+        this.emit('update');
+      }
     } catch (error) {
       this.state.lastError = error as Error;
-      
-      if (this.config.offlineFallback && this.offlineTogglesLoaded) {
-        if (!this.state.isOffline) {
-          this.state.isOffline = true;
-          this.emit('offline');
-        }
+
+      if (this.config.offlineFallback && this.offlineTogglesLoaded && !this.state.isOffline) {
+        this.state.isOffline = true;
+        this.emit('offline');
       }
-      
+
       this.emit('error');
       console.error('[Togglely] Failed to refresh toggles:', error);
+      throw error;
     }
+  }
+
+  private replaceTogglesIfChanged(next: AllTogglesResponse): boolean {
+    const current = this.getAllToggles();
+    const currentSerialized = JSON.stringify(current, Object.keys(current).sort());
+    const nextSerialized = JSON.stringify(next, Object.keys(next).sort());
+
+    if (currentSerialized === nextSerialized) {
+      return false;
+    }
+
+    this.toggles.clear();
+    for (const [key, value] of Object.entries(next)) {
+      this.toggles.set(key, value);
+    }
+    return true;
   }
 
   forceOfflineMode(): void {
@@ -598,18 +488,20 @@ export class TogglelyClient {
 
   forceOnlineMode(): void {
     this.state.isOffline = false;
-    this.refresh();
+    this.refresh().catch(() => {});
     this.emit('online');
   }
 
-  // ==================== Cleanup ====================
-
   destroy(): void {
     this.toggles.clear();
-    this.eventHandlers.forEach(handlers => handlers.clear());
+    this.eventHandlers.forEach((handlers) => handlers.clear());
+    if (this.batchTimeout) clearTimeout(this.batchTimeout);
+    if (this.refreshTimeout) clearTimeout(this.refreshTimeout);
+    if (this.intervalHandle) clearInterval(this.intervalHandle);
+    this.batchTimeout = null;
+    this.refreshTimeout = null;
+    this.intervalHandle = null;
   }
-
-  // ==================== Private Helpers ====================
 
   private fetchWithTimeout(url: string, options: RequestInit): Promise<Response> {
     return new Promise((resolve, reject) => {
@@ -618,11 +510,11 @@ export class TogglelyClient {
       }, this.config.timeout);
 
       fetch(url, options)
-        .then(response => {
+        .then((response) => {
           clearTimeout(timeoutId);
           resolve(response);
         })
-        .catch(error => {
+        .catch((error) => {
           clearTimeout(timeoutId);
           reject(error);
         });
@@ -630,32 +522,20 @@ export class TogglelyClient {
   }
 }
 
-// ==================== Utility Functions ====================
-
-/**
- * Create a client-side toggle loader script
- * Use this to inject offline toggles into your HTML
- */
 export function createOfflineTogglesScript(toggles: Record<string, any>): string {
   return `<script>window.__TOGGLELY_TOGGLES = ${JSON.stringify(toggles)};</script>`;
 }
 
-/**
- * Helper to convert toggles to environment variables
- */
 export function togglesToEnvVars(
-  toggles: Record<string, any>, 
+  toggles: Record<string, any>,
   prefix: string = 'TOGGLELY_'
 ): Record<string, string> {
   const envVars: Record<string, string> = {};
-  
   for (const [key, value] of Object.entries(toggles)) {
     const envKey = prefix + key.toUpperCase().replace(/-/g, '_');
     envVars[envKey] = typeof value === 'object' ? JSON.stringify(value) : String(value);
   }
-  
   return envVars;
 }
 
-// Default export
 export default TogglelyClient;

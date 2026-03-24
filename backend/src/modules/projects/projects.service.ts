@@ -2,6 +2,8 @@ import { Injectable, NotFoundException, ConflictException, ForbiddenException } 
 import { PrismaService } from '../../shared/prisma.service';
 import { Project } from '../../domain/project.entity';
 import { CreateProjectDto } from './dto/create-project.dto';
+import { getDefaultFlagValue } from '../sdk/sdk.helpers';
+import { isPrismaUniqueConstraintError } from '../../shared/prisma-errors';
 
 @Injectable()
 export class ProjectsService {
@@ -119,13 +121,11 @@ export class ProjectsService {
               environmentId: env.id,
               brandId: null,
               enabled: false,
-              defaultValue: flag.flagType === 'BOOLEAN' ? 'false' : 
-                           flag.flagType === 'NUMBER' ? '0' : 
-                           flag.flagType === 'JSON' ? '{}' : '',
+              defaultValue: getDefaultFlagValue(flag.flagType),
             },
           });
-        } catch (e: any) {
-          if (e.code !== 'P2002') throw e;
+        } catch (error) {
+          if (!isPrismaUniqueConstraintError(error)) throw error;
         }
       }
     }
