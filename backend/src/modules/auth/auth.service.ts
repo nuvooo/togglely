@@ -1,4 +1,4 @@
-import { Injectable, UnauthorizedException, Logger, ConflictException } from '@nestjs/common';
+import { Injectable, UnauthorizedException, Logger, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../../shared/prisma.service';
 import { ConfigService } from '@nestjs/config';
 import * as bcrypt from 'bcryptjs';
@@ -8,30 +8,24 @@ import { randomUUID } from 'crypto';
 @Injectable()
 export class AuthService {
   private readonly logger = new Logger(AuthService.name);
-  
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly config: ConfigService,
   ) {}
 
   async login(email: string, password: string) {
-    this.logger.log(`Login attempt for: ${email}`);
-    
     const user = await this.prisma.user.findUnique({ where: { email } });
     if (!user) {
-      this.logger.warn(`User not found: ${email}`);
+      this.logger.warn('Login failed: user not found');
       throw new UnauthorizedException('Invalid credentials');
     }
 
-    this.logger.log(`User found, checking password...`);
-    
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) {
-      this.logger.warn(`Invalid password for: ${email}`);
+      this.logger.warn('Login failed: invalid password');
       throw new UnauthorizedException('Invalid credentials');
     }
-
-    this.logger.log(`Password valid, generating token...`);
 
     // Get user's organization
     const membership = await this.prisma.organizationMember.findFirst({
@@ -39,12 +33,12 @@ export class AuthService {
     });
 
     const token = jwt.sign(
-      { 
-        userId: user.id, 
+      {
+        userId: user.id,
         email: user.email,
-        organizationId: membership?.organizationId 
+        organizationId: membership?.organizationId,
       },
-      this.config.get('JWT_SECRET') || 'fallback-secret',
+      this.getJwtSecret(),
       { expiresIn: '7d' },
     );
 
@@ -93,7 +87,7 @@ export class AuthService {
 
     const token = jwt.sign(
       { userId: user.id, email: user.email },
-      this.config.get('JWT_SECRET') || 'fallback-secret',
+      this.getJwtSecret(),
       { expiresIn: '7d' },
     );
 
@@ -107,5 +101,16 @@ export class AuthService {
         emailVerifyToken: emailVerified ? undefined : emailVerifyToken, // Return token for testing
       } 
     };
+  }
+
+  private getJwtSecret(): string {
+    const jwtSecret = this.config.get<string>('JWT_SECRET');
+
+    if (!jwtSecret) {
+      this.logger.error('JWT_SECRET is not configured');
+      throw new InternalServerErrorException('Authentication is not configured correctly');
+    }
+
+    return jwtSecret;
   }
 }
