@@ -8,6 +8,7 @@ import {
 import { Flag } from '../../domain/flag.entity'
 import type { PrismaService } from '../../shared/prisma.service'
 import { isPrismaUniqueConstraintError } from '../../shared/prisma-errors'
+import type { AuditLogsService } from '../audit-logs/audit-logs.service'
 import { getDefaultFlagValue } from '../sdk/sdk.helpers'
 import type { CreateFlagDto } from './dto/create-flag.dto'
 import type { UpdateFlagValueDto } from './dto/update-flag-value.dto'
@@ -16,7 +17,10 @@ import type { UpdateFlagValueDto } from './dto/update-flag-value.dto'
 export class FlagsService {
   private readonly logger = new Logger(FlagsService.name)
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly auditLogs: AuditLogsService,
+  ) {}
 
   async findAll(userId: string, projectId?: string, environmentId?: string) {
     if (projectId) {
@@ -230,6 +234,16 @@ export class FlagsService {
     const envsWithNames = await this.prisma.flagEnvironment.findMany({
       where: { flagId: created.id, brandId: null },
       include: { environment: true },
+    })
+
+    await this.auditLogs.create({
+      action: 'flag.created',
+      entityType: 'FeatureFlag',
+      entityId: created.id,
+      userId,
+      organizationId: project.organizationId,
+      projectId,
+      newValues: { key: created.key, name: created.name, flagType: created.flagType },
     })
 
     return {
@@ -479,9 +493,24 @@ export class FlagsService {
     })
   }
 
-  async delete(flagId: string) {
-    // Delete all flag environments first (cascading delete for MongoDB)
+  async delete(flagId: string, userId?: string) {
+    const flag = await this.prisma.featureFlag.findUnique({
+      where: { id: flagId },
+    })
+
     await this.prisma.flagEnvironment.deleteMany({ where: { flagId } })
     await this.prisma.featureFlag.delete({ where: { id: flagId } })
+
+    if (flag && userId) {
+      await this.auditLogs.create({
+        action: 'flag.deleted',
+        entityType: 'FeatureFlag',
+        entityId: flagId,
+        userId,
+        organizationId: flag.organizationId,
+        projectId: flag.projectId,
+        oldValues: { key: flag.key, name: flag.name },
+      })
+    }
   }
 }

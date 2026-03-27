@@ -97,8 +97,8 @@ export class FlagsController {
   }
 
   @Delete(':flagId')
-  async delete(@Param('flagId') flagId: string) {
-    await this.flagsService.delete(flagId);
-    return { success: true };
+  async delete(@Param('flagId') flagId: string, @Req() req: any) {
+    await this.flagsService.delete(flagId, req.user.userId)
+    return { success: true }
   }
 }

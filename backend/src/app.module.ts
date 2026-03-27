@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common'
 import { ConfigModule } from '@nestjs/config'
 import { ThrottlerModule } from '@nestjs/throttler'
+import { AuditLogsModule } from './modules/audit-logs/audit-logs.module'
 import { ApiKeysModule } from './modules/api-keys/api-keys.module'
 import { AuthModule } from './modules/auth/auth.module'
 import { BrandsModule } from './modules/brands/brands.module'
@@ -22,6 +23,7 @@ import { PrismaModule } from './shared/prisma.module'
     PrismaModule,
     MailerModule,
     HealthModule,
+    AuditLogsModule,
     AuthModule,
     PasswordResetModule,
     OrganizationsModule,
