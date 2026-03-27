@@ -29,7 +29,7 @@
     "@togglely/sdk-core": "^1.0.0"
   },
   "devDependencies": {
-    "@rollup/plugin-typescript": "^11.1.5",
+    "@rollup/plugin-typescript": "^12.3.0",
     "rollup": "^4.60.0",
     "tslib": "^2.6.2",
     "typescript": "^5.3.3"
