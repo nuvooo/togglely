@@ -1,0 +1,100 @@
+version: 2
+
+# Dependabot security updates run daily automatically (repo-level setting).
+# The entries below configure scheduled version updates.
+
+updates:
+  # Root package.json
+  - package-ecosystem: npm
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "chore(deps):"
+    open-pull-requests-limit: 10
+    groups:
+      minor-patch:
+        update-types:
+          - minor
+          - patch
+      security-minor-patch:
+        applies-to: security-updates
+        update-types:
+          - minor
+          - patch
+
+  # Backend
+  - package-ecosystem: npm
+    directory: /backend
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "chore(deps):"
+    open-pull-requests-limit: 10
+    groups:
+      minor-patch:
+        update-types:
+          - minor
+          - patch
+      security-minor-patch:
+        applies-to: security-updates
+        update-types:
+          - minor
+          - patch
+
+  # Frontend
+  - package-ecosystem: npm
+    directory: /frontend
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "chore(deps):"
+    open-pull-requests-limit: 10
+    groups:
+      minor-patch:
+        update-types:
+          - minor
+          - patch
+      security-minor-patch:
+        applies-to: security-updates
+        update-types:
+          - minor
+          - patch
+
+  # SDK workspace (core, react, vue, svelte, vanilla)
+  - package-ecosystem: npm
+    directory: /sdk
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "chore(deps):"
+    open-pull-requests-limit: 10
+    groups:
+      minor-patch:
+        update-types:
+          - minor
+          - patch
+      security-minor-patch:
+        applies-to: security-updates
+        update-types:
+          - minor
+          - patch
+
+  # GitHub Actions
+  - package-ecosystem: github-actions
+    directory: /
+    schedule:
+      interval: weekly
+      day: monday
+    commit-message:
+      prefix: "chore(deps):"
+    open-pull-requests-limit: 5
+    groups:
+      minor-patch:
+        update-types:
+          - minor
+          - patch
