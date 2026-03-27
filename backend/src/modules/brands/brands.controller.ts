@@ -9,6 +9,8 @@ import {
   UseGuards,
 } from '@nestjs/common'
 import { AuthGuard } from '../../shared/auth.guard'
+import type { CreateBrandDto } from './dto/create-brand.dto'
+import type { UpdateBrandDto } from './dto/update-brand.dto'
 import type { BrandsService } from './brands.service'
 
 @Controller('brands')
@@ -44,18 +46,18 @@ export class BrandsController {
   @Post('project/:projectId')
   async create(
     @Param('projectId') projectId: string,
-    @Body() body: { name: string; key: string; description?: string }
+    @Body() dto: CreateBrandDto
   ) {
-    const brand = await this.brandsService.create(projectId, body)
+    const brand = await this.brandsService.create(projectId, dto)
     return { brand }
   }
 
   @Patch(':brandId')
   async update(
     @Param('brandId') brandId: string,
-    @Body() body: { name?: string; description?: string }
+    @Body() dto: UpdateBrandDto
   ) {
-    const brand = await this.brandsService.update(brandId, body)
+    const brand = await this.brandsService.update(brandId, dto)
     return { brand }
   }
 

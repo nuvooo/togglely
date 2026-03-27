@@ -9,6 +9,7 @@ import {
   UseGuards,
 } from '@nestjs/common'
 import { AuthGuard } from '../../shared/auth.guard'
+import type { CreateApiKeyDto } from './dto/create-api-key.dto'
 import type { ApiKeysService } from './api-keys.service'
 
 @Controller('api-keys')
@@ -25,10 +26,10 @@ export class ApiKeysController {
   @Post('organization/:orgId')
   async create(
     @Param('orgId') orgId: string,
-    @Body() body: { name: string; type?: string; expiresInDays?: number },
+    @Body() dto: CreateApiKeyDto,
     @Req() req: any
   ) {
-    const key = await this.apiKeysService.create(orgId, req.user.userId, body)
+    const key = await this.apiKeysService.create(orgId, req.user.userId, dto)
     return { apiKey: key }
   }
 

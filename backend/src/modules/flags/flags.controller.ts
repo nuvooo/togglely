@@ -12,6 +12,9 @@ import {
 } from '@nestjs/common'
 import { AuthGuard } from '../../shared/auth.guard'
 import type { CreateFlagDto } from './dto/create-flag.dto'
+import type { ToggleFlagDto } from './dto/toggle-flag.dto'
+import type { UpdateFlagDto } from './dto/update-flag.dto'
+import type { UpdateFlagEnvironmentDto } from './dto/update-flag-environment.dto'
 import type { UpdateFlagValueDto } from './dto/update-flag-value.dto'
 import type { FlagsService } from './flags.service'
 
@@ -58,18 +61,18 @@ export class FlagsController {
   @Patch(':flagId')
   async update(
     @Param('flagId') flagId: string,
-    @Body() body: { name?: string; description?: string }
+    @Body() dto: UpdateFlagDto
   ) {
-    const flag = await this.flagsService.update(flagId, body)
+    const flag = await this.flagsService.update(flagId, dto)
     return { featureFlag: flag }
   }
 
   @Post(':flagId/toggle')
   async toggle(
     @Param('flagId') flagId: string,
-    @Body() body: { environmentId: string; enabled?: boolean }
+    @Body() dto: ToggleFlagDto
   ) {
-    return this.flagsService.toggle(flagId, body.environmentId, body.enabled)
+    return this.flagsService.toggle(flagId, dto.environmentId, dto.enabled)
   }
 
   @Get(':flagId/environments')
@@ -82,9 +85,9 @@ export class FlagsController {
   async updateEnvironment(
     @Param('flagId') flagId: string,
     @Param('envId') envId: string,
-    @Body() body: { isEnabled?: boolean; defaultValue?: string }
+    @Body() dto: UpdateFlagEnvironmentDto
   ) {
-    return this.flagsService.updateEnvironment(flagId, envId, body)
+    return this.flagsService.updateEnvironment(flagId, envId, dto)
   }
 
   @Patch(':flagId/environments/:envId/value')

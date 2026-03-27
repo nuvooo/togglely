@@ -9,6 +9,8 @@ import {
   UseGuards,
 } from '@nestjs/common'
 import { AuthGuard } from '../../shared/auth.guard'
+import type { CreateEnvironmentDto } from './dto/create-environment.dto'
+import type { UpdateEnvironmentDto } from './dto/update-environment.dto'
 import type { EnvironmentsService } from './environments.service'
 
 @Controller('environments')
@@ -25,9 +27,9 @@ export class EnvironmentsController {
   @Post('project/:projectId')
   async create(
     @Param('projectId') projectId: string,
-    @Body() body: { name: string; key: string; organizationId: string }
+    @Body() dto: CreateEnvironmentDto
   ) {
-    const env = await this.envsService.create(projectId, body)
+    const env = await this.envsService.create(projectId, dto)
     return { environment: env }
   }
 
@@ -42,8 +44,8 @@ export class EnvironmentsController {
   }
 
   @Patch(':id')
-  async update(@Param('id') id: string, @Body() body: { name?: string }) {
-    const env = await this.envsService.update(id, body)
+  async update(@Param('id') id: string, @Body() dto: UpdateEnvironmentDto) {
+    const env = await this.envsService.update(id, dto)
     return { environment: env }
   }
 
