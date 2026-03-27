@@ -14,6 +14,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import api from '@/lib/axios'
+import { getErrorMessage } from '@/lib/errors'
 
 export default function ResetPassword() {
   const { t } = useTranslation()
@@ -66,8 +67,8 @@ export default function ResetPassword() {
       await api.post('/password-reset/reset', { token, password })
       setIsReset(true)
       setTimeout(() => navigate('/login'), 3000)
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to reset password')
+    } catch (err: unknown) {
+      setError(getErrorMessage(err))
     } finally {
       setIsLoading(false)
     }

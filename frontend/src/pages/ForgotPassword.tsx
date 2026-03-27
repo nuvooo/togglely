@@ -14,6 +14,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import api from '@/lib/axios'
+import { getErrorMessage } from '@/lib/errors'
 
 export default function ForgotPassword() {
   const { t } = useTranslation()
@@ -30,8 +31,8 @@ export default function ForgotPassword() {
     try {
       await api.post('/password-reset/request', { email })
       setIsSent(true)
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to send reset email')
+    } catch (err: unknown) {
+      setError(getErrorMessage(err))
     } finally {
       setIsLoading(false)
     }

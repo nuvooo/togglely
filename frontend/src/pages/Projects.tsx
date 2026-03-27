@@ -15,6 +15,7 @@ import clsx from 'clsx'
 import { Fragment, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import api from '@/lib/api'
+import { getErrorMessage } from '@/lib/errors'
 import { toast } from 'sonner'
 
 interface Project {
@@ -116,12 +117,9 @@ export default function Projects() {
         setIsModalOpen(false)
         setCreateSuccess(null)
       }, 1500)
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to create project:', err)
-      setCreateError(
-        err.response?.data?.message ||
-          'Failed to create project. Please try again.'
-      )
+      setCreateError(getErrorMessage(err))
     } finally {
       setIsCreating(false)
     }
@@ -140,12 +138,9 @@ export default function Projects() {
     try {
       await api.delete(`/projects/${projectId}`)
       setProjects((prev) => prev.filter((p) => p.id !== projectId))
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to delete project:', err)
-      toast.error(
-        err.response?.data?.message ||
-          'Failed to delete project. Please try again.'
-      )
+      toast.error(getErrorMessage(err))
     } finally {
       setIsDeleting(null)
     }

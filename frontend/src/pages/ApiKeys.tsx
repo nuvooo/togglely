@@ -35,6 +35,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import api from '@/lib/axios'
+import { getErrorMessage } from '@/lib/errors'
 import { toast } from 'sonner'
 
 interface ApiKey {
@@ -59,7 +60,7 @@ interface Organization {
 }
 
 export default function ApiKeys() {
-  const { t: _t } = useTranslation()
+  const { t } = useTranslation()
   const [apiKeys, setApiKeys] = useState<ApiKey[]>([])
   const [organizations, setOrganizations] = useState<Organization[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -146,16 +147,16 @@ export default function ApiKeys() {
 
       // Refresh to get the masked version
       await fetchData()
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to create API key:', err)
-      setCreateError(err.response?.data?.error || 'Failed to create API key')
+      setCreateError(getErrorMessage(err))
     } finally {
       setIsCreating(false)
     }
   }
 
   const revokeApiKey = async (keyId: string) => {
-    if (!confirm('Are you sure you want to revoke this API key?')) {
+    if (!confirm(t('api-keys.revoke.confirm'))) {
       return
     }
 
@@ -163,9 +164,9 @@ export default function ApiKeys() {
     try {
       await api.delete(`/api-keys/${keyId}`)
       setApiKeys(apiKeys.filter((k) => k.id !== keyId))
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to revoke API key:', err)
-      toast.error(err.response?.data?.error || 'Failed to revoke API key')
+      toast.error(getErrorMessage(err))
     } finally {
       setIsRevoking(null)
     }
@@ -218,7 +219,7 @@ export default function ApiKeys() {
   }
 
   const formatDate = (dateString: string | null) => {
-    if (!dateString) return 'Never'
+    if (!dateString) return t('api-keys.never')
     return new Date(dateString).toLocaleDateString()
   }
 
@@ -227,9 +228,9 @@ export default function ApiKeys() {
       {/* Page header */}
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
-          <h1 className="text-3xl font-bold tracking-tight">API Keys</h1>
+          <h1 className="text-3xl font-bold tracking-tight">{t('api-keys.title')}</h1>
           <p className="text-muted-foreground mt-1">
-            Manage API keys for accessing the Togglely API
+            {t('api-keys.subtitle')}
           </p>
         </div>
         <Dialog open={isModalOpen} onOpenChange={setIsModalOpen}>
@@ -237,15 +238,15 @@ export default function ApiKeys() {
             <DialogTrigger asChild>
               <Button>
                 <PlusIcon className="w-4 h-4 mr-2" />
-                Create API Key
+                {t('api-keys.create')}
               </Button>
             </DialogTrigger>
           )}
           <DialogContent className="sm:max-w-md">
             <DialogHeader>
-              <DialogTitle>Create New API Key</DialogTitle>
+              <DialogTitle>{t('api-keys.create.title')}</DialogTitle>
               <DialogDescription>
-                Create a new API key for accessing the Togglely API
+                {t('api-keys.create.description')}
               </DialogDescription>
             </DialogHeader>
 
@@ -258,7 +259,7 @@ export default function ApiKeys() {
             <form onSubmit={createApiKey} className="space-y-4">
               <div className="space-y-2">
                 <Label htmlFor="key-org">
-                  Organization <span className="text-red-500">*</span>
+                  {t('api-keys.create.org-label')} <span className="text-red-500">*</span>
                 </Label>
                 <select
                   id="key-org"
@@ -273,7 +274,7 @@ export default function ApiKeys() {
                   required
                   disabled={isCreating}
                 >
-                  <option value="">Select an organization</option>
+                  <option value="">{t('api-keys.create.select-org')}</option>
                   {organizations.map((org) => (
                     <option key={org.id} value={org.id}>
                       {org.name}
@@ -284,7 +285,7 @@ export default function ApiKeys() {
 
               <div className="space-y-2">
                 <Label htmlFor="key-name">
-                  Key Name <span className="text-red-500">*</span>
+                  {t('api-keys.create.name-label')} <span className="text-red-500">*</span>
                 </Label>
                 <Input
                   id="key-name"
@@ -292,14 +293,14 @@ export default function ApiKeys() {
                   onChange={(e) =>
                     setNewKeyData({ ...newKeyData, name: e.target.value })
                   }
-                  placeholder="e.g., Production Server Key"
+                  placeholder={t('api-keys.create.name-placeholder')}
                   required
                   disabled={isCreating}
                 />
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="key-type">Key Type</Label>
+                <Label htmlFor="key-type">{t('api-keys.create.type-label')}</Label>
                 <select
                   id="key-type"
                   value={newKeyData.type}
@@ -312,18 +313,17 @@ export default function ApiKeys() {
                   className="w-full rounded-md border border-input bg-background px-3 py-2"
                   disabled={isCreating}
                 >
-                  <option value="SERVER">Server (Backend)</option>
-                  <option value="CLIENT">Client (Frontend)</option>
-                  <option value="SDK">SDK</option>
+                  <option value="SERVER">{t('api-keys.create.type-server')}</option>
+                  <option value="CLIENT">{t('api-keys.create.type-client')}</option>
+                  <option value="SDK">{t('api-keys.create.type-sdk')}</option>
                 </select>
                 <p className="text-xs text-muted-foreground">
-                  Server keys have full access. Client keys have limited
-                  read-only access.
+                  {t('api-keys.create.type-help')}
                 </p>
               </div>
 
               <div className="space-y-2">
-                <Label htmlFor="key-expires">Expires In</Label>
+                <Label htmlFor="key-expires">{t('api-keys.create.expires-label')}</Label>
                 <select
                   id="key-expires"
                   value={newKeyData.expiresInDays}

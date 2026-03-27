@@ -11,6 +11,7 @@ import {
   CardTitle,
 } from '@/components/ui/card'
 import api from '@/lib/axios'
+import { getErrorMessage } from '@/lib/errors'
 
 export default function VerifyEmail() {
   const { token } = useParams<{ token: string }>()
@@ -25,11 +26,9 @@ export default function VerifyEmail() {
         const response = await api.get(`/auth/verify-email/${token}`)
         setStatus('success')
         setMessage(response.data.message || 'Email verified successfully!')
-      } catch (err: any) {
+      } catch (err: unknown) {
         setStatus('error')
-        setMessage(
-          err.response?.data?.message || 'Invalid or expired verification link'
-        )
+        setMessage(getErrorMessage(err))
       }
     }
 

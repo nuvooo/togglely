@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import api from '@/lib/axios'
+import { getErrorMessage } from '@/lib/errors'
 
 export interface User {
   id: string
@@ -43,9 +44,9 @@ export const useAuthStore = create<AuthState>()(
           const { token, user } = response.data
           set({ token, user, isLoading: false })
           localStorage.setItem('token', token)
-        } catch (error: any) {
+        } catch (error: unknown) {
           set({
-            error: error.response?.data?.error || 'Login failed',
+            error: getErrorMessage(error),
             isLoading: false,
           })
           throw error
@@ -69,9 +70,9 @@ export const useAuthStore = create<AuthState>()(
           const { token, user } = response.data
           set({ token, user, isLoading: false })
           localStorage.setItem('token', token)
-        } catch (error: any) {
+        } catch (error: unknown) {
           set({
-            error: error.response?.data?.error || 'Registration failed',
+            error: getErrorMessage(error),
             isLoading: false,
           })
           throw error

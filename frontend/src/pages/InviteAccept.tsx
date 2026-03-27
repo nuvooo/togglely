@@ -13,6 +13,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import api from '@/lib/axios'
+import { getErrorMessage } from '@/lib/errors'
 
 interface InviteInfo {
   email: string
@@ -55,10 +56,8 @@ export default function InviteAccept() {
       try {
         const response = await api.get(`/auth/invite/${inviteToken}`)
         setInviteInfo(response.data)
-      } catch (err: any) {
-        setError(
-          err.response?.data?.message || 'Invalid or expired invite link'
-        )
+      } catch (err: unknown) {
+        setError(getErrorMessage(err))
       } finally {
         setIsLoading(false)
       }
@@ -79,12 +78,8 @@ export default function InviteAccept() {
       setTimeout(() => {
         navigate('/')
       }, 2000)
-    } catch (err: any) {
-      setError(
-        err.response?.data?.message ||
-          err.response?.data?.error ||
-          'Failed to accept invite'
-      )
+    } catch (err: unknown) {
+      setError(getErrorMessage(err))
     } finally {
       setIsSubmitting(false)
     }
@@ -118,8 +113,8 @@ export default function InviteAccept() {
       setTimeout(() => {
         navigate('/login')
       }, 3000)
-    } catch (err: any) {
-      setError(err.response?.data?.message || 'Failed to create account')
+    } catch (err: unknown) {
+      setError(getErrorMessage(err))
     } finally {
       setIsSubmitting(false)
     }
