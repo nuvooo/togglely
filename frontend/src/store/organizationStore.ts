@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import api from '@/lib/axios'
+import { getErrorMessage } from '@/lib/errors'
 
 export interface Organization {
   id: string
@@ -99,9 +100,9 @@ export const useOrganizationStore = create<OrganizationState>((set) => ({
         stats: statsRes.data,
         isLoading: false,
       })
-    } catch (error: any) {
+    } catch (error: unknown) {
       set({
-        error: error.response?.data?.error || 'Failed to fetch organizations',
+        error: getErrorMessage(error),
         isLoading: false,
       })
     }
@@ -121,9 +122,9 @@ export const useOrganizationStore = create<OrganizationState>((set) => ({
         },
         isLoading: false,
       })
-    } catch (error: any) {
+    } catch (error: unknown) {
       set({
-        error: error.response?.data?.error || 'Failed to fetch organization',
+        error: getErrorMessage(error),
         isLoading: false,
       })
     }
@@ -139,9 +140,9 @@ export const useOrganizationStore = create<OrganizationState>((set) => ({
         isLoading: false,
       }))
       return newOrg
-    } catch (error: any) {
+    } catch (error: unknown) {
       set({
-        error: error.response?.data?.error || 'Failed to create organization',
+        error: getErrorMessage(error),
         isLoading: false,
       })
       throw error
@@ -167,9 +168,9 @@ export const useOrganizationStore = create<OrganizationState>((set) => ({
             : state.currentOrganization,
         isLoading: false,
       }))
-    } catch (error: any) {
+    } catch (error: unknown) {
       set({
-        error: error.response?.data?.error || 'Failed to update organization',
+        error: getErrorMessage(error),
         isLoading: false,
       })
       throw error
@@ -188,9 +189,9 @@ export const useOrganizationStore = create<OrganizationState>((set) => ({
             : state.currentOrganization,
         isLoading: false,
       }))
-    } catch (error: any) {
+    } catch (error: unknown) {
       set({
-        error: error.response?.data?.error || 'Failed to delete organization',
+        error: getErrorMessage(error),
         isLoading: false,
       })
       throw error
@@ -201,7 +202,7 @@ export const useOrganizationStore = create<OrganizationState>((set) => ({
     try {
       const response = await api.get('/organizations/stats')
       set({ stats: response.data })
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to fetch stats:', error)
     }
   },
@@ -215,7 +216,7 @@ export const useOrganizationStore = create<OrganizationState>((set) => ({
           : null,
       }))
       return response.data
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to fetch projects:', error)
       return []
     }
@@ -239,9 +240,9 @@ export const useOrganizationStore = create<OrganizationState>((set) => ({
         isLoading: false,
       }))
       return newProject
-    } catch (error: any) {
+    } catch (error: unknown) {
       set({
-        error: error.response?.data?.error || 'Failed to create project',
+        error: getErrorMessage(error),
         isLoading: false,
       })
       throw error
@@ -263,9 +264,9 @@ export const useOrganizationStore = create<OrganizationState>((set) => ({
           : null,
         isLoading: false,
       }))
-    } catch (error: any) {
+    } catch (error: unknown) {
       set({
-        error: error.response?.data?.error || 'Failed to update project',
+        error: getErrorMessage(error),
         isLoading: false,
       })
       throw error
@@ -287,9 +288,9 @@ export const useOrganizationStore = create<OrganizationState>((set) => ({
           : null,
         isLoading: false,
       }))
-    } catch (error: any) {
+    } catch (error: unknown) {
       set({
-        error: error.response?.data?.error || 'Failed to delete project',
+        error: getErrorMessage(error),
         isLoading: false,
       })
       throw error
@@ -318,9 +319,9 @@ export const useOrganizationStore = create<OrganizationState>((set) => ({
         isLoading: false,
       }))
       return newEnv
-    } catch (error: any) {
+    } catch (error: unknown) {
       set({
-        error: error.response?.data?.error || 'Failed to create environment',
+        error: getErrorMessage(error),
         isLoading: false,
       })
       throw error

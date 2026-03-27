@@ -1,6 +1,6 @@
 {
   "name": "@togglely/sdk-vue",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "description": "Vue SDK for Togglely - Feature toggles with composables",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",

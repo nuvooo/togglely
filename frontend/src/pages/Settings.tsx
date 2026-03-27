@@ -16,6 +16,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import api from '@/lib/axios'
+import { getErrorMessage } from '@/lib/errors'
 
 import { useAuthStore } from '@/store/authStore'
 
@@ -97,11 +98,11 @@ export default function Settings() {
       })
 
       setMessage({ type: 'success', text: 'Profile updated successfully' })
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to update profile:', error)
       setMessage({
         type: 'error',
-        text: error.response?.data?.error || 'Failed to update profile',
+        text: getErrorMessage(error),
       })
     } finally {
       setIsSaving(false)
@@ -137,11 +138,11 @@ export default function Settings() {
       setNewPassword('')
       setConfirmPassword('')
       setMessage({ type: 'success', text: 'Password changed successfully' })
-    } catch (error: any) {
+    } catch (error: unknown) {
       console.error('Failed to change password:', error)
       setMessage({
         type: 'error',
-        text: error.response?.data?.error || 'Failed to change password',
+        text: getErrorMessage(error),
       })
     } finally {
       setIsChangingPassword(false)

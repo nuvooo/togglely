@@ -13,6 +13,7 @@ import clsx from 'clsx'
 import { Fragment, useEffect, useState } from 'react'
 import { Link } from 'react-router-dom'
 import api from '@/lib/api'
+import { getErrorMessage } from '@/lib/errors'
 import { toast } from 'sonner'
 
 interface Organization {
@@ -63,13 +64,9 @@ export default function Organizations() {
         orgs = [response.data]
       }
       setOrganizations(orgs)
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to fetch organizations:', err)
-      console.error('Error response:', err.response?.data)
-      setError(
-        err.response?.data?.error ||
-          'Failed to load organizations. Please try again later.'
-      )
+      setError(getErrorMessage(err))
     } finally {
       setIsLoading(false)
     }
@@ -102,12 +99,9 @@ export default function Organizations() {
         setIsModalOpen(false)
         setCreateSuccess(null)
       }, 1500)
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to create organization:', err)
-      setCreateError(
-        err.response?.data?.message ||
-          'Failed to create organization. Please try again.'
-      )
+      setCreateError(getErrorMessage(err))
     } finally {
       setIsCreating(false)
     }
@@ -126,12 +120,9 @@ export default function Organizations() {
     try {
       await api.delete(`/organizations/${orgId}`)
       setOrganizations((prev) => prev.filter((org) => org.id !== orgId))
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to delete organization:', err)
-      toast.error(
-        err.response?.data?.message ||
-          'Failed to delete organization. Please try again.'
-      )
+      toast.error(getErrorMessage(err))
     } finally {
       setIsDeleting(null)
     }

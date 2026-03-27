@@ -204,36 +204,40 @@ export class FlagsService {
       createdById: userId,
     })
 
-    const created = await this.prisma.featureFlag.create({
-      data: {
-        id: flag.id,
-        key: flag.key,
-        name: flag.name,
-        description: flag.description,
-        flagType: flag.type,
-        projectId: flag.projectId,
-        organizationId: flag.organizationId,
-        createdById: userId,
-      },
-    })
+    const { created, envsWithNames } = await this.prisma.$transaction(async (tx) => {
+      const created = await tx.featureFlag.create({
+        data: {
+          id: flag.id,
+          key: flag.key,
+          name: flag.name,
+          description: flag.description,
+          flagType: flag.type,
+          projectId: flag.projectId,
+          organizationId: flag.organizationId,
+          createdById: userId,
+        },
+      })
 
-    const envs = await Promise.all(
-      project.environments.map((env) =>
-        this.prisma.flagEnvironment.create({
-          data: {
-            flagId: created.id,
-            environmentId: env.id,
-            enabled: dto.initialValues?.[env.key]?.enabled ?? false,
-            defaultValue: dto.initialValues?.[env.key]?.value ?? 'false',
-          },
-        })
+      await Promise.all(
+        project.environments.map((env) =>
+          tx.flagEnvironment.create({
+            data: {
+              flagId: created.id,
+              environmentId: env.id,
+              enabled: dto.initialValues?.[env.key]?.enabled ?? false,
+              defaultValue: dto.initialValues?.[env.key]?.value ?? 'false',
+            },
+          })
+        )
       )
-    )
 
-    // Get environments with names for the response
-    const envsWithNames = await this.prisma.flagEnvironment.findMany({
-      where: { flagId: created.id, brandId: null },
-      include: { environment: true },
+      // Get environments with names for the response
+      const envsWithNames = await tx.flagEnvironment.findMany({
+        where: { flagId: created.id, brandId: null },
+        include: { environment: true },
+      })
+
+      return { created, envsWithNames }
     })
 
     await this.auditLogs.create({
@@ -498,8 +502,10 @@ export class FlagsService {
       where: { id: flagId },
     })
 
-    await this.prisma.flagEnvironment.deleteMany({ where: { flagId } })
-    await this.prisma.featureFlag.delete({ where: { id: flagId } })
+    await this.prisma.$transaction(async (tx) => {
+      await tx.flagEnvironment.deleteMany({ where: { flagId } })
+      await tx.featureFlag.delete({ where: { id: flagId } })
+    })
 
     if (flag && userId) {
       await this.auditLogs.create({

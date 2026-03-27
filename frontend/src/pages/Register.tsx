@@ -15,6 +15,7 @@ import {
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { getErrorMessage } from '@/lib/errors'
 import { useAuthStore } from '@/store/authStore'
 
 export default function Register() {
@@ -51,8 +52,8 @@ export default function Register() {
     try {
       await register(firstName, lastName, email, password)
       navigate('/')
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Registration failed')
+    } catch (err: unknown) {
+      setError(getErrorMessage(err))
     } finally {
       setIsLoading(false)
     }

@@ -5,6 +5,7 @@ import {
 import { useEffect, useState } from 'react'
 import { useSearchParams } from 'react-router-dom'
 import api from '@/lib/api'
+import { getErrorMessage } from '@/lib/errors'
 import { toast } from 'sonner'
 import FlagCard from './FlagCard'
 import FlagFilters from './FlagFilters'
@@ -120,12 +121,9 @@ export default function FeatureFlags() {
         setIsModalOpen(false)
         setCreateSuccess(null)
       }, 1500)
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to create feature flag:', err)
-      setCreateError(
-        err.response?.data?.message ||
-          'Failed to create feature flag. Please try again.'
-      )
+      setCreateError(getErrorMessage(err))
     } finally {
       setIsCreating(false)
     }
@@ -194,12 +192,9 @@ export default function FeatureFlags() {
     try {
       await api.delete(`/feature-flags/${flagId}`)
       setFeatureFlags((prev) => prev.filter((flag) => flag.id !== flagId))
-    } catch (err: any) {
+    } catch (err: unknown) {
       console.error('Failed to delete feature flag:', err)
-      toast.error(
-        err.response?.data?.message ||
-          'Failed to delete feature flag. Please try again.'
-      )
+      toast.error(getErrorMessage(err))
     } finally {
       setIsDeleting(null)
     }

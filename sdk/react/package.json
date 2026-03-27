@@ -1,6 +1,6 @@
 {
   "name": "@togglely/sdk-react",
-  "version": "1.2.4",
+  "version": "1.2.5",
   "description": "React SDK for Togglely - Feature toggles with hooks",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
@@ -22,8 +22,8 @@
   "author": "Togglely",
   "license": "MIT",
   "peerDependencies": {
-    "react": "^16.8.0 || ^17.0.0 || ^18.0.0",
-    "react-dom": "^16.8.0 || ^17.0.0 || ^18.0.0"
+    "react": ">=18.0.0",
+    "react-dom": ">=18.0.0"
   },
   "dependencies": {
     "@togglely/sdk-core": "^1.0.0"
