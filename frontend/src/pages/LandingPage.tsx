@@ -5,7 +5,7 @@ import {
   Code2Icon,
   FileTextIcon,
   FlagIcon,
-  GithubIcon,
+  Github,
   GlobeIcon,
   LayersIcon,
   LockIcon,
@@ -669,7 +669,7 @@ export default function LandingPage() {
                   rel="noopener noreferrer"
                   className="text-muted-foreground hover:text-foreground transition-colors"
                 >
-                  <GithubIcon className="h-6 w-6" />
+                  <Github className="h-6 w-6" />
                 </a>
               </div>
             </div>
