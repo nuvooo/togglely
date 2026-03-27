@@ -13,6 +13,7 @@ import {
 } from '@heroicons/react/24/outline'
 import clsx from 'clsx'
 import { Fragment, useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Link, useSearchParams } from 'react-router-dom'
 import api from '@/lib/api'
 import { toast } from 'sonner'
@@ -47,6 +48,7 @@ interface Project {
 }
 
 export default function FeatureFlags() {
+  const { t } = useTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
   const [featureFlags, setFeatureFlags] = useState<FeatureFlag[]>([])
   const [projects, setProjects] = useState<Project[]>([])
@@ -144,7 +146,7 @@ export default function FeatureFlags() {
 
       const newFlag = response.data.featureFlag || response.data
       setFeatureFlags((prev) => [newFlag, ...prev])
-      setCreateSuccess('Feature flag created successfully!')
+      setCreateSuccess(t('feature-flags.create.success'))
 
       // Reset form and close modal after a brief delay
       setTimeout(() => {
@@ -164,7 +166,7 @@ export default function FeatureFlags() {
       console.error('Failed to create feature flag:', err)
       setCreateError(
         err.response?.data?.message ||
-          'Failed to create feature flag. Please try again.'
+          t('feature-flags.create.error')
       )
     } finally {
       setIsCreating(false)
@@ -184,7 +186,7 @@ export default function FeatureFlags() {
     // Get the effective environment ID
     const effectiveEnvId = environmentId || selectedEnvironment
     if (!effectiveEnvId || effectiveEnvId === 'all') {
-      toast.error('Please select a specific environment to toggle flags')
+      toast.error(t('feature-flags.toggle.select-environment'))
       return
     }
 
@@ -211,7 +213,7 @@ export default function FeatureFlags() {
       )
     } catch (error) {
       console.error('Failed to toggle feature flag:', error)
-      toast.error('Failed to toggle feature flag. Please try again.')
+      toast.error(t('feature-flags.toggle.error'))
     } finally {
       setTogglingFlags((prev) => {
         const next = new Set(prev)
@@ -224,7 +226,7 @@ export default function FeatureFlags() {
   const deleteFeatureFlag = async (flagId: string) => {
     if (
       !confirm(
-        'Are you sure you want to delete this feature flag? This action cannot be undone.'
+        t('feature-flags.delete.confirm')
       )
     ) {
       return
@@ -238,7 +240,7 @@ export default function FeatureFlags() {
       console.error('Failed to delete feature flag:', err)
       toast.error(
         err.response?.data?.message ||
-          'Failed to delete feature flag. Please try again.'
+          t('feature-flags.delete.error')
       )
     } finally {
       setIsDeleting(null)
@@ -311,10 +313,10 @@ export default function FeatureFlags() {
       <div className="md:flex md:items-center md:justify-between">
         <div className="min-w-0 flex-1">
           <h2 className="text-2xl font-bold leading-7 text-foreground sm:truncate sm:text-3xl sm:tracking-tight">
-            Feature Flags
+            {t('feature-flags.title')}
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Manage feature flags across your projects and environments
+            {t('feature-flags.subtitle')}
           </p>
         </div>
         <div className="mt-4 flex md:ml-4 md:mt-0">
@@ -323,7 +325,7 @@ export default function FeatureFlags() {
             className="inline-flex items-center rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           >
             <PlusIcon className="-ml-0.5 mr-1.5 h-5 w-5" />
-            New Feature Flag
+            {t('feature-flags.new')}
           </button>
         </div>
       </div>
@@ -337,7 +339,7 @@ export default function FeatureFlags() {
           <input
             type="search"
             id="search"
-            placeholder="Search feature flags..."
+            placeholder={t('feature-flags.search-placeholder')}
             value={searchTerm}
             onChange={(e) => setSearchTerm(e.target.value)}
             className="block w-full rounded-md border border-input bg-background pl-10 shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
@@ -357,7 +359,7 @@ export default function FeatureFlags() {
             }}
             className="rounded-md border border-input bg-background shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
           >
-            <option value="all">All Projects</option>
+            <option value="all">{t('feature-flags.filter.all-projects')}</option>
             {projectNames.map((project) => (
               <option key={project} value={project}>
                 {project}
@@ -369,7 +371,7 @@ export default function FeatureFlags() {
             onChange={(e) => setSelectedEnvironment(e.target.value)}
             className="rounded-md border border-input bg-background shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
           >
-            <option value="all">All Environments</option>
+            <option value="all">{t('feature-flags.filter.all-environments')}</option>
             {environments.map((env) => (
               <option key={env} value={env}>
                 {env}
@@ -415,7 +417,7 @@ export default function FeatureFlags() {
                       as="h3"
                       className="text-lg font-semibold leading-6 text-foreground"
                     >
-                      Create New Feature Flag
+                      {t('feature-flags.create.title')}
                     </Dialog.Title>
                     <button
                       onClick={() => setIsModalOpen(false)}
@@ -447,7 +449,7 @@ export default function FeatureFlags() {
                         htmlFor="flag-project"
                         className="block text-sm font-medium text-foreground"
                       >
-                        Project <span className="text-destructive">*</span>
+                        {t('feature-flags.create.project-label')} <span className="text-destructive">*</span>
                       </label>
                       <select
                         id="flag-project"
@@ -463,7 +465,7 @@ export default function FeatureFlags() {
                         required
                         disabled={isCreating}
                       >
-                        <option value="">Select a project</option>
+                        <option value="">{t('feature-flags.create.select-project')}</option>
                         {projects.map((project) => (
                           <option key={project.id} value={project.id}>
                             {project.name}
@@ -477,7 +479,7 @@ export default function FeatureFlags() {
                         htmlFor="flag-environment"
                         className="block text-sm font-medium text-foreground"
                       >
-                        Environment
+                        {t('feature-flags.create.environment-label')}
                       </label>
                       <select
                         id="flag-environment"
@@ -497,8 +499,8 @@ export default function FeatureFlags() {
                       >
                         <option value="">
                           {availableEnvironments.length === 0
-                            ? 'Default environment'
-                            : 'Select environment'}
+                            ? t('feature-flags.create.default-environment')
+                            : t('feature-flags.create.select-environment')}
                         </option>
                         {availableEnvironments.map((env) => (
                           <option key={env.id} value={env.id}>
@@ -513,7 +515,7 @@ export default function FeatureFlags() {
                         htmlFor="flag-name"
                         className="block text-sm font-medium text-foreground"
                       >
-                        Flag Name <span className="text-destructive">*</span>
+                        {t('feature-flags.create.name-label')} <span className="text-destructive">*</span>
                       </label>
                       <input
                         type="text"
@@ -521,7 +523,7 @@ export default function FeatureFlags() {
                         value={newFlagData.name}
                         onChange={(e) => handleNameChange(e.target.value)}
                         className="mt-1 block w-full rounded-md border border-input bg-background shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
-                        placeholder="e.g., Dark Mode"
+                        placeholder={t('feature-flags.create.name-placeholder')}
                         required
                         disabled={isCreating}
                       />
@@ -532,7 +534,7 @@ export default function FeatureFlags() {
                         htmlFor="flag-key"
                         className="block text-sm font-medium text-foreground"
                       >
-                        Key <span className="text-destructive">*</span>
+                        {t('feature-flags.create.key-label')} <span className="text-destructive">*</span>
                       </label>
                       <input
                         type="text"
