@@ -1,6 +1,7 @@
 import { Module } from '@nestjs/common'
 import { ConfigModule } from '@nestjs/config'
 import { ThrottlerModule } from '@nestjs/throttler'
+import { winstonConfig } from './shared/logger/winston.config'
 import { AuditLogsModule } from './modules/audit-logs/audit-logs.module'
 import { ApiKeysModule } from './modules/api-keys/api-keys.module'
 import { AuthModule } from './modules/auth/auth.module'
@@ -20,6 +21,7 @@ import { PrismaModule } from './shared/prisma.module'
   imports: [
     ConfigModule.forRoot({ isGlobal: true }),
     ThrottlerModule.forRoot([{ ttl: 60000, limit: 100 }]),
+    winstonConfig,
     PrismaModule,
     MailerModule,
     HealthModule,

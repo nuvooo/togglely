@@ -4,6 +4,7 @@ import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger'
 import cors from 'cors'
 import helmet from 'helmet'
 import morgan from 'morgan'
+import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston'
 import { AppModule } from './app.module'
 import { SDK_ERROR_CODES } from './modules/sdk/sdk.constants'
 import { SdkService } from './modules/sdk/sdk.service'
@@ -17,8 +18,9 @@ import {
 import { GlobalExceptionFilter } from './shared/filters/global-exception.filter'
 
 async function bootstrap() {
-  const logger = new Logger('Bootstrap')
   const app = await NestFactory.create(AppModule)
+  app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER))
+  const logger = new Logger('Bootstrap')
 
   // Swagger UI needs relaxed CSP (inline scripts) — apply BEFORE helmet
   app.use((req: any, res: any, next: any) => {
