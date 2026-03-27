@@ -200,4 +200,10 @@ export const de = {
   'language.en': 'English',
   'language.switch-to-de': 'Zu Deutsch wechseln',
   'language.switch-to-en': 'Switch to English',
+
+  // Errors
+  'errors.boundary.title': 'Etwas ist schiefgelaufen',
+  'errors.boundary.message':
+    'Ein unerwarteter Fehler ist aufgetreten. Bitte laden Sie die Seite neu.',
+  'errors.boundary.reload': 'Seite neu laden',
 }

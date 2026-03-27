@@ -196,4 +196,10 @@ export const en = {
   'language.en': 'English',
   'language.switch-to-de': 'Zu Deutsch wechseln',
   'language.switch-to-en': 'Switch to English',
+
+  // Errors
+  'errors.boundary.title': 'Something went wrong',
+  'errors.boundary.message':
+    'An unexpected error occurred. Please try reloading the page.',
+  'errors.boundary.reload': 'Reload page',
 }

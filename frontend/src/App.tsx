@@ -1,4 +1,5 @@
 import { Navigate, Route, Routes } from 'react-router-dom'
+import ErrorBoundary from './components/ErrorBoundary'
 import MainLayout from './components/layout/MainLayout'
 import ProtectedRoute from './components/ProtectedRoute'
 import ApiKeys from './pages/ApiKeys'
@@ -30,7 +31,8 @@ function App() {
   const { token } = useAuthStore()
 
   return (
-    <Routes>
+    <ErrorBoundary>
+      <Routes>
       {/* Public Routes */}
       <Route
         path="/"
@@ -114,7 +116,8 @@ function App() {
         {/* Catch all - redirect to dashboard */}
         <Route path="*" element={<Navigate to="/dashboard" />} />
       </Route>
-    </Routes>
+      </Routes>
+    </ErrorBoundary>
   )
 }
 
