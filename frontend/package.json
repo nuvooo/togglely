@@ -34,7 +34,7 @@
     "lucide-react": "^0.577.0",
     "postcss": "^8.4.32",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0",
+    "react-dom": "^19.2.4",
     "react-i18next": "^17.0.0",
     "react-router-dom": "^6.21.0",
     "shadcn": "^4.1.1",
@@ -48,7 +48,7 @@
   "devDependencies": {
     "@cypress/code-coverage": "^4.0.3",
     "@types/react": "^18.2.45",
-    "@types/react-dom": "^18.2.18",
+    "@types/react-dom": "^19.2.3",
     "@vitejs/plugin-react": "^4.2.1",
     "cypress": "^15.13.0",
     "istanbul-lib-coverage": "^3.2.2",
