@@ -150,7 +150,9 @@ async function bootstrap() {
     }
   )
 
-  // SDK endpoints with DEBUG logging
+  // SDK endpoints registered as raw HTTP handlers — ThrottlerGuard (APP_GUARD)
+  // does NOT apply here because these bypass the NestJS controller layer.
+  // Rate limiting for SDK routes must be handled separately (e.g. reverse proxy).
 
   // Get single flag - MUST be registered BEFORE the list endpoint!
   httpAdapter.get(
