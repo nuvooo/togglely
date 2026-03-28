@@ -2,13 +2,36 @@
   "name": "@togglely/sdk",
   "version": "1.2.5",
   "description": "Vanilla JavaScript SDK for Togglely - Feature toggles for any framework",
+  "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
   "types": "dist/index.d.ts",
   "unpkg": "dist/index.umd.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "import": "./dist/index.esm.js",
+      "require": "./dist/index.js",
+      "default": "./dist/index.esm.js"
+    },
+    "./umd": "./dist/index.umd.js"
+  },
   "files": [
     "dist"
   ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nuvooo/togglely.git",
+    "directory": "sdk/vanilla"
+  },
+  "homepage": "https://github.com/nuvooo/togglely/tree/main/sdk/vanilla",
+  "bugs": {
+    "url": "https://github.com/nuvooo/togglely/issues"
+  },
   "scripts": {
     "build": "tsc && rollup -c",
     "test": "jest --passWithNoTests"

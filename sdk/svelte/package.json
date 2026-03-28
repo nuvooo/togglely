@@ -2,13 +2,36 @@
   "name": "@togglely/sdk-svelte",
   "version": "1.2.5",
   "description": "Svelte SDK for Togglely - Feature toggles with stores",
+  "type": "module",
   "main": "dist/index.js",
   "module": "dist/index.esm.js",
   "types": "dist/index.d.ts",
   "svelte": "dist/index.js",
+  "exports": {
+    ".": {
+      "types": "./dist/index.d.ts",
+      "svelte": "./dist/index.js",
+      "import": "./dist/index.esm.js",
+      "require": "./dist/index.js",
+      "default": "./dist/index.esm.js"
+    }
+  },
   "files": [
     "dist"
   ],
+  "sideEffects": false,
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/nuvooo/togglely.git",
+    "directory": "sdk/svelte"
+  },
+  "homepage": "https://github.com/nuvooo/togglely/tree/main/sdk/svelte",
+  "bugs": {
+    "url": "https://github.com/nuvooo/togglely/issues"
+  },
   "scripts": {
     "build": "tsc && rollup -c",
     "test": "jest --passWithNoTests"
