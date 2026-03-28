@@ -9,6 +9,54 @@
  * - update events only emit on actual toggle changes
  */
 
+// --- Typed Error Classes ---
+
+export class TogglelyError extends Error {
+  public readonly code: string
+
+  constructor(message: string, code: string) {
+    super(message)
+    this.name = 'TogglelyError'
+    this.code = code
+    Object.setPrototypeOf(this, new.target.prototype)
+  }
+}
+
+export class TogglelyNetworkError extends TogglelyError {
+  public readonly statusCode: number | undefined
+  public readonly response: Response | undefined
+
+  constructor(
+    message: string,
+    statusCode?: number,
+    response?: Response
+  ) {
+    super(message, 'NETWORK_ERROR')
+    this.name = 'TogglelyNetworkError'
+    this.statusCode = statusCode
+    this.response = response
+    Object.setPrototypeOf(this, new.target.prototype)
+  }
+}
+
+export class TogglelyConfigError extends TogglelyError {
+  constructor(message: string) {
+    super(message, 'CONFIG_ERROR')
+    this.name = 'TogglelyConfigError'
+    Object.setPrototypeOf(this, new.target.prototype)
+  }
+}
+
+export class TogglelyTimeoutError extends TogglelyError {
+  constructor(message: string = 'Request timeout') {
+    super(message, 'TIMEOUT_ERROR')
+    this.name = 'TogglelyTimeoutError'
+    Object.setPrototypeOf(this, new.target.prototype)
+  }
+}
+
+// --- Interfaces ---
+
 export interface TogglelyConfig {
   apiKey: string
   project: string
@@ -101,6 +149,19 @@ export class TogglelyClient {
   private readonly BATCH_DELAY = 10
 
   constructor(config: TogglelyConfig) {
+    if (!config.apiKey) {
+      throw new TogglelyConfigError('apiKey is required')
+    }
+    if (!config.project) {
+      throw new TogglelyConfigError('project is required')
+    }
+    if (!config.environment) {
+      throw new TogglelyConfigError('environment is required')
+    }
+    if (!config.baseUrl) {
+      throw new TogglelyConfigError('baseUrl is required')
+    }
+
     this.config = {
       timeout: 5000,
       offlineFallback: true,
@@ -458,7 +519,11 @@ export class TogglelyClient {
       )
 
       if (!response.ok) {
-        throw new Error(`HTTP ${response.status}`)
+        throw new TogglelyNetworkError(
+          `HTTP ${response.status}`,
+          response.status,
+          response
+        )
       }
 
       const data: AllTogglesResponse = await response.json()
@@ -546,7 +611,7 @@ export class TogglelyClient {
   ): Promise<Response> {
     return new Promise((resolve, reject) => {
       const timeoutId = setTimeout(() => {
-        reject(new Error('Request timeout'))
+        reject(new TogglelyTimeoutError())
       }, this.config.timeout)
 
       fetch(url, options)
@@ -556,7 +621,15 @@ export class TogglelyClient {
         })
         .catch((error) => {
           clearTimeout(timeoutId)
-          reject(error)
+          if (error instanceof TogglelyError) {
+            reject(error)
+          } else {
+            reject(
+              new TogglelyNetworkError(
+                error instanceof Error ? error.message : String(error)
+              )
+            )
+          }
         })
     })
   }
