@@ -3,6 +3,7 @@ import {
   PlusIcon,
 } from '@heroicons/react/24/outline'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { useSearchParams } from 'react-router-dom'
 import api from '@/lib/api'
 import { getErrorMessage } from '@/lib/errors'
@@ -24,6 +25,7 @@ const INITIAL_FLAG_DATA: NewFlagData = {
 }
 
 export default function FeatureFlags() {
+  const { t } = useTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
   const [featureFlags, setFeatureFlags] = useState<FeatureFlag[]>([])
   const [projects, setProjects] = useState<Project[]>([])
@@ -113,7 +115,7 @@ export default function FeatureFlags() {
 
       const newFlag = response.data.featureFlag || response.data
       setFeatureFlags((prev) => [newFlag, ...prev])
-      setCreateSuccess('Feature flag created successfully!')
+      setCreateSuccess(t('feature-flags.create.success'))
 
       // Reset form and close modal after a brief delay
       setTimeout(() => {
@@ -142,7 +144,7 @@ export default function FeatureFlags() {
     // Get the effective environment ID
     const effectiveEnvId = environmentId || selectedEnvironment
     if (!effectiveEnvId || effectiveEnvId === 'all') {
-      toast.error('Please select a specific environment to toggle flags')
+      toast.error(t('feature-flags.toggle.select-environment'))
       return
     }
 
@@ -169,7 +171,7 @@ export default function FeatureFlags() {
       )
     } catch (error) {
       console.error('Failed to toggle feature flag:', error)
-      toast.error('Failed to toggle feature flag. Please try again.')
+      toast.error(t('feature-flags.toggle.error'))
     } finally {
       setTogglingFlags((prev) => {
         const next = new Set(prev)
@@ -181,9 +183,7 @@ export default function FeatureFlags() {
 
   const deleteFeatureFlag = async (flagId: string) => {
     if (
-      !confirm(
-        'Are you sure you want to delete this feature flag? This action cannot be undone.'
-      )
+      !confirm(t('feature-flags.delete.confirm'))
     ) {
       return
     }
@@ -256,10 +256,10 @@ export default function FeatureFlags() {
       <div className="md:flex md:items-center md:justify-between">
         <div className="min-w-0 flex-1">
           <h2 className="text-2xl font-bold leading-7 text-foreground sm:truncate sm:text-3xl sm:tracking-tight">
-            Feature Flags
+            {t('feature-flags.title')}
           </h2>
           <p className="mt-1 text-sm text-muted-foreground">
-            Manage feature flags across your projects and environments
+            {t('feature-flags.subtitle')}
           </p>
         </div>
         <div className="mt-4 flex md:ml-4 md:mt-0">
@@ -268,7 +268,7 @@ export default function FeatureFlags() {
             className="inline-flex items-center rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2 focus-visible:outline-primary"
           >
             <PlusIcon className="-ml-0.5 mr-1.5 h-5 w-5" />
-            New Feature Flag
+            {t('feature-flags.new')}
           </button>
         </div>
       </div>
@@ -319,10 +319,10 @@ export default function FeatureFlags() {
         <div className="rounded-lg border-2 border-dashed border-border p-12 text-center">
           <FlagIcon className="mx-auto h-12 w-12 text-muted-foreground" />
           <h3 className="mt-2 text-sm font-semibold text-foreground">
-            No feature flags
+            {t('feature-flags.empty.title')}
           </h3>
           <p className="mt-1 text-sm text-muted-foreground">
-            Get started by creating a new feature flag.
+            {t('feature-flags.empty.description')}
           </p>
           <div className="mt-6">
             <button
@@ -330,7 +330,7 @@ export default function FeatureFlags() {
               className="inline-flex items-center rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90"
             >
               <PlusIcon className="-ml-0.5 mr-1.5 h-5 w-5" />
-              New Feature Flag
+              {t('feature-flags.new')}
             </button>
           </div>
         </div>

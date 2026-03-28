@@ -5,6 +5,7 @@ import {
   UserCircleIcon,
 } from '@heroicons/react/24/outline'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -31,6 +32,7 @@ interface UserProfile {
 }
 
 export default function Settings() {
+  const { t } = useTranslation()
   const { updateUser } = useAuthStore()
   const [, setProfile] = useState<UserProfile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
@@ -65,7 +67,7 @@ export default function Settings() {
         setEmail(data.email || '')
       } catch (error) {
         console.error('Failed to fetch profile:', error)
-        setMessage({ type: 'error', text: 'Failed to load profile' })
+        setMessage({ type: 'error', text: t('settings.profile.load-error') })
       } finally {
         setIsLoading(false)
       }
@@ -97,7 +99,7 @@ export default function Settings() {
         name: `${updatedUser.firstName} ${updatedUser.lastName}`.trim(),
       })
 
-      setMessage({ type: 'success', text: 'Profile updated successfully' })
+      setMessage({ type: 'success', text: t('settings.profile.success') })
     } catch (error: unknown) {
       console.error('Failed to update profile:', error)
       setMessage({
@@ -114,14 +116,14 @@ export default function Settings() {
     setMessage(null)
 
     if (newPassword !== confirmPassword) {
-      setMessage({ type: 'error', text: 'Passwords do not match' })
+      setMessage({ type: 'error', text: t('settings.password.mismatch') })
       return
     }
 
     if (newPassword.length < 8) {
       setMessage({
         type: 'error',
-        text: 'Password must be at least 8 characters',
+        text: t('settings.password.too-short'),
       })
       return
     }
@@ -137,7 +139,7 @@ export default function Settings() {
       setCurrentPassword('')
       setNewPassword('')
       setConfirmPassword('')
-      setMessage({ type: 'success', text: 'Password changed successfully' })
+      setMessage({ type: 'success', text: t('settings.password.success') })
     } catch (error: unknown) {
       console.error('Failed to change password:', error)
       setMessage({
@@ -161,9 +163,9 @@ export default function Settings() {
     <div className="max-w-2xl mx-auto space-y-8">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">Settings</h1>
+        <h1 className="text-3xl font-bold tracking-tight">{t('settings.title')}</h1>
         <p className="text-muted-foreground mt-1">
-          Manage your account settings and preferences
+          {t('settings.subtitle')}
         </p>
       </div>
 
@@ -190,9 +192,9 @@ export default function Settings() {
               <UserCircleIcon className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <CardTitle>Profile Information</CardTitle>
+              <CardTitle>{t('settings.profile.title')}</CardTitle>
               <CardDescription>
-                Update your personal information
+                {t('settings.profile.description')}
               </CardDescription>
             </div>
           </div>
@@ -201,7 +203,7 @@ export default function Settings() {
           <form onSubmit={handleProfileSubmit} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="firstName">First Name</Label>
+                <Label htmlFor="firstName">{t('settings.profile.first-name')}</Label>
                 <Input
                   id="firstName"
                   value={firstName}
@@ -210,7 +212,7 @@ export default function Settings() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="lastName">Last Name</Label>
+                <Label htmlFor="lastName">{t('settings.profile.last-name')}</Label>
                 <Input
                   id="lastName"
                   value={lastName}
@@ -220,7 +222,7 @@ export default function Settings() {
               </div>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="email">Email</Label>
+              <Label htmlFor="email">{t('settings.profile.email')}</Label>
               <Input
                 id="email"
                 type="email"
@@ -229,13 +231,12 @@ export default function Settings() {
                 className="bg-muted"
               />
               <p className="text-xs text-muted-foreground">
-                Email cannot be changed. Contact support if you need to update
-                it.
+                {t('settings.profile.email-help')}
               </p>
             </div>
             <div className="flex justify-end">
               <Button type="submit" disabled={isSaving}>
-                {isSaving ? 'Saving...' : 'Save Changes'}
+                {isSaving ? t('settings.profile.saving') : t('settings.profile.save')}
               </Button>
             </div>
           </form>
@@ -250,9 +251,9 @@ export default function Settings() {
               <KeyIcon className="w-5 h-5 text-primary" />
             </div>
             <div>
-              <CardTitle>Change Password</CardTitle>
+              <CardTitle>{t('settings.password.title')}</CardTitle>
               <CardDescription>
-                Update your password to keep your account secure
+                {t('settings.password.description')}
               </CardDescription>
             </div>
           </div>
@@ -260,7 +261,7 @@ export default function Settings() {
         <CardContent>
           <form onSubmit={handlePasswordSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="currentPassword">Current Password</Label>
+              <Label htmlFor="currentPassword">{t('settings.password.current')}</Label>
               <Input
                 id="currentPassword"
                 type="password"
@@ -271,7 +272,7 @@ export default function Settings() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="newPassword">New Password</Label>
+              <Label htmlFor="newPassword">{t('settings.password.new')}</Label>
               <Input
                 id="newPassword"
                 type="password"
@@ -283,7 +284,7 @@ export default function Settings() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="confirmPassword">Confirm New Password</Label>
+              <Label htmlFor="confirmPassword">{t('settings.password.confirm')}</Label>
               <Input
                 id="confirmPassword"
                 type="password"
@@ -295,7 +296,7 @@ export default function Settings() {
             </div>
             <div className="flex justify-end">
               <Button type="submit" disabled={isChangingPassword}>
-                {isChangingPassword ? 'Changing...' : 'Change Password'}
+                {isChangingPassword ? t('settings.password.changing') : t('settings.password.submit')}
               </Button>
             </div>
           </form>

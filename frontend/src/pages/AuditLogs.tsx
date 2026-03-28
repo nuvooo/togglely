@@ -11,6 +11,7 @@ import {
 } from '@heroicons/react/24/outline'
 import clsx from 'clsx'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
 import api from '@/lib/api'
 
 interface AuditLog {
@@ -58,6 +59,7 @@ interface FilterState {
 }
 
 export default function AuditLogs() {
+  const { t } = useTranslation()
   const [logs, setLogs] = useState<AuditLog[]>([])
   const [filteredLogs, setFilteredLogs] = useState<AuditLog[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -205,10 +207,10 @@ export default function AuditLogs() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div>
           <h1 className="text-2xl font-bold text-gray-900 dark:text-white">
-            Audit Logs
+            {t('audit-logs.title')}
           </h1>
           <p className="text-gray-500 dark:text-gray-400 text-sm">
-            Track all changes within your organization
+            {t('audit-logs.subtitle')}
           </p>
         </div>
       </div>
@@ -219,7 +221,7 @@ export default function AuditLogs() {
             <MagnifyingGlassIcon className="absolute left-3 top-1/2 -translate-y-1/2 h-4 w-4 text-gray-400" />
             <input
               type="text"
-              placeholder="Search logs..."
+              placeholder={t('audit-logs.search-placeholder')}
               className="w-full pl-9 pr-4 py-2 bg-gray-50 dark:bg-gray-900 border border-gray-200 dark:border-gray-700 rounded-md text-sm focus:ring-indigo-500 focus:border-indigo-500 dark:text-white"
               value={filters.searchTerm}
               onChange={(e) =>
@@ -233,12 +235,12 @@ export default function AuditLogs() {
             value={filters.action}
             onChange={(e) => setFilters({ ...filters, action: e.target.value })}
           >
-            <option value="all">All Actions</option>
-            <option value="CREATE">Create</option>
-            <option value="UPDATE">Update</option>
-            <option value="DELETE">Delete</option>
-            <option value="ENABLE">Enable</option>
-            <option value="DISABLE">Disable</option>
+            <option value="all">{t('audit-logs.filter.all-actions')}</option>
+            <option value="CREATE">{t('audit-logs.filter.create')}</option>
+            <option value="UPDATE">{t('audit-logs.filter.update')}</option>
+            <option value="DELETE">{t('audit-logs.filter.delete')}</option>
+            <option value="ENABLE">{t('audit-logs.filter.enable')}</option>
+            <option value="DISABLE">{t('audit-logs.filter.disable')}</option>
           </select>
 
           <select
@@ -248,12 +250,12 @@ export default function AuditLogs() {
               setFilters({ ...filters, entityType: e.target.value })
             }
           >
-            <option value="all">All Entity Types</option>
-            <option value="FEATURE_FLAG">Feature Flags</option>
-            <option value="PROJECT">Projects</option>
-            <option value="ORGANIZATION">Organizations</option>
-            <option value="API_KEY">API Keys</option>
-            <option value="MEMBER">Members</option>
+            <option value="all">{t('audit-logs.filter.all-entity-types')}</option>
+            <option value="FEATURE_FLAG">{t('audit-logs.filter.feature-flags')}</option>
+            <option value="PROJECT">{t('audit-logs.filter.projects')}</option>
+            <option value="ORGANIZATION">{t('audit-logs.filter.organizations')}</option>
+            <option value="API_KEY">{t('audit-logs.filter.api-keys')}</option>
+            <option value="MEMBER">{t('audit-logs.filter.members')}</option>
           </select>
 
           <select
@@ -261,7 +263,7 @@ export default function AuditLogs() {
             value={filters.userId}
             onChange={(e) => setFilters({ ...filters, userId: e.target.value })}
           >
-            <option value="all">All Users</option>
+            <option value="all">{t('audit-logs.filter.all-users')}</option>
             {users.map((user) => (
               <option key={user.id} value={user.id}>
                 {user.name}
@@ -276,7 +278,7 @@ export default function AuditLogs() {
               setFilters({ ...filters, projectId: e.target.value })
             }
           >
-            <option value="all">All Projects</option>
+            <option value="all">{t('audit-logs.filter.all-projects')}</option>
             {projects.map((project) => (
               <option key={project.id} value={project.id}>
                 {project.name}
@@ -294,10 +296,10 @@ export default function AuditLogs() {
               })
             }
           >
-            <option value="all">All Time</option>
-            <option value="today">Today</option>
-            <option value="week">Past Week</option>
-            <option value="month">Past Month</option>
+            <option value="all">{t('audit-logs.filter.all-time')}</option>
+            <option value="today">{t('audit-logs.filter.today')}</option>
+            <option value="week">{t('audit-logs.filter.past-week')}</option>
+            <option value="month">{t('audit-logs.filter.past-month')}</option>
           </select>
         </div>
       </div>
@@ -308,16 +310,16 @@ export default function AuditLogs() {
             <thead className="bg-gray-50 dark:bg-gray-900/50">
               <tr>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Activity
+                  {t('audit-logs.table.activity')}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  User
+                  {t('audit-logs.table.user')}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Context
+                  {t('audit-logs.table.context')}
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 dark:text-gray-400 uppercase tracking-wider">
-                  Date
+                  {t('audit-logs.table.date')}
                 </th>
               </tr>
             </thead>
@@ -403,7 +405,7 @@ export default function AuditLogs() {
                     colSpan={4}
                     className="px-6 py-12 text-center text-gray-500 dark:text-gray-400"
                   >
-                    No activity logs found matching your filters.
+                    {t('audit-logs.empty')}
                   </td>
                 </tr>
               )}
