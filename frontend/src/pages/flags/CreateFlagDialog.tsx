@@ -4,6 +4,7 @@ import {
   XMarkIcon,
 } from '@heroicons/react/24/outline'
 import { Fragment } from 'react'
+import { useTranslation } from 'react-i18next'
 import type { NewFlagData, Project } from './types'
 
 interface CreateFlagDialogProps {
@@ -33,6 +34,7 @@ export default function CreateFlagDialog({
   onNameChange,
   onDataChange,
 }: CreateFlagDialogProps) {
+  const { t } = useTranslation()
   return (
     <Transition appear show={isOpen} as={Fragment}>
       <Dialog
@@ -69,7 +71,7 @@ export default function CreateFlagDialog({
                     as="h3"
                     className="text-lg font-semibold leading-6 text-foreground"
                   >
-                    Create New Feature Flag
+                    {t('feature-flags.create.title')}
                   </Dialog.Title>
                   <button
                     onClick={onClose}
@@ -101,7 +103,7 @@ export default function CreateFlagDialog({
                       htmlFor="flag-project"
                       className="block text-sm font-medium text-foreground"
                     >
-                      Project <span className="text-destructive">*</span>
+                      {t('feature-flags.create.project-label')} <span className="text-destructive">*</span>
                     </label>
                     <select
                       id="flag-project"
@@ -116,7 +118,7 @@ export default function CreateFlagDialog({
                       required
                       disabled={isCreating}
                     >
-                      <option value="">Select a project</option>
+                      <option value="">{t('feature-flags.create.select-project')}</option>
                       {projects.map((project) => (
                         <option key={project.id} value={project.id}>
                           {project.name}
@@ -130,7 +132,7 @@ export default function CreateFlagDialog({
                       htmlFor="flag-environment"
                       className="block text-sm font-medium text-foreground"
                     >
-                      Environment
+                      {t('feature-flags.create.environment-label')}
                     </label>
                     <select
                       id="flag-environment"
@@ -147,8 +149,8 @@ export default function CreateFlagDialog({
                     >
                       <option value="">
                         {availableEnvironments.length === 0
-                          ? 'Default environment'
-                          : 'Select environment'}
+                          ? t('feature-flags.create.default-environment')
+                          : t('feature-flags.create.select-environment')}
                       </option>
                       {availableEnvironments.map((env) => (
                         <option key={env.id} value={env.id}>
@@ -163,7 +165,7 @@ export default function CreateFlagDialog({
                       htmlFor="flag-name"
                       className="block text-sm font-medium text-foreground"
                     >
-                      Flag Name <span className="text-destructive">*</span>
+                      {t('feature-flags.create.name-label')} <span className="text-destructive">*</span>
                     </label>
                     <input
                       type="text"
@@ -171,7 +173,7 @@ export default function CreateFlagDialog({
                       value={newFlagData.name}
                       onChange={(e) => onNameChange(e.target.value)}
                       className="mt-1 block w-full rounded-md border border-input bg-background shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
-                      placeholder="e.g., Dark Mode"
+                      placeholder={t('feature-flags.create.name-placeholder')}
                       required
                       disabled={isCreating}
                     />
@@ -182,7 +184,7 @@ export default function CreateFlagDialog({
                       htmlFor="flag-key"
                       className="block text-sm font-medium text-foreground"
                     >
-                      Key <span className="text-destructive">*</span>
+                      {t('feature-flags.create.key-label')} <span className="text-destructive">*</span>
                     </label>
                     <input
                       type="text"
@@ -192,13 +194,12 @@ export default function CreateFlagDialog({
                         onDataChange({ key: e.target.value })
                       }
                       className="mt-1 block w-full rounded-md border border-input bg-background shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
-                      placeholder="dark_mode"
+                      placeholder={t('feature-flags.create.key-placeholder')}
                       required
                       disabled={isCreating}
                     />
                     <p className="mt-1 text-xs text-muted-foreground">
-                      Used in code to reference this flag. Auto-generated from
-                      name.
+                      {t('feature-flags.create.key-help')}
                     </p>
                   </div>
 
@@ -207,7 +208,7 @@ export default function CreateFlagDialog({
                       htmlFor="flag-type"
                       className="block text-sm font-medium text-foreground"
                     >
-                      Type
+                      {t('feature-flags.create.type-label')}
                     </label>
                     <select
                       id="flag-type"
@@ -223,10 +224,10 @@ export default function CreateFlagDialog({
                       className="mt-1 block w-full rounded-md border border-input bg-background shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
                       disabled={isCreating}
                     >
-                      <option value="BOOLEAN">Boolean (true/false)</option>
-                      <option value="STRING">String</option>
-                      <option value="NUMBER">Number</option>
-                      <option value="JSON">JSON</option>
+                      <option value="BOOLEAN">{t('feature-flags.create.type-boolean')}</option>
+                      <option value="STRING">{t('feature-flags.create.type-string')}</option>
+                      <option value="NUMBER">{t('feature-flags.create.type-number')}</option>
+                      <option value="JSON">{t('feature-flags.create.type-json')}</option>
                     </select>
                   </div>
 
@@ -235,7 +236,7 @@ export default function CreateFlagDialog({
                       htmlFor="flag-default"
                       className="block text-sm font-medium text-foreground"
                     >
-                      Default Value
+                      {t('feature-flags.create.default-value-label')}
                     </label>
                     {newFlagData.type === 'BOOLEAN' ? (
                       <select
@@ -262,7 +263,7 @@ export default function CreateFlagDialog({
                         placeholder={
                           newFlagData.type === 'JSON'
                             ? '{"enabled": true}'
-                            : 'Enter default value'
+                            : t('feature-flags.create.default-value-placeholder')
                         }
                         disabled={isCreating}
                       />
@@ -274,7 +275,7 @@ export default function CreateFlagDialog({
                       htmlFor="flag-description"
                       className="block text-sm font-medium text-foreground"
                     >
-                      Description
+                      {t('feature-flags.create.description-label')}
                     </label>
                     <textarea
                       id="flag-description"
@@ -284,7 +285,7 @@ export default function CreateFlagDialog({
                       }
                       rows={2}
                       className="mt-1 block w-full rounded-md border border-input bg-background shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
-                      placeholder="Brief description of this feature flag"
+                      placeholder={t('feature-flags.create.description-placeholder')}
                       disabled={isCreating}
                     />
                   </div>
@@ -296,7 +297,7 @@ export default function CreateFlagDialog({
                       disabled={isCreating}
                       className="rounded-md bg-background px-3 py-2 text-sm font-semibold text-foreground shadow-sm ring-1 ring-inset ring-border hover:bg-muted disabled:opacity-50"
                     >
-                      Cancel
+                      {t('common.cancel')}
                     </button>
                     <button
                       type="submit"
@@ -308,7 +309,7 @@ export default function CreateFlagDialog({
                       }
                       className="rounded-md bg-primary px-3 py-2 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
                     >
-                      {isCreating ? 'Creating...' : 'Create Feature Flag'}
+                      {isCreating ? t('feature-flags.create.creating') : t('feature-flags.create.submit')}
                     </button>
                   </div>
                 </form>

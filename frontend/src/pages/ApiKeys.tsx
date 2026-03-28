@@ -336,11 +336,11 @@ export default function ApiKeys() {
                   className="w-full rounded-md border border-input bg-background px-3 py-2"
                   disabled={isCreating}
                 >
-                  <option value="7">7 days</option>
-                  <option value="30">30 days</option>
-                  <option value="90">90 days</option>
-                  <option value="365">1 year</option>
-                  <option value="">Never</option>
+                  <option value="7">{t('api-keys.create.expires-7')}</option>
+                  <option value="30">{t('api-keys.create.expires-30')}</option>
+                  <option value="90">{t('api-keys.create.expires-90')}</option>
+                  <option value="365">{t('api-keys.create.expires-365')}</option>
+                  <option value="">{t('api-keys.create.expires-never')}</option>
                 </select>
               </div>
 
@@ -351,7 +351,7 @@ export default function ApiKeys() {
                   onClick={() => setIsModalOpen(false)}
                   disabled={isCreating}
                 >
-                  Cancel
+                  {t('common.cancel')}
                 </Button>
                 <Button
                   type="submit"
@@ -359,7 +359,7 @@ export default function ApiKeys() {
                     isCreating || !newKeyData.name || !newKeyData.organizationId
                   }
                 >
-                  {isCreating ? 'Creating...' : 'Create Key'}
+                  {isCreating ? t('api-keys.create.creating') : t('api-keys.create.submit')}
                 </Button>
               </DialogFooter>
             </form>
@@ -374,11 +374,10 @@ export default function ApiKeys() {
             <CheckCircleIcon className="h-5 w-5 text-green-600 dark:text-green-400 mt-0.5" />
             <div className="flex-1">
               <h3 className="text-sm font-medium text-green-800 dark:text-green-400">
-                API Key Created Successfully
+                {t('api-keys.created-success.title')}
               </h3>
               <p className="text-sm text-green-700 dark:text-green-500 mt-1">
-                Make sure to copy your API key now. You won&apos;t be able to
-                see it again!
+                {t('api-keys.created-success.description')}
               </p>
               <div className="mt-3 flex items-center gap-2 bg-muted rounded-md p-3 border border-border">
                 <code className="text-green-600 dark:text-green-400 text-sm font-mono break-all flex-1">
@@ -398,7 +397,7 @@ export default function ApiKeys() {
                 className="mt-2 h-auto p-0 text-green-800 dark:text-green-400"
                 onClick={() => setNewlyCreatedKey(null)}
               >
-                Dismiss
+                {t('api-keys.created-success.dismiss')}
               </Button>
             </div>
           </div>
@@ -420,16 +419,16 @@ export default function ApiKeys() {
         <Card className="border-dashed">
           <CardContent className="flex flex-col items-center justify-center py-16">
             <KeyIcon className="mx-auto h-12 w-12 text-muted-foreground mb-4" />
-            <h3 className="text-lg font-semibold">No API keys</h3>
+            <h3 className="text-lg font-semibold">{t('api-keys.empty.title')}</h3>
             <p className="text-sm text-muted-foreground mt-1 mb-6">
               {userCanCreateKeys
-                ? 'Get started by creating a new API key.'
-                : 'Only organization owners and admins can create API keys.'}
+                ? t('api-keys.empty.description-can-create')
+                : t('api-keys.empty.description-no-permission')}
             </p>
             {userCanCreateKeys && (
               <Button onClick={() => setIsModalOpen(true)}>
                 <PlusIcon className="w-4 h-4 mr-2" />
-                Create API Key
+                {t('api-keys.create')}
               </Button>
             )}
           </CardContent>
@@ -458,7 +457,7 @@ export default function ApiKeys() {
                             {apiKey.type}
                           </Badge>
                           {!apiKey.isActive && (
-                            <Badge variant="secondary">Inactive</Badge>
+                            <Badge variant="secondary">{t('api-keys.status.inactive')}</Badge>
                           )}
                         </div>
                         <div className="flex items-center gap-2 mt-1 text-sm text-muted-foreground">
@@ -495,14 +494,14 @@ export default function ApiKeys() {
                               {apiKey.organization.name}
                             </span>
                           )}
-                          <span>Created: {formatDate(apiKey.createdAt)}</span>
+                          <span>{t('api-keys.created', { date: formatDate(apiKey.createdAt) })}</span>
                           {apiKey.lastUsedAt && (
                             <span>
-                              Last used: {formatDate(apiKey.lastUsedAt)}
+                              {t('api-keys.last-used', { date: formatDate(apiKey.lastUsedAt) })}
                             </span>
                           )}
                           {apiKey.expiresAt && (
-                            <span>Expires: {formatDate(apiKey.expiresAt)}</span>
+                            <span>{t('api-keys.expires', { date: formatDate(apiKey.expiresAt) })}</span>
                           )}
                         </div>
                       </div>
@@ -521,7 +520,7 @@ export default function ApiKeys() {
                             onClick={() => copyKeyToClipboard(apiKey.key)}
                           >
                             <Copy className="mr-2 h-4 w-4" />
-                            Copy key
+                            {t('api-keys.menu.copy')}
                           </DropdownMenuItem>
                           <DropdownMenuItem
                             className="text-destructive focus:text-destructive"
@@ -532,8 +531,8 @@ export default function ApiKeys() {
                           >
                             <TrashIcon className="mr-2 h-4 w-4" />
                             {isRevoking === apiKey.id
-                              ? 'Revoking...'
-                              : 'Revoke key'}
+                              ? t('api-keys.menu.revoking')
+                              : t('api-keys.menu.revoke')}
                           </DropdownMenuItem>
                         </DropdownMenuContent>
                       </DropdownMenu>

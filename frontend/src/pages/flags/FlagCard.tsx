@@ -7,6 +7,7 @@ import {
   XCircleIcon,
 } from '@heroicons/react/24/outline'
 import clsx from 'clsx'
+import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
 import type { FeatureFlag } from './types'
 import { formatDate, getTypeColor } from './types'
@@ -28,6 +29,7 @@ export default function FlagCard({
   onToggle,
   onDelete,
 }: FlagCardProps) {
+  const { t } = useTranslation()
   return (
     <div className="flex items-center justify-between p-6 hover:bg-muted/50 transition-colors">
       <div className="flex-1 min-w-0">
@@ -51,12 +53,12 @@ export default function FlagCard({
           {flag.isEnabled ? (
             <span className="inline-flex items-center rounded-full bg-green-100 dark:bg-green-900/60 px-2.5 py-0.5 text-xs font-medium text-green-800 dark:text-green-300 ring-1 ring-inset ring-green-600/20 dark:ring-green-400/30">
               <CheckCircleIcon className="mr-1 h-3 w-3" />
-              On
+              {t('feature-flags.status.on')}
             </span>
           ) : (
             <span className="inline-flex items-center rounded-full bg-gray-100 dark:bg-gray-800 px-2.5 py-0.5 text-xs font-medium text-gray-600 dark:text-gray-300 ring-1 ring-inset ring-gray-500/10 dark:ring-gray-400/20">
               <XCircleIcon className="mr-1 h-3 w-3" />
-              Off
+              {t('feature-flags.status.off')}
             </span>
           )}
         </div>
@@ -79,7 +81,7 @@ export default function FlagCard({
 
         <div className="mt-2 flex items-center text-xs text-muted-foreground">
           <ClockIcon className="mr-1 h-3 w-3" />
-          Updated {formatDate(flag.updatedAt)}
+          {t('feature-flags.updated', { date: formatDate(flag.updatedAt) })}
         </div>
       </div>
 
@@ -107,7 +109,7 @@ export default function FlagCard({
 
         <Menu as="div" className="relative">
           <Menu.Button className="flex items-center rounded-full p-2 text-muted-foreground hover:text-foreground focus:outline-none focus:ring-2 focus:ring-primary focus:ring-offset-2">
-            <span className="sr-only">Open options</span>
+            <span className="sr-only">{t('feature-flags.menu.open-options')}</span>
             <EllipsisVerticalIcon className="h-5 w-5" />
           </Menu.Button>
           <Transition
@@ -131,7 +133,7 @@ export default function FlagCard({
                         'block px-4 py-2 text-sm'
                       )}
                     >
-                      Edit
+                      {t('feature-flags.menu.edit')}
                     </Link>
                   )}
                 </Menu.Item>
@@ -145,7 +147,7 @@ export default function FlagCard({
                         'block w-full px-4 py-2 text-left text-sm'
                       )}
                     >
-                      Duplicate
+                      {t('feature-flags.menu.duplicate')}
                     </button>
                   )}
                 </Menu.Item>
@@ -164,7 +166,7 @@ export default function FlagCard({
                       >
                         <span className="flex items-center">
                           <TrashIcon className="mr-2 h-4 w-4" />
-                          {isDeleting ? 'Deleting...' : 'Delete'}
+                          {isDeleting ? t('feature-flags.menu.deleting') : t('feature-flags.menu.delete')}
                         </span>
                       </button>
                     )}

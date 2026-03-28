@@ -2,6 +2,7 @@ import {
   FunnelIcon,
   MagnifyingGlassIcon,
 } from '@heroicons/react/24/outline'
+import { useTranslation } from 'react-i18next'
 
 interface FlagFiltersProps {
   searchTerm: string
@@ -24,6 +25,7 @@ export default function FlagFilters({
   onProjectChange,
   onEnvironmentChange,
 }: FlagFiltersProps) {
+  const { t } = useTranslation()
   return (
     <div className="flex flex-col gap-4 sm:flex-row sm:items-center">
       <div className="relative flex-1 max-w-lg">
@@ -33,7 +35,7 @@ export default function FlagFilters({
         <input
           type="search"
           id="search"
-          placeholder="Search feature flags..."
+          placeholder={t('feature-flags.search-placeholder')}
           value={searchTerm}
           onChange={(e) => onSearchChange(e.target.value)}
           className="block w-full rounded-md border border-input bg-background pl-10 shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
@@ -46,7 +48,7 @@ export default function FlagFilters({
           onChange={(e) => onProjectChange(e.target.value)}
           className="rounded-md border border-input bg-background shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
         >
-          <option value="all">All Projects</option>
+          <option value="all">{t('feature-flags.filter.all-projects')}</option>
           {projectNames.map((project) => (
             <option key={project} value={project}>
               {project}
@@ -58,7 +60,7 @@ export default function FlagFilters({
           onChange={(e) => onEnvironmentChange(e.target.value)}
           className="rounded-md border border-input bg-background shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
         >
-          <option value="all">All Environments</option>
+          <option value="all">{t('feature-flags.filter.all-environments')}</option>
           {environments.map((env) => (
             <option key={env} value={env}>
               {env}
