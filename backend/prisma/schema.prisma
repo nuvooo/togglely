@@ -28,6 +28,7 @@ model User {
   createdFlags   FeatureFlag[] @relation("CreatedFlags")
   updatedFlags   FeatureFlag[] @relation("UpdatedFlags")
   acceptedInvites OrganizationInvite[] @relation(name: "AcceptedInvites")
+  createdExperiments Experiment[] @relation("CreatedExperiments")
 
   @@map("users")
 }
@@ -49,6 +50,7 @@ model Organization {
   environments Environment[]
   featureFlags FeatureFlag[]
   invites      OrganizationInvite[]
+  experiments  Experiment[]
 
   @@map("organizations")
 }
@@ -100,6 +102,7 @@ model Project {
   featureFlags FeatureFlag[]
   brands       Brand[]
   auditLogs    AuditLog[]
+  experiments  Experiment[]
 
   @@unique([organizationId, key])
   @@index([organizationId])
@@ -138,6 +141,7 @@ model Environment {
   project          Project           @relation(fields: [projectId], references: [id])
   organization     Organization      @relation(fields: [organizationId], references: [id])
   flagEnvironments FlagEnvironment[]
+  experiments      Experiment[]
 
   @@unique([projectId, key])
   @@index([projectId])
@@ -164,6 +168,7 @@ model FeatureFlag {
   createdBy        User              @relation("CreatedFlags", fields: [createdById], references: [id])
   updatedBy        User?             @relation("UpdatedFlags", fields: [updatedById], references: [id])
   flagEnvironments FlagEnvironment[]
+  experiments      Experiment[]
 
   @@unique([projectId, key])
   @@index([organizationId])
@@ -328,4 +333,95 @@ model OrganizationInvite {
   @@unique([organizationId, email])
   @@index([organizationId])
   @@map("organization_invites")
+}
+
+// --- A/B Testing ---
+
+enum ExperimentStatus {
+  DRAFT
+  RUNNING
+  PAUSED
+  COMPLETED
+  ARCHIVED
+}
+
+enum ExperimentEventType {
+  EXPOSURE
+  CONVERSION
+  CUSTOM
+}
+
+model Experiment {
+  id              String           @id @default(auto()) @map("_id") @db.ObjectId
+  name            String
+  key             String
+  description     String?
+  hypothesis      String?
+  status          ExperimentStatus @default(DRAFT)
+  flagId          String           @db.ObjectId
+  environmentId   String           @db.ObjectId
+  trafficPercent  Int              @default(100)
+  startedAt       DateTime?
+  endedAt         DateTime?
+  createdById     String           @db.ObjectId
+  projectId       String           @db.ObjectId
+  organizationId  String           @db.ObjectId
+  createdAt       DateTime         @default(now())
+  updatedAt       DateTime         @updatedAt
+
+  // Relations
+  flag          FeatureFlag         @relation(fields: [flagId], references: [id])
+  environment   Environment         @relation(fields: [environmentId], references: [id])
+  createdBy     User                @relation("CreatedExperiments", fields: [createdById], references: [id])
+  project       Project             @relation(fields: [projectId], references: [id])
+  organization  Organization        @relation(fields: [organizationId], references: [id])
+  variants      ExperimentVariant[]
+  events        ExperimentEvent[]
+
+  @@unique([projectId, key])
+  @@index([flagId])
+  @@index([environmentId])
+  @@index([status])
+  @@map("experiments")
+}
+
+model ExperimentVariant {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  experimentId  String   @db.ObjectId
+  key           String
+  name          String
+  description   String?
+  value         String
+  weight        Int      @default(50)
+  isControl     Boolean  @default(false)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  // Relations
+  experiment    Experiment        @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  events        ExperimentEvent[]
+
+  @@unique([experimentId, key])
+  @@index([experimentId])
+  @@map("experiment_variants")
+}
+
+model ExperimentEvent {
+  id            String              @id @default(auto()) @map("_id") @db.ObjectId
+  experimentId  String              @db.ObjectId
+  variantId     String?             @db.ObjectId
+  type          ExperimentEventType
+  userId        String
+  metadata      Json?
+  createdAt     DateTime            @default(now())
+
+  // Relations
+  experiment    Experiment          @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  variant       ExperimentVariant?  @relation(fields: [variantId], references: [id])
+
+  @@index([experimentId])
+  @@index([variantId])
+  @@index([experimentId, type])
+  @@index([createdAt])
+  @@map("experiment_events")
 }

@@ -12,6 +12,7 @@ import {
   toSdkFlagResponse,
 } from './sdk.helpers'
 import { EvaluationService, ToggleContext } from './evaluation.service'
+import { HashingService } from './hashing.service'
 
 @Injectable()
 export class SdkService {
@@ -20,6 +21,7 @@ export class SdkService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly evaluationService: EvaluationService,
+    private readonly hashingService: HashingService,
   ) {}
 
   private async validateApiKeyAndOrigin(
@@ -208,27 +210,50 @@ export class SdkService {
       `[SDK Service] FlagEnvironment: enabled=${flagEnv.enabled}, value=${flagEnv.defaultValue}, rules=${flagEnv.targetingRules.length}`
     )
 
-    // Evaluate targeting rules if flag is enabled and rules exist
+    // Evaluate: Experiment -> TargetingRules -> Default
     let resolvedValue = flagEnv.defaultValue
-    if (flagEnv.enabled && flagEnv.targetingRules.length > 0) {
-      const ruleResult = this.evaluationService.evaluateRules(
-        flagEnv.targetingRules,
+    let experimentInfo: { key: string; variantKey: string } | undefined
+
+    if (flagEnv.enabled) {
+      // Check for active experiment
+      const expResult = await this.tryExperimentEvaluation(
+        flag.id,
+        environment.id,
         context,
       )
-      if (ruleResult !== null) {
-        resolvedValue = ruleResult
+      if (expResult) {
+        resolvedValue = expResult.value
+        experimentInfo = { key: expResult.experimentKey, variantKey: expResult.variantKey }
         this.logger.debug(
-          `[SDK Service] Rule matched, serving value: ${resolvedValue}`
+          `[SDK Service] Experiment matched: ${expResult.experimentKey}, variant: ${expResult.variantKey}`
         )
+      } else if (flagEnv.targetingRules.length > 0) {
+        // Evaluate targeting rules
+        const ruleResult = this.evaluationService.evaluateRules(
+          flagEnv.targetingRules,
+          context,
+        )
+        if (ruleResult !== null) {
+          resolvedValue = ruleResult
+          this.logger.debug(
+            `[SDK Service] Rule matched, serving value: ${resolvedValue}`
+          )
+        }
       }
     }
 
-    return toSdkFlagResponse(
+    const response = toSdkFlagResponse(
       flag,
       project.organizationId,
       resolvedValue,
       flagEnv.enabled
     )
+
+    if (experimentInfo) {
+      (response as any).experiment = experimentInfo
+    }
+
+    return response
   }
 
   async evaluateAllFlags(
@@ -335,24 +360,41 @@ export class SdkService {
       }
 
       if (flagEnv) {
-        // Evaluate targeting rules
         let resolvedValue = flagEnv.defaultValue
-        if (flagEnv.enabled && flagEnv.targetingRules.length > 0) {
-          const ruleResult = this.evaluationService.evaluateRules(
-            flagEnv.targetingRules,
+        let experimentInfo: { key: string; variantKey: string } | undefined
+
+        if (flagEnv.enabled) {
+          const expResult = await this.tryExperimentEvaluation(
+            flag.id,
+            environment.id,
             context,
           )
-          if (ruleResult !== null) {
-            resolvedValue = ruleResult
+          if (expResult) {
+            resolvedValue = expResult.value
+            experimentInfo = { key: expResult.experimentKey, variantKey: expResult.variantKey }
+          } else if (flagEnv.targetingRules.length > 0) {
+            const ruleResult = this.evaluationService.evaluateRules(
+              flagEnv.targetingRules,
+              context,
+            )
+            if (ruleResult !== null) {
+              resolvedValue = ruleResult
+            }
           }
         }
 
-        results[flag.key] = toSdkFlagResponse(
+        const response = toSdkFlagResponse(
           flag,
           project.organizationId,
           resolvedValue,
           flagEnv.enabled
         )
+
+        if (experimentInfo) {
+          (response as any).experiment = experimentInfo
+        }
+
+        results[flag.key] = response
       }
     }
 
@@ -371,6 +413,59 @@ export class SdkService {
     await this.validateApiKeyAndOrigin(apiKey, projectKey, origin)
 
     return this.evaluateAllFlags(projectKey, environmentKey, brandKey, context)
+  }
+
+  private async tryExperimentEvaluation(
+    flagId: string,
+    environmentId: string,
+    context: ToggleContext,
+  ): Promise<{ value: string; experimentKey: string; variantKey: string } | null> {
+    if (!context.userId) return null
+
+    const experiment = await this.prisma.experiment.findFirst({
+      where: {
+        flagId,
+        environmentId,
+        status: 'RUNNING',
+      },
+      include: { variants: true },
+    })
+
+    if (!experiment || experiment.variants.length === 0) return null
+
+    const userId = String(context.userId)
+
+    // Check traffic allocation
+    if (!this.hashingService.isInTraffic(experiment.id, userId, experiment.trafficPercent)) {
+      return null
+    }
+
+    // Assign variant
+    const variant = this.hashingService.assignVariant(
+      experiment.id,
+      userId,
+      experiment.variants,
+    )
+
+    if (!variant) return null
+
+    // Track exposure asynchronously (fire-and-forget)
+    this.prisma.experimentEvent.create({
+      data: {
+        experimentId: experiment.id,
+        variantId: variant.id,
+        type: 'EXPOSURE',
+        userId,
+      },
+    }).catch((err) => {
+      this.logger.error('[SDK Service] Failed to track exposure:', err)
+    })
+
+    return {
+      value: variant.value,
+      experimentKey: experiment.key,
+      variantKey: variant.key,
+    }
   }
 
   async validateApiKey(apiKey: string, projectKey: string): Promise<boolean> {

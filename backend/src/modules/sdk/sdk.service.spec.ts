@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common'
 import { SdkService } from './sdk.service'
 import { EvaluationService } from './evaluation.service'
+import { HashingService } from './hashing.service'
 
 const mockProject = {
   id: 'proj-1',
@@ -62,11 +63,18 @@ function createService() {
     brand: {
       findFirst: jest.fn(),
     },
+    experiment: {
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
+    experimentEvent: {
+      create: jest.fn().mockResolvedValue({}),
+    },
   } as any
 
   const evaluationService = new EvaluationService()
-  const service = new SdkService(prisma, evaluationService)
-  return { service, prisma, evaluationService }
+  const hashingService = new HashingService()
+  const service = new SdkService(prisma, evaluationService, hashingService)
+  return { service, prisma, evaluationService, hashingService }
 }
 
 describe('SdkService', () => {
