@@ -11,12 +11,16 @@ import {
   isOriginAllowed,
   toSdkFlagResponse,
 } from './sdk.helpers'
+import { EvaluationService, ToggleContext } from './evaluation.service'
 
 @Injectable()
 export class SdkService {
   private readonly logger = new Logger(SdkService.name)
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly evaluationService: EvaluationService,
+  ) {}
 
   private async validateApiKeyAndOrigin(
     apiKey: string,
@@ -89,7 +93,8 @@ export class SdkService {
     flagKey: string,
     apiKey: string,
     brandKey?: string,
-    origin?: string
+    origin?: string,
+    context: ToggleContext = {}
   ) {
     this.logger.debug(
       `[SDK Service] evaluateFlag: ${flagKey} for ${projectKey}/${environmentKey}`
@@ -161,12 +166,18 @@ export class SdkService {
       }
     }
 
-    // Find or create flag environment
+    // Find or create flag environment with targeting rules
     let flagEnv = await this.prisma.flagEnvironment.findFirst({
       where: {
         flagId: flag.id,
         environmentId: environment.id,
         brandId: brandId || null,
+      },
+      include: {
+        targetingRules: {
+          include: { conditions: true },
+          orderBy: { priority: 'asc' },
+        },
       },
     })
 
@@ -175,7 +186,7 @@ export class SdkService {
       this.logger.debug(
         `[SDK Service] FlagEnvironment not found, auto-creating with disabled state`
       )
-      flagEnv = await this.prisma.flagEnvironment.create({
+      const created = await this.prisma.flagEnvironment.create({
         data: {
           flagId: flag.id,
           environmentId: environment.id,
@@ -183,17 +194,39 @@ export class SdkService {
           enabled: false,
           defaultValue: getDefaultFlagValue(flag.flagType),
         },
+        include: {
+          targetingRules: {
+            include: { conditions: true },
+            orderBy: { priority: 'asc' },
+          },
+        },
       })
+      flagEnv = created
     }
 
     this.logger.debug(
-      `[SDK Service] FlagEnvironment: enabled=${flagEnv.enabled}, value=${flagEnv.defaultValue}`
+      `[SDK Service] FlagEnvironment: enabled=${flagEnv.enabled}, value=${flagEnv.defaultValue}, rules=${flagEnv.targetingRules.length}`
     )
+
+    // Evaluate targeting rules if flag is enabled and rules exist
+    let resolvedValue = flagEnv.defaultValue
+    if (flagEnv.enabled && flagEnv.targetingRules.length > 0) {
+      const ruleResult = this.evaluationService.evaluateRules(
+        flagEnv.targetingRules,
+        context,
+      )
+      if (ruleResult !== null) {
+        resolvedValue = ruleResult
+        this.logger.debug(
+          `[SDK Service] Rule matched, serving value: ${resolvedValue}`
+        )
+      }
+    }
 
     return toSdkFlagResponse(
       flag,
       project.organizationId,
-      flagEnv.defaultValue,
+      resolvedValue,
       flagEnv.enabled
     )
   }
@@ -201,7 +234,8 @@ export class SdkService {
   async evaluateAllFlags(
     projectKey: string,
     environmentKey: string,
-    brandKey?: string
+    brandKey?: string,
+    context: ToggleContext = {}
   ) {
     // Find project by key
     const project = await this.prisma.project.findFirst({
@@ -231,11 +265,17 @@ export class SdkService {
       }
     }
 
-    // Get all flag environments for this environment and brand
+    // Get all flag environments for this environment and brand, including targeting rules
     const flagEnvs = await this.prisma.flagEnvironment.findMany({
       where: {
         environmentId: environment.id,
         OR: [{ brandId: brandId }, { brandId: null }],
+      },
+      include: {
+        targetingRules: {
+          include: { conditions: true },
+          orderBy: { priority: 'asc' },
+        },
       },
     })
 
@@ -258,12 +298,7 @@ export class SdkService {
           (fe) => fe.flagId === flag.id && !fe.brandId
         )
 
-        // Auto-create brand-specific from global if available, or from defaults
-        // Note: enabled is ALWAYS true for brand-specific entries because if it's in the DB
-        // as brand-specific, it means the user specifically set it for this brand.
-        // If it doesn't exist yet, it "doesn't matter" for the frontends UI, but for the SDK
-        // we check the global state.
-        flagEnv = await this.prisma.flagEnvironment.create({
+        const created = await this.prisma.flagEnvironment.create({
           data: {
             flagId: flag.id,
             environmentId: environment.id,
@@ -272,10 +307,16 @@ export class SdkService {
             defaultValue:
               globalEnv?.defaultValue ?? getDefaultFlagValue(flag.flagType),
           },
+          include: {
+            targetingRules: {
+              include: { conditions: true },
+              orderBy: { priority: 'asc' },
+            },
+          },
         })
+        flagEnv = created
       } else if (!flagEnv && !brandId) {
-        // Simple case: no brand, no env found (shouldn't happen often with findMany above, but for safety)
-        flagEnv = await this.prisma.flagEnvironment.create({
+        const created = await this.prisma.flagEnvironment.create({
           data: {
             flagId: flag.id,
             environmentId: environment.id,
@@ -283,14 +324,33 @@ export class SdkService {
             enabled: false,
             defaultValue: getDefaultFlagValue(flag.flagType),
           },
+          include: {
+            targetingRules: {
+              include: { conditions: true },
+              orderBy: { priority: 'asc' },
+            },
+          },
         })
+        flagEnv = created
       }
 
       if (flagEnv) {
+        // Evaluate targeting rules
+        let resolvedValue = flagEnv.defaultValue
+        if (flagEnv.enabled && flagEnv.targetingRules.length > 0) {
+          const ruleResult = this.evaluationService.evaluateRules(
+            flagEnv.targetingRules,
+            context,
+          )
+          if (ruleResult !== null) {
+            resolvedValue = ruleResult
+          }
+        }
+
         results[flag.key] = toSdkFlagResponse(
           flag,
           project.organizationId,
-          flagEnv.defaultValue,
+          resolvedValue,
           flagEnv.enabled
         )
       }
@@ -304,12 +364,13 @@ export class SdkService {
     environmentKey: string,
     apiKey: string,
     brandKey?: string,
-    origin?: string
+    origin?: string,
+    context: ToggleContext = {}
   ): Promise<Record<string, any>> {
     // Validate API key first
     await this.validateApiKeyAndOrigin(apiKey, projectKey, origin)
 
-    return this.evaluateAllFlags(projectKey, environmentKey, brandKey)
+    return this.evaluateAllFlags(projectKey, environmentKey, brandKey, context)
   }
 
   async validateApiKey(apiKey: string, projectKey: string): Promise<boolean> {

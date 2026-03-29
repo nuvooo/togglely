@@ -1,8 +1,9 @@
 import { Module } from '@nestjs/common'
 import { SdkService } from './sdk.service'
+import { EvaluationService } from './evaluation.service'
 
 @Module({
-  providers: [SdkService],
-  exports: [SdkService],
+  providers: [SdkService, EvaluationService],
+  exports: [SdkService, EvaluationService],
 })
 export class SdkModule {}

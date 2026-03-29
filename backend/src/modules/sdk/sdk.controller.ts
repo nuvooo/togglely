@@ -1,5 +1,6 @@
 import { Controller, Get, Headers, Param, Query } from '@nestjs/common'
 import { SdkService } from './sdk.service'
+import { ToggleContext } from './evaluation.service'
 
 @Controller('sdk')
 export class SdkController {
@@ -18,6 +19,19 @@ export class SdkController {
     return brandKey || tenantId
   }
 
+  private parseContext(contextParam?: string): ToggleContext {
+    if (!contextParam) return {}
+    try {
+      const parsed = JSON.parse(contextParam)
+      if (typeof parsed === 'object' && parsed !== null) {
+        return parsed as ToggleContext
+      }
+    } catch {
+      // Invalid JSON — return empty context
+    }
+    return {}
+  }
+
   @Get('flags/:projectKey/:environmentKey/:flagKey')
   async evaluateFlag(
     @Param('projectKey') projectKey: string,
@@ -26,18 +40,21 @@ export class SdkController {
     @Query('apiKey') queryApiKey?: string,
     @Query('brandKey') brandKey?: string,
     @Query('tenantId') tenantId?: string,
+    @Query('context') contextParam?: string,
     @Headers('origin') origin?: string,
     @Headers('authorization') authHeader?: string
   ) {
     const apiKey = this.resolveApiKey(queryApiKey, authHeader)
     const resolvedBrandKey = this.resolveBrandKey(brandKey, tenantId)
+    const context = this.parseContext(contextParam)
     return this.sdkService.evaluateFlag(
       projectKey,
       environmentKey,
       flagKey,
       apiKey,
       resolvedBrandKey,
-      origin
+      origin,
+      context
     )
   }
 
@@ -48,17 +65,20 @@ export class SdkController {
     @Query('apiKey') queryApiKey?: string,
     @Query('brandKey') brandKey?: string,
     @Query('tenantId') tenantId?: string,
+    @Query('context') contextParam?: string,
     @Headers('origin') origin?: string,
     @Headers('authorization') authHeader?: string
   ) {
     const apiKey = this.resolveApiKey(queryApiKey, authHeader)
     const resolvedBrandKey = this.resolveBrandKey(brandKey, tenantId)
+    const context = this.parseContext(contextParam)
     return this.sdkService.getAllFlags(
       projectKey,
       environmentKey,
       apiKey,
       resolvedBrandKey,
-      origin
+      origin,
+      context
     )
   }
 }

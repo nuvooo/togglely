@@ -4,6 +4,7 @@ import {
   UnauthorizedException,
 } from '@nestjs/common'
 import { SdkService } from './sdk.service'
+import { EvaluationService } from './evaluation.service'
 
 const mockProject = {
   id: 'proj-1',
@@ -63,8 +64,9 @@ function createService() {
     },
   } as any
 
-  const service = new SdkService(prisma)
-  return { service, prisma }
+  const evaluationService = new EvaluationService()
+  const service = new SdkService(prisma, evaluationService)
+  return { service, prisma, evaluationService }
 }
 
 describe('SdkService', () => {
@@ -82,6 +84,7 @@ describe('SdkService', () => {
       prisma.flagEnvironment.findFirst.mockResolvedValue({
         enabled: true,
         defaultValue: 'true',
+        targetingRules: [],
       })
 
       const result = await service.evaluateFlag(
@@ -184,6 +187,7 @@ describe('SdkService', () => {
       prisma.flagEnvironment.create.mockResolvedValue({
         enabled: false,
         defaultValue: 'false',
+        targetingRules: [],
       })
 
       const result = await service.evaluateFlag(
@@ -237,6 +241,7 @@ describe('SdkService', () => {
       prisma.flagEnvironment.findFirst.mockResolvedValue({
         enabled: true,
         defaultValue: 'true',
+        targetingRules: [],
       })
 
       const result = await service.evaluateFlag(
@@ -265,6 +270,7 @@ describe('SdkService', () => {
           brandId: null,
           enabled: true,
           defaultValue: 'true',
+          targetingRules: [],
         },
       ])
 
@@ -305,6 +311,7 @@ describe('SdkService', () => {
         brandId: null,
         enabled: false,
         defaultValue: 'false',
+        targetingRules: [],
       })
 
       const result = await service.evaluateAllFlags('my-project', 'production')
