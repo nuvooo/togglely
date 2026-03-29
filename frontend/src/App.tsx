@@ -26,6 +26,9 @@ const ProjectSettings = lazy(() => import('./pages/projects/ProjectSettings'))
 const Register = lazy(() => import('./pages/Register'))
 const ResendVerification = lazy(() => import('./pages/ResendVerification'))
 const ResetPassword = lazy(() => import('./pages/ResetPassword'))
+const ExperimentsList = lazy(() => import('./pages/experiments/ExperimentsList'))
+const CreateExperiment = lazy(() => import('./pages/experiments/CreateExperiment'))
+const ExperimentDetail = lazy(() => import('./pages/experiments/ExperimentDetail'))
 const SDKTester = lazy(() => import('./pages/SDKTester'))
 const Settings = lazy(() => import('./pages/Settings'))
 const VerifyEmail = lazy(() => import('./pages/VerifyEmail'))
@@ -109,6 +112,12 @@ function App() {
         {/* Feature Flags */}
         <Route path="feature-flags" element={<FeatureFlags />} />
         <Route path="feature-flags/:id" element={<FeatureFlagDetail />} />
+
+        {/* Experiments */}
+        <Route path="experiments" element={<ExperimentsList />} />
+        <Route path="experiments/new" element={<CreateExperiment />} />
+        <Route path="experiments/:id" element={<ExperimentDetail />} />
+
         <Route path="sdk-tester" element={<SDKTester />} />
 
         {/* API Keys */}
