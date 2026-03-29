@@ -2,6 +2,7 @@ import {
   Bell,
   Building2,
   ChevronDown,
+  FlaskConical,
   FlagIcon,
   LayoutDashboard,
   LogOut,
@@ -38,6 +39,7 @@ export default function MainLayout() {
   const navigation = [
     { name: t('nav.dashboard'), href: '/dashboard', icon: LayoutDashboard },
     { name: t('nav.organizations'), href: '/organizations', icon: Building2 },
+    { name: t('nav.experiments', 'Experiments'), href: '/experiments', icon: FlaskConical },
   ]
 
   const handleLogout = () => {
