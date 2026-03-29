@@ -546,8 +546,69 @@ export function useTogglelySuspense(): TogglelyClient {
   return client
 }
 
+// ==================== Experiment Hook ====================
+
+export interface UseExperimentResult {
+  value: any
+  variantKey: string | null
+  isInExperiment: boolean
+  isLoading: boolean
+  trackConversion: (metadata?: Record<string, any>) => void
+}
+
+export function useExperiment(flagKey: string): UseExperimentResult {
+  const client = useTogglelyClient()
+  const [result, setResult] = useState<{
+    value: any
+    variantKey: string | null
+    isInExperiment: boolean
+    isLoading: boolean
+  }>({ value: null, variantKey: null, isInExperiment: false, isLoading: true })
+
+  useEffect(() => {
+    let cancelled = false
+
+    client.getValue(flagKey).then((toggleValue) => {
+      if (cancelled) return
+      if (!toggleValue) {
+        setResult({ value: null, variantKey: null, isInExperiment: false, isLoading: false })
+        return
+      }
+      setResult({
+        value: toggleValue.value,
+        variantKey: toggleValue.experiment?.variantKey ?? null,
+        isInExperiment: !!toggleValue.experiment,
+        isLoading: false,
+      })
+    }).catch(() => {
+      if (!cancelled) {
+        setResult({ value: null, variantKey: null, isInExperiment: false, isLoading: false })
+      }
+    })
+
+    return () => { cancelled = true }
+  }, [client, flagKey])
+
+  const trackConversion = useCallback(
+    (metadata?: Record<string, any>) => {
+      if (result.isInExperiment && result.variantKey) {
+        // Find experiment key from toggle value
+        client.getValue(flagKey).then((tv) => {
+          if (tv?.experiment) {
+            client.trackConversion(tv.experiment.key, metadata)
+          }
+        }).catch(() => {})
+      }
+    },
+    [client, flagKey, result.isInExperiment, result.variantKey],
+  )
+
+  return { ...result, trackConversion }
+}
+
 // Re-export core types
 export type {
+  ExperimentTrackingEvent,
   ToggleContext,
   TogglelyConfig,
   TogglelyEventType,

@@ -74,6 +74,8 @@ export interface TogglelyConfig {
   refreshStrategy?: 'manual' | 'interval' | 'stale-while-revalidate'
   refreshIntervalMs?: number
   minRefreshIntervalMs?: number
+  trackingCallback?: (event: ExperimentTrackingEvent) => void
+  enableExposureTracking?: boolean
 }
 
 export interface ToggleContext {
@@ -88,6 +90,19 @@ export interface ToggleValue {
   value: any
   enabled: boolean
   flagType?: 'BOOLEAN' | 'STRING' | 'NUMBER' | 'JSON'
+  experiment?: {
+    key: string
+    variantKey: string
+  }
+}
+
+export interface ExperimentTrackingEvent {
+  experimentKey: string
+  variantKey: string
+  userId: string
+  type: 'exposure' | 'conversion'
+  timestamp: number
+  flagKey?: string
 }
 
 export interface AllTogglesResponse {
@@ -132,6 +147,12 @@ export class TogglelyClient {
   private eventHandlers: Map<TogglelyEventType, Set<TogglelyEventHandler>> =
     new Map()
   private offlineTogglesLoaded = false
+
+  private trackedExposures: Set<string> = new Set()
+  private pendingEvents: ExperimentTrackingEvent[] = []
+  private eventFlushTimeout: ReturnType<typeof setTimeout> | null = null
+  private readonly EVENT_BATCH_SIZE = 50
+  private readonly EVENT_FLUSH_INTERVAL = 10000
 
   private pendingKeys: Set<string> = new Set()
   private pendingPromises: Map<
@@ -282,6 +303,7 @@ export class TogglelyClient {
   async getValue(key: string): Promise<ToggleValue | null> {
     const cachedValue = this.toggles.get(key)
     if (cachedValue !== undefined) {
+      this.trackExposureIfNeeded(cachedValue, key)
       if (this.config.refreshStrategy === 'stale-while-revalidate') {
         this.scheduleBackgroundRefresh()
       }
@@ -359,6 +381,9 @@ export class TogglelyClient {
       for (const key of keys) {
         const keyPromises = promises.get(key) || []
         const value = this.toggles.get(key) || null
+        if (value) {
+          this.trackExposureIfNeeded(value, key)
+        }
         for (const { resolve } of keyPromises) {
           resolve(value)
         }
@@ -583,6 +608,111 @@ export class TogglelyClient {
     return true
   }
 
+  /**
+   * Track a conversion event for an experiment.
+   */
+  async trackConversion(
+    experimentKey: string,
+    metadata?: Record<string, any>
+  ): Promise<void> {
+    const userId = this.context.userId
+    if (!userId) return
+
+    const event: ExperimentTrackingEvent = {
+      experimentKey,
+      variantKey: '',
+      userId: String(userId),
+      type: 'conversion',
+      timestamp: Date.now(),
+    }
+
+    if (this.config.trackingCallback) {
+      this.config.trackingCallback(event)
+    }
+
+    this.pendingEvents.push(event)
+    this.scheduleEventFlush()
+  }
+
+  private trackExposureIfNeeded(toggleValue: ToggleValue, flagKey: string): void {
+    if (!toggleValue.experiment) return
+    if (this.config.enableExposureTracking === false) return
+
+    const userId = this.context.userId
+    if (!userId) return
+
+    const dedupKey = `${toggleValue.experiment.key}:${userId}`
+    if (this.trackedExposures.has(dedupKey)) return
+    this.trackedExposures.add(dedupKey)
+
+    const event: ExperimentTrackingEvent = {
+      experimentKey: toggleValue.experiment.key,
+      variantKey: toggleValue.experiment.variantKey,
+      userId: String(userId),
+      type: 'exposure',
+      timestamp: Date.now(),
+      flagKey,
+    }
+
+    if (this.config.trackingCallback) {
+      this.config.trackingCallback(event)
+    }
+
+    this.pendingEvents.push(event)
+    this.scheduleEventFlush()
+  }
+
+  private scheduleEventFlush(): void {
+    if (this.pendingEvents.length >= this.EVENT_BATCH_SIZE) {
+      this.flushEvents()
+      return
+    }
+
+    if (!this.eventFlushTimeout) {
+      this.eventFlushTimeout = setTimeout(() => {
+        this.eventFlushTimeout = null
+        this.flushEvents()
+      }, this.EVENT_FLUSH_INTERVAL)
+    }
+  }
+
+  private async flushEvents(): Promise<void> {
+    if (this.pendingEvents.length === 0) return
+    if (this.state.isOffline) return
+
+    const events = [...this.pendingEvents]
+    this.pendingEvents = []
+
+    try {
+      const headers: Record<string, string> = {
+        'Content-Type': 'application/json',
+      }
+      if (this.config.apiKey) {
+        headers['Authorization'] = `Bearer ${this.config.apiKey}`
+      }
+
+      await this.fetchWithTimeout(
+        `${this.config.baseUrl}/sdk/events/${encodeURIComponent(this.config.project)}/${encodeURIComponent(this.config.environment)}`,
+        {
+          method: 'POST',
+          headers,
+          body: JSON.stringify({
+            events: events.map((e) => ({
+              type: e.type,
+              experimentKey: e.experimentKey,
+              variantKey: e.variantKey,
+              userId: e.userId,
+              timestamp: e.timestamp,
+            })),
+          }),
+        }
+      )
+    } catch {
+      // Re-queue events on failure
+      this.pendingEvents.unshift(...events)
+    }
+  }
+
   forceOfflineMode(): void {
     this.state.isOffline = true
     this.emit('offline')
@@ -595,14 +725,18 @@ export class TogglelyClient {
   }
 
   destroy(): void {
+    this.flushEvents().catch(() => {})
     this.toggles.clear()
+    this.trackedExposures.clear()
     this.eventHandlers.forEach((handlers) => handlers.clear())
     if (this.batchTimeout) clearTimeout(this.batchTimeout)
     if (this.refreshTimeout) clearTimeout(this.refreshTimeout)
     if (this.intervalHandle) clearInterval(this.intervalHandle)
+    if (this.eventFlushTimeout) clearTimeout(this.eventFlushTimeout)
     this.batchTimeout = null
     this.refreshTimeout = null
     this.intervalHandle = null
+    this.eventFlushTimeout = null
   }
 
   private fetchWithTimeout(
