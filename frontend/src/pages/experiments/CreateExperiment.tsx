@@ -52,11 +52,11 @@ export default function CreateExperiment() {
 
   useEffect(() => {
     if (!projectId) return
-    api.get(`/api/feature-flags/project/${projectId}`).then((res) => {
+    api.get(`/feature-flags/project/${projectId}`).then((res) => {
       const list = Array.isArray(res.data) ? res.data : res.data.featureFlags || res.data.flags || []
       setFlags(list)
     }).catch(() => {})
-    api.get(`/api/environments/project/${projectId}`).then((res) => {
+    api.get(`/environments/project/${projectId}`).then((res) => {
       const list = Array.isArray(res.data) ? res.data : res.data.environments || []
       setEnvironments(list)
     }).catch(() => {})

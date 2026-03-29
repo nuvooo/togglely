@@ -17,7 +17,7 @@ import { ExperimentResultsService } from './experiment-results.service'
 import { CreateExperimentDto, CreateVariantDto } from './dto/create-experiment.dto'
 import { UpdateExperimentDto } from './dto/update-experiment.dto'
 
-@Controller('api/experiments')
+@Controller('experiments')
 @UseGuards(AuthGuard)
 export class ExperimentsController {
   constructor(
