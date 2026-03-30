@@ -5,6 +5,30 @@ All notable changes to the Togglely project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.2.6] - 2026-03-30
+
+### Fixed
+
+- **sdk:** Renamed jest configs to `.cjs` for `type:module` compatibility ([bc396e9])
+
+### Added
+
+- **frontend:** Complete i18n - replaced all hardcoded strings with `t()` calls ([3895d90])
+- **sdk:** Smoke tests for React, Vue, Svelte, and Vanilla SDKs ([2b0ebfb])
+- **sdk:** Comprehensive SDK documentation and examples ([5342d6f])
+- **sdk:** UMD build for vanilla SDK CDN usage ([9a42c3b])
+- **devops:** Grafana dashboards, alerts, and monitoring guide ([519bca9])
+- **backend:** Per-endpoint rate limiting for NestJS 11 + Throttler v6 ([0fe0b05])
+
+### Changed
+
+- **sdk:** Added typed error classes for better error handling ([022776d])
+- **sdk:** Added exports field and `type:module` for npm publish readiness ([33fd693])
+
+### Tests
+
+- **backend:** Increased unit test coverage to 60%+ ([7084b95])
+
 ## [1.2.5] - 2026-03-27
 
 ### Changed
