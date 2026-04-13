@@ -5,7 +5,7 @@
     "format": "npm run biome:write"
   },
   "devDependencies": {
-    "@biomejs/biome": "^1.9.4",
+    "@biomejs/biome": "^2.4.11",
     "@cypress/code-coverage": "^4.0.3",
     "cypress": "^15.13.0",
     "cypress-vite": "^1.8.0",
