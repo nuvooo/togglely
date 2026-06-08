@@ -14,6 +14,8 @@ import { OrganizationsModule } from './modules/organizations/organizations.modul
 import { PasswordResetModule } from './modules/password-reset/password-reset.module'
 import { ProjectsModule } from './modules/projects/projects.module'
 import { SdkModule } from './modules/sdk/sdk.module'
+import { ExperimentsModule } from './modules/experiments/experiments.module'
+import { EventsModule } from './modules/events/events.module'
 import { MailService } from './shared/mail.service'
 import { MailerModule } from './shared/mailer.module'
 import { MetricsModule } from './shared/metrics/metrics.module'
@@ -38,6 +40,8 @@ import { PrismaModule } from './shared/prisma.module'
     ProjectsModule,
     BrandsModule,
     SdkModule,
+    ExperimentsModule,
+    EventsModule,
   ],
   providers: [
     { provide: APP_GUARD, useClass: ThrottlerGuard },

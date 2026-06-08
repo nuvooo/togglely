@@ -4,6 +4,8 @@ import {
   UnauthorizedException,
 } from '@nestjs/common'
 import { SdkService } from './sdk.service'
+import { EvaluationService } from './evaluation.service'
+import { HashingService } from './hashing.service'
 
 const mockProject = {
   id: 'proj-1',
@@ -61,10 +63,18 @@ function createService() {
     brand: {
       findFirst: jest.fn(),
     },
+    experiment: {
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
+    experimentEvent: {
+      create: jest.fn().mockResolvedValue({}),
+    },
   } as any
 
-  const service = new SdkService(prisma)
-  return { service, prisma }
+  const evaluationService = new EvaluationService()
+  const hashingService = new HashingService()
+  const service = new SdkService(prisma, evaluationService, hashingService)
+  return { service, prisma, evaluationService, hashingService }
 }
 
 describe('SdkService', () => {
@@ -82,6 +92,7 @@ describe('SdkService', () => {
       prisma.flagEnvironment.findFirst.mockResolvedValue({
         enabled: true,
         defaultValue: 'true',
+        targetingRules: [],
       })
 
       const result = await service.evaluateFlag(
@@ -184,6 +195,7 @@ describe('SdkService', () => {
       prisma.flagEnvironment.create.mockResolvedValue({
         enabled: false,
         defaultValue: 'false',
+        targetingRules: [],
       })
 
       const result = await service.evaluateFlag(
@@ -237,6 +249,7 @@ describe('SdkService', () => {
       prisma.flagEnvironment.findFirst.mockResolvedValue({
         enabled: true,
         defaultValue: 'true',
+        targetingRules: [],
       })
 
       const result = await service.evaluateFlag(
@@ -265,6 +278,7 @@ describe('SdkService', () => {
           brandId: null,
           enabled: true,
           defaultValue: 'true',
+          targetingRules: [],
         },
       ])
 
@@ -305,6 +319,7 @@ describe('SdkService', () => {
         brandId: null,
         enabled: false,
         defaultValue: 'false',
+        targetingRules: [],
       })
 
       const result = await service.evaluateAllFlags('my-project', 'production')
