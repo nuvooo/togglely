@@ -161,7 +161,7 @@ describe('ExperimentsService', () => {
         newValues: { name: 'Header Test', key: 'header-test' },
       })
       expect(result).toBeDefined()
-      expect(result.variants).toHaveLength(2)
+      expect(result!.variants).toHaveLength(2)
     })
 
     it('creates embedded variants in a loop', async () => {
