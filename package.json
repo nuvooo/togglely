@@ -7,8 +7,8 @@
   "devDependencies": {
     "@biomejs/biome": "^2.4.11",
     "@cypress/code-coverage": "^4.0.3",
-    "cypress": "^15.13.0",
-    "cypress-vite": "^1.8.0",
+    "cypress": "^15.14.2",
+    "cypress-vite": "^1.9.1",
     "istanbul-lib-coverage": "^3.2.2",
     "nyc": "^18.0.0"
   }
