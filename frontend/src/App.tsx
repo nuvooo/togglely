@@ -8,12 +8,10 @@ import { useAuthStore } from './store/authStore'
 
 const ApiKeys = lazy(() => import('./pages/ApiKeys'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
-const Docs = lazy(() => import('./pages/Docs'))
 const FeatureFlagDetail = lazy(() => import('./pages/FeatureFlagDetail'))
 const FeatureFlags = lazy(() => import('./pages/flags'))
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'))
 const InviteAccept = lazy(() => import('./pages/InviteAccept'))
-const LandingPage = lazy(() => import('./pages/LandingPage'))
 const Login = lazy(() => import('./pages/Login'))
 const CreateOrganization = lazy(() => import('./pages/organizations/CreateOrganization'))
 const OrganizationDetail = lazy(() => import('./pages/organizations/OrganizationDetail'))
@@ -43,7 +41,7 @@ function App() {
       {/* Public Routes */}
       <Route
         path="/"
-        element={token ? <Navigate to="/dashboard" /> : <LandingPage />}
+        element={token ? <Navigate to="/dashboard" /> : <Navigate to="/login" />}
       />
       <Route
         path="/login"
@@ -67,9 +65,6 @@ function App() {
         path="/resend-verification"
         element={!token ? <ResendVerification /> : <Navigate to="/dashboard" />}
       />
-      <Route path="/docs" element={<Docs />} />
-      <Route path="/docs/*" element={<Docs />} />
-
       {/* Protected Routes */}
       <Route
         path="/"

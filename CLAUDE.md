@@ -3,6 +3,7 @@
 ## Projekt
 Togglely ist eine Self-Hosted Multi-Tenant Feature Toggle Management Platform.
 
+
 ## KI-Richtlinien
 - [KI-Regeln (Kurzfassung)](.claude/AI_RULES.md) - Die 7 Pflichten
 - [Entwicklungsrichtlinien](.claude/AGENTS.md) - Detaillierte Regeln fuer KI-Assistenten
@@ -12,7 +13,8 @@ Togglely ist eine Self-Hosted Multi-Tenant Feature Toggle Management Platform.
 ## Tech-Stack
 - **Backend:** NestJS 11, Prisma 5, MongoDB, Redis, Winston
 - **Frontend:** React 19, Vite 8, Tailwind 4, Zustand 5, i18next
-- **SDK:** Core + React + Vue + Svelte + Vanilla (npm workspace)
+- **SDK:** Eigenes Repo: github.com/nuvooo/togglely-sdk (Core + React + Vue + Svelte + Vanilla)
+- **Website:** Eigenes Repo: github.com/nuvooo/togglely-website (Landingpage + Docs)
 - **DevOps:** Docker, Coolify, GitHub Actions, Prometheus + Grafana
 
 ## Wichtige Regeln
@@ -28,9 +30,6 @@ cd backend && npm run build && npm test
 
 # Frontend
 cd frontend && npm run build && npm test
-
-# SDK
-cd sdk && npm run build && npm test
 
 # Linting
 npm run biome:check
