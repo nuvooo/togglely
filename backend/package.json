@@ -23,7 +23,7 @@
     "@nestjs/platform-express": "^11.1.25",
     "@nestjs/swagger": "^11.4.4",
     "@nestjs/throttler": "^6.5.0",
-    "@prisma/client": "^5.22.0",
+    "@prisma/client": "^7.8.0",
     "@types/cors": "^2.8.19",
     "bcryptjs": "^2.4.3",
     "class-transformer": "^0.5.1",
