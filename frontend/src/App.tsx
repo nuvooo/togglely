@@ -2,14 +2,22 @@ import { lazy, Suspense } from 'react'
 import { Navigate, Route, Routes } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import ErrorBoundary from './components/ErrorBoundary'
-import MainLayout from './components/layout/MainLayout'
 import ProtectedRoute from './components/ProtectedRoute'
+import {
+  LegacyExperimentRedirect,
+  LegacyExperimentsRedirect,
+  LegacyFlagRedirect,
+  ParamRedirect,
+} from './components/routing/LegacyRedirects'
+import { ProjectQueryBridge } from './components/routing/ProjectQueryBridge'
+import AppShell from './components/shell/AppShell'
+import { ROUTES } from './lib/routes'
 import { useAuthStore } from './store/authStore'
 
 const ApiKeys = lazy(() => import('./pages/ApiKeys'))
+const AuditLogs = lazy(() => import('./pages/AuditLogs'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
 const FeatureFlagDetail = lazy(() => import('./pages/FeatureFlagDetail'))
-const FeatureFlags = lazy(() => import('./pages/flags'))
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'))
 const InviteAccept = lazy(() => import('./pages/InviteAccept'))
 const Login = lazy(() => import('./pages/Login'))
@@ -19,6 +27,7 @@ const OrganizationList = lazy(() => import('./pages/organizations/OrganizationLi
 const OrganizationMembers = lazy(() => import('./pages/organizations/OrganizationMembers'))
 const OrganizationSettings = lazy(() => import('./pages/organizations/OrganizationSettings'))
 const ProjectDetail = lazy(() => import('./pages/ProjectDetail'))
+const ProjectPicker = lazy(() => import('./pages/ProjectPicker'))
 const BrandFlags = lazy(() => import('./pages/projects/BrandFlags'))
 const ProjectSettings = lazy(() => import('./pages/projects/ProjectSettings'))
 const Register = lazy(() => import('./pages/Register'))
@@ -38,91 +47,91 @@ function App() {
     <ErrorBoundary>
       <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" /></div>}>
       <Routes>
-      {/* Public Routes */}
-      <Route
-        path="/"
-        element={token ? <Navigate to="/dashboard" /> : <Navigate to="/login" />}
-      />
+      {/* Public Routes. `/` itself is handled by the protected index route below:
+          logged-out users are sent to /login by ProtectedRoute. */}
       <Route
         path="/login"
-        element={!token ? <Login /> : <Navigate to="/dashboard" />}
+        element={!token ? <Login /> : <Navigate to={ROUTES.overview} />}
       />
       <Route
         path="/register"
-        element={!token ? <Register /> : <Navigate to="/dashboard" />}
+        element={!token ? <Register /> : <Navigate to={ROUTES.overview} />}
       />
       <Route
         path="/forgot-password"
-        element={!token ? <ForgotPassword /> : <Navigate to="/dashboard" />}
+        element={!token ? <ForgotPassword /> : <Navigate to={ROUTES.overview} />}
       />
       <Route
         path="/reset-password"
-        element={!token ? <ResetPassword /> : <Navigate to="/dashboard" />}
+        element={!token ? <ResetPassword /> : <Navigate to={ROUTES.overview} />}
       />
       <Route path="/invite/:token" element={<InviteAccept />} />
       <Route path="/verify-email/:token" element={<VerifyEmail />} />
       <Route
         path="/resend-verification"
-        element={!token ? <ResendVerification /> : <Navigate to="/dashboard" />}
+        element={!token ? <ResendVerification /> : <Navigate to={ROUTES.overview} />}
       />
       {/* Protected Routes */}
       <Route
         path="/"
         element={
           <ProtectedRoute>
-            <MainLayout />
+            <AppShell />
           </ProtectedRoute>
         }
       >
-        <Route path="dashboard" element={<Dashboard />} />
+        <Route index element={<Navigate to={ROUTES.overview} replace />} />
+        <Route path="overview" element={<Dashboard />} />
+        <Route path="projects" element={<ProjectPicker />} />
 
-        {/* Organizations */}
-        <Route path="organizations" element={<OrganizationList />} />
-        <Route path="organizations/new" element={<CreateOrganization />} />
-        <Route path="organizations/:orgId" element={<OrganizationDetail />} />
-        <Route
-          path="organizations/:orgId/settings"
-          element={<OrganizationSettings />}
-        />
-        <Route
-          path="organizations/:orgId/members"
-          element={<OrganizationMembers />}
-        />
+        {/* Project area */}
+        <Route path="projects/:projectId">
+          <Route index element={<ParamRedirect to="/projects/:projectId/flags" />} />
+          <Route path="flags" element={<ProjectDetail />} />
+          <Route path="flags/:flagId" element={<FeatureFlagDetail />} />
+          <Route path="experiments" element={<ProjectQueryBridge><ExperimentsList /></ProjectQueryBridge>} />
+          <Route path="experiments/new" element={<ProjectQueryBridge><CreateExperiment /></ProjectQueryBridge>} />
+          <Route path="experiments/:id" element={<ExperimentDetail />} />
+          <Route path="environments" element={<ProjectSettings />} />
+          <Route path="brands" element={<ProjectSettings />} />
+          <Route path="brands/:brandId" element={<BrandFlags />} />
+          <Route path="sdk" element={<SDKTester />} />
+          <Route path="settings" element={<ProjectSettings />} />
+        </Route>
 
-        {/* Projects - Note: Route with orgId and projectId */}
-        <Route
-          path="organizations/:orgId/projects/:projectId"
-          element={<ProjectDetail />}
-        />
-        <Route path="projects/:projectId" element={<ProjectDetail />} />
-        <Route
-          path="projects/:projectId/settings"
-          element={<ProjectSettings />}
-        />
-        <Route
-          path="projects/:projectId/brands/:brandId/flags"
-          element={<BrandFlags />}
-        />
+        {/* Organization area */}
+        <Route path="orgs" element={<OrganizationList />} />
+        <Route path="orgs/new" element={<CreateOrganization />} />
+        <Route path="orgs/:orgId">
+          <Route index element={<ParamRedirect to="/orgs/:orgId/projects" />} />
+          <Route path="projects" element={<OrganizationDetail />} />
+          <Route path="members" element={<OrganizationMembers />} />
+          <Route path="api-keys" element={<ApiKeys />} />
+          <Route path="audit-log" element={<AuditLogs />} />
+          <Route path="settings" element={<OrganizationSettings />} />
+        </Route>
 
-        {/* Feature Flags */}
-        <Route path="feature-flags" element={<FeatureFlags />} />
-        <Route path="feature-flags/:id" element={<FeatureFlagDetail />} />
+        <Route path="account" element={<Settings />} />
 
-        {/* Experiments */}
-        <Route path="experiments" element={<ExperimentsList />} />
-        <Route path="experiments/new" element={<CreateExperiment />} />
-        <Route path="experiments/:id" element={<ExperimentDetail />} />
+        {/* Legacy URLs (bookmarks, emails) */}
+        <Route path="dashboard" element={<Navigate to={ROUTES.overview} replace />} />
+        <Route path="organizations" element={<Navigate to={ROUTES.orgs} replace />} />
+        <Route path="organizations/new" element={<Navigate to={ROUTES.newOrg} replace />} />
+        <Route path="organizations/:orgId" element={<ParamRedirect to="/orgs/:orgId/projects" />} />
+        <Route path="organizations/:orgId/settings" element={<ParamRedirect to="/orgs/:orgId/settings" />} />
+        <Route path="organizations/:orgId/members" element={<ParamRedirect to="/orgs/:orgId/members" />} />
+        <Route path="organizations/:orgId/projects/:projectId" element={<ParamRedirect to="/projects/:projectId/flags" />} />
+        <Route path="projects/:projectId/brands/:brandId/flags" element={<ParamRedirect to="/projects/:projectId/brands/:brandId" />} />
+        <Route path="feature-flags" element={<Navigate to={ROUTES.overview} replace />} />
+        <Route path="feature-flags/:id" element={<LegacyFlagRedirect />} />
+        <Route path="experiments" element={<LegacyExperimentsRedirect />} />
+        <Route path="experiments/new" element={<LegacyExperimentsRedirect create />} />
+        <Route path="experiments/:id" element={<LegacyExperimentRedirect />} />
+        <Route path="api-keys" element={<Navigate to={ROUTES.orgs} replace />} />
+        <Route path="sdk-tester" element={<Navigate to={ROUTES.overview} replace />} />
+        <Route path="settings" element={<Navigate to={ROUTES.account} replace />} />
 
-        <Route path="sdk-tester" element={<SDKTester />} />
-
-        {/* API Keys */}
-        <Route path="api-keys" element={<ApiKeys />} />
-
-        {/* Settings */}
-        <Route path="settings" element={<Settings />} />
-
-        {/* Catch all - redirect to dashboard */}
-        <Route path="*" element={<Navigate to="/dashboard" />} />
+        <Route path="*" element={<Navigate to={ROUTES.overview} replace />} />
       </Route>
       </Routes>
       </Suspense>

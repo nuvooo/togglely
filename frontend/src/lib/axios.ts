@@ -1,4 +1,5 @@
 import axios from 'axios'
+import { expireSession } from './session'
 
 const api = axios.create({
   baseURL: '/api',
@@ -26,8 +27,7 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
-      localStorage.removeItem('token')
-      window.location.href = '/login'
+      expireSession()
     }
     return Promise.reject(error)
   }

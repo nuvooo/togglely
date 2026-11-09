@@ -12,6 +12,7 @@ import {
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
+import { orgPath, ROUTES } from '@/lib/routes'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -52,7 +53,7 @@ export default function OrganizationList() {
           </p>
         </div>
         <Button asChild>
-          <Link to="/organizations/new">
+          <Link to={ROUTES.newOrg}>
             <Plus className="w-4 h-4 mr-2" />
             {t('organizations.new-organization')}
           </Link>
@@ -86,7 +87,7 @@ export default function OrganizationList() {
               {t('organizations.no-organizations-description')}
             </p>
             <Button asChild size="lg">
-              <Link to="/organizations/new">
+              <Link to={ROUTES.newOrg}>
                 <Plus className="w-4 h-4 mr-2" />
                 {t('organizations.create-cta')}
               </Link>
@@ -123,13 +124,13 @@ export default function OrganizationList() {
                     </DropdownMenuTrigger>
                     <DropdownMenuContent align="end">
                       <DropdownMenuItem asChild>
-                        <Link to={`/organizations/${org.id}`}>
+                        <Link to={orgPath(org.id)}>
                           <FolderKanban className="w-4 h-4 mr-2" />
                           {t('organizations.menu.view-projects')}
                         </Link>
                       </DropdownMenuItem>
                       <DropdownMenuItem asChild>
-                        <Link to={`/organizations/${org.id}/settings`}>
+                        <Link to={orgPath(org.id, 'settings')}>
                           <Settings className="w-4 h-4 mr-2" />
                           {t('organizations.menu.settings')}
                         </Link>
@@ -162,7 +163,7 @@ export default function OrganizationList() {
                   </div>
                 </div>
                 <Button variant="secondary" className="w-full" asChild>
-                  <Link to={`/organizations/${org.id}`}>
+                  <Link to={orgPath(org.id)}>
                     {t('organizations.card.view')}
                     <ArrowRight className="w-4 h-4 ml-2" />
                   </Link>

@@ -2,6 +2,7 @@ import { FlagIcon, Loader2 } from 'lucide-react'
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { LanguageSwitcher } from '@/components/LanguageSwitcher'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { Button } from '@/components/ui/button'
 import {
@@ -16,6 +17,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { useAuthStore } from '@/store/authStore'
+import { ROUTES } from '@/lib/routes'
 
 export default function Login() {
   const { t } = useTranslation()
@@ -36,7 +38,7 @@ export default function Login() {
 
     try {
       await login(email, password)
-      navigate('/')
+      navigate(ROUTES.overview)
     } catch (err: unknown) {
       setError(t('login.error-invalid-credentials'))
     } finally {
@@ -46,8 +48,9 @@ export default function Login() {
 
   return (
     <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      {/* Theme Toggle - positioned absolute top right */}
-      <div className="fixed top-4 right-4">
+      {/* Language + theme - fixed top right */}
+      <div className="fixed top-4 right-4 flex items-center gap-1">
+        <LanguageSwitcher />
         <ThemeToggle />
       </div>
       <div className="w-full max-w-md">

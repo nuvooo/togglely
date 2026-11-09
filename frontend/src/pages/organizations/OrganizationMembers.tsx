@@ -30,6 +30,7 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import api from '@/lib/axios'
+import { orgPath, ROUTES } from '@/lib/routes'
 
 interface Member {
   id: string
@@ -56,7 +57,7 @@ interface Organization {
 
 export default function OrganizationMembers() {
   const { t: _t } = useTranslation()
-  const { orgId } = useParams<{ orgId: string }>()
+  const { orgId = '' } = useParams<{ orgId: string }>()
   const navigate = useNavigate()
 
   const [organization, setOrganization] = useState<Organization | null>(null)
@@ -229,7 +230,7 @@ export default function OrganizationMembers() {
     return (
       <div className="flex flex-col items-center justify-center py-12">
         <p className="text-destructive">Organization not found</p>
-        <Button className="mt-4" onClick={() => navigate('/organizations')}>
+        <Button className="mt-4" onClick={() => navigate(ROUTES.orgs)}>
           Back to Organizations
         </Button>
       </div>
@@ -241,14 +242,14 @@ export default function OrganizationMembers() {
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Link
-          to="/organizations"
+          to={ROUTES.orgs}
           className="hover:text-foreground transition-colors"
         >
           Organizations
         </Link>
         <span>/</span>
         <Link
-          to={`/organizations/${orgId}`}
+          to={orgPath(orgId)}
           className="hover:text-foreground transition-colors"
         >
           {organization.name}
@@ -263,7 +264,7 @@ export default function OrganizationMembers() {
           <Button
             variant="outline"
             size="icon"
-            onClick={() => navigate(`/organizations/${orgId}`)}
+            onClick={() => navigate(orgPath(orgId))}
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>

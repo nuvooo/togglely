@@ -4,6 +4,7 @@ import { FlaskConical, Plus, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import api from '@/lib/api'
+import { experimentPath } from '@/lib/routes'
 
 interface Flag {
   id: string
@@ -118,7 +119,7 @@ export default function CreateExperiment() {
         variants,
       })
       toast.success(t('experiments.created', 'Experiment created successfully'))
-      navigate(`/experiments/${res.data.id}`)
+      navigate(experimentPath(projectId, res.data.id))
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Failed to create experiment')
     } finally {
@@ -127,7 +128,7 @@ export default function CreateExperiment() {
   }
 
   return (
-    <div className="p-6 max-w-3xl mx-auto space-y-6">
+    <div className="max-w-3xl mx-auto space-y-6">
       {/* Header */}
       <div className="flex items-center gap-3">
         <FlaskConical className="h-7 w-7 text-primary" />

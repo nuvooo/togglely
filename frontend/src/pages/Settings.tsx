@@ -2,10 +2,14 @@ import {
   CheckCircleIcon,
   ExclamationCircleIcon,
   KeyIcon,
+  SwatchIcon,
   UserCircleIcon,
 } from '@heroicons/react/24/outline'
-import { useEffect, useState } from 'react'
+import { type ReactNode, useEffect, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
+import { useLocation } from 'react-router-dom'
+import { LANGUAGES } from '@/components/LanguageSwitcher'
+import { THEME_OPTIONS } from '@/components/ThemeToggle'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -19,7 +23,89 @@ import { Label } from '@/components/ui/label'
 import api from '@/lib/axios'
 import { getErrorMessage } from '@/lib/errors'
 
+import { cn } from '@/lib/utils'
 import { useAuthStore } from '@/store/authStore'
+import { useThemeStore } from '@/store/themeStore'
+
+/** Segmented single-choice control (radio group semantics). */
+function ChoiceGroup<T extends string>({
+  label,
+  value,
+  options,
+  onChange,
+}: {
+  label: string
+  value: T
+  options: { value: T; label: string; icon?: ReactNode }[]
+  onChange: (value: T) => void
+}) {
+  const labelId = useId()
+  return (
+    <div className="space-y-2">
+      <div id={labelId} className="text-sm font-medium">
+        {label}
+      </div>
+      <div role="radiogroup" aria-labelledby={labelId} className="inline-flex flex-wrap gap-1 rounded-lg border bg-muted/40 p-1">
+        {options.map((o) => (
+          <button
+            key={o.value}
+            type="button"
+            role="radio"
+            aria-checked={value === o.value}
+            onClick={() => onChange(o.value)}
+            className={cn(
+              'flex items-center gap-2 rounded-md px-3 py-1.5 text-sm text-muted-foreground transition-colors hover:text-foreground',
+              value === o.value && 'bg-background font-medium text-foreground shadow-sm'
+            )}
+          >
+            {o.icon}
+            {o.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+function AppearanceSection() {
+  const { t, i18n } = useTranslation()
+  const { theme, setTheme } = useThemeStore()
+  const language = (i18n.resolvedLanguage ?? i18n.language) as (typeof LANGUAGES)[number]['code']
+
+  return (
+    <Card id="appearance" className="scroll-mt-4">
+      <CardHeader>
+        <div className="flex items-center gap-3">
+          <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
+            <SwatchIcon className="w-5 h-5 text-primary" />
+          </div>
+          <div>
+            <CardTitle>{t('settings.appearance.title')}</CardTitle>
+            <CardDescription>{t('settings.appearance.description')}</CardDescription>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-5">
+        <ChoiceGroup
+          label={t('settings.appearance.theme')}
+          value={theme}
+          onChange={setTheme}
+          options={THEME_OPTIONS.map(({ value, label, icon: Icon }) => ({
+            value,
+            label: t(label),
+            icon: <Icon className="h-4 w-4" />,
+          }))}
+        />
+        <ChoiceGroup
+          label={t('settings.appearance.language')}
+          value={language}
+          onChange={(code) => i18n.changeLanguage(code)}
+          options={LANGUAGES.map(({ code, label }) => ({ value: code, label: t(label) }))}
+        />
+      </CardContent>
+    </Card>
+  )
+}
 
 interface UserProfile {
   id: string
@@ -34,6 +120,7 @@ interface UserProfile {
 export default function Settings() {
   const { t } = useTranslation()
   const { updateUser } = useAuthStore()
+  const { hash } = useLocation()
   const [, setProfile] = useState<UserProfile | null>(null)
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
@@ -75,6 +162,12 @@ export default function Settings() {
 
     fetchProfile()
   }, [])
+
+  // Account sections are linked by hash (/account#security); scroll once the page has rendered.
+  useEffect(() => {
+    if (isLoading || !hash) return
+    document.getElementById(decodeURIComponent(hash.slice(1)))?.scrollIntoView({ behavior: 'smooth', block: 'start' })
+  }, [hash, isLoading])
 
   const handleProfileSubmit = async (e: React.FormEvent) => {
     e.preventDefault()
@@ -189,7 +282,7 @@ export default function Settings() {
       )}
 
       {/* Profile Section */}
-      <Card>
+      <Card id="profile" className="scroll-mt-4">
         <CardHeader>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -254,7 +347,7 @@ export default function Settings() {
       </Card>
 
       {/* Password Section */}
-      <Card>
+      <Card id="security" className="scroll-mt-4">
         <CardHeader>
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-lg bg-primary/10 flex items-center justify-center">
@@ -318,6 +411,8 @@ export default function Settings() {
           </form>
         </CardContent>
       </Card>
+
+      <AppearanceSection />
     </div>
   )
 }

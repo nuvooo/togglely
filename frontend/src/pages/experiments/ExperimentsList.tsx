@@ -1,8 +1,9 @@
 import { useEffect, useState } from 'react'
-import { Link, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { FlaskConical, Plus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import api from '@/lib/api'
+import { experimentPath, projectPath } from '@/lib/routes'
 
 interface Project {
   id: string
@@ -37,6 +38,7 @@ const STATUS_COLORS: Record<string, string> = {
 export default function ExperimentsList() {
   const { t } = useTranslation()
   const [searchParams, setSearchParams] = useSearchParams()
+  const navigate = useNavigate()
   const projectId = searchParams.get('projectId') || ''
   const [projects, setProjects] = useState<Project[]>([])
   const [experiments, setExperiments] = useState<Experiment[]>([])
@@ -89,7 +91,7 @@ export default function ExperimentsList() {
         </div>
         {projectId && (
           <Link
-            to={`/experiments/new?projectId=${projectId}`}
+            to={`${projectPath(projectId, 'experiments')}/new`}
             className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors shadow-sm"
           >
             <Plus className="h-4 w-4" />
@@ -106,7 +108,7 @@ export default function ExperimentsList() {
           </label>
           <select
             value={projectId}
-            onChange={(e) => setSearchParams({ projectId: e.target.value })}
+            onChange={(e) => navigate(projectPath(e.target.value, 'experiments'))}
             className="rounded-lg border border-input bg-background px-3 py-1.5 text-sm"
           >
             {projects.length === 0 && <option value="">Loading...</option>}
@@ -149,7 +151,7 @@ export default function ExperimentsList() {
           </p>
           {projectId && (
             <Link
-              to={`/experiments/new?projectId=${projectId}`}
+              to={`${projectPath(projectId, 'experiments')}/new`}
               className="mt-4 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
             >
               <Plus className="h-4 w-4" />
@@ -187,7 +189,7 @@ export default function ExperimentsList() {
                 <tr key={exp.id} className="hover:bg-muted/50 transition-colors">
                   <td className="px-4 py-3">
                     <Link
-                      to={`/experiments/${exp.id}`}
+                      to={experimentPath(projectId, exp.id)}
                       className="text-sm font-medium text-primary hover:underline"
                     >
                       {exp.name}

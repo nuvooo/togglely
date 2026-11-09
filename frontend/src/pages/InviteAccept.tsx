@@ -1,6 +1,7 @@
 import { AlertCircle, CheckCircle, Loader2, LogIn } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { refreshWorkspace } from '@/lib/workspace'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
@@ -14,6 +15,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import api from '@/lib/axios'
 import { getErrorMessage } from '@/lib/errors'
+import { ROUTES } from '@/lib/routes'
 
 interface InviteInfo {
   email: string
@@ -72,11 +74,13 @@ export default function InviteAccept() {
 
     try {
       await api.post(`/auth/invite/${inviteToken}/accept`)
+      // Keep the workspace switcher in sync.
+      refreshWorkspace().catch(() => {})
       setSuccess(true)
 
       // Redirect to dashboard after 2 seconds
       setTimeout(() => {
-        navigate('/')
+        navigate(ROUTES.overview)
       }, 2000)
     } catch (err: unknown) {
       setError(getErrorMessage(err))

@@ -8,6 +8,8 @@ import {
 import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router-dom'
+import { refreshWorkspace } from '@/lib/workspace'
+import { orgPath, ROUTES } from '@/lib/routes'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -37,7 +39,9 @@ export default function CreateOrganization() {
     try {
       // Slug wird vom Backend automatisch als UUID generiert
       const org = await createOrganization({ name })
-      navigate(`/organizations/${org.id}`)
+      // Keep the workspace switcher in sync.
+      refreshWorkspace().catch(() => {})
+      navigate(orgPath(org.id))
     } catch (err: any) {
       const message = err.response?.data?.message
       setError(message || 'Failed to create organization')
@@ -51,7 +55,7 @@ export default function CreateOrganization() {
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Link
-          to="/organizations"
+          to={ROUTES.orgs}
           className="hover:text-foreground transition-colors"
         >
           {t('organization-detail.breadcrumb.organizations')}
@@ -65,7 +69,7 @@ export default function CreateOrganization() {
       {/* Header */}
       <div className="flex items-center gap-4">
         <Button variant="outline" size="icon" asChild>
-          <Link to="/organizations">
+          <Link to={ROUTES.orgs}>
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
@@ -159,7 +163,7 @@ export default function CreateOrganization() {
                 )}
               </Button>
               <Button type="button" variant="ghost" asChild>
-                <Link to="/organizations">{t('common.cancel')}</Link>
+                <Link to={ROUTES.orgs}>{t('common.cancel')}</Link>
               </Button>
             </div>
           </form>

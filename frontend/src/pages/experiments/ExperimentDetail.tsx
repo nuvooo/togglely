@@ -8,6 +8,7 @@ import {
   Play,
 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
+import { projectPath } from '@/lib/routes'
 import { toast } from 'sonner'
 import api from '@/lib/api'
 
@@ -66,7 +67,8 @@ const VARIANT_COLORS = ['bg-slate-500', 'bg-blue-500', 'bg-green-500', 'bg-amber
 
 export default function ExperimentDetail() {
   const { t } = useTranslation()
-  const { id } = useParams<{ id: string }>()
+  const { id, projectId = '' } = useParams<{ id: string; projectId: string }>()
+  const backPath = projectPath(projectId, 'experiments')
   const navigate = useNavigate()
   const [experiment, setExperiment] = useState<Experiment | null>(null)
   const [results, setResults] = useState<ExperimentResults | null>(null)
@@ -114,7 +116,7 @@ export default function ExperimentDetail() {
     try {
       await api.delete(`/experiments/${id}`)
       toast.success('Experiment deleted')
-      navigate(-1)
+      navigate(backPath)
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Failed to delete')
     }
@@ -129,15 +131,15 @@ export default function ExperimentDetail() {
   }
 
   if (!experiment) {
-    return <div className="p-6 text-gray-500">Experiment not found.</div>
+    return <div className="text-gray-500">Experiment not found.</div>
   }
 
   return (
-    <div className="p-6 space-y-6">
+    <div className="space-y-6">
       {/* Header */}
       <div className="flex items-start justify-between">
         <div className="flex items-center gap-3">
-          <button onClick={() => navigate(-1)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
+          <button onClick={() => navigate(backPath)} className="text-gray-500 hover:text-gray-700 dark:text-gray-400 dark:hover:text-gray-200">
             <ArrowLeft className="h-5 w-5" />
           </button>
           <FlaskConical className="h-7 w-7 text-primary" />
