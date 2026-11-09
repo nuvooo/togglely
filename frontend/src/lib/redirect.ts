@@ -5,7 +5,7 @@
  * browsers drop tabs/newlines from URLs, so `/\t/host` is rejected as well.
  */
 export function safeNextPath(next: string | null | undefined): string | null {
-  if (!next || next[0] !== '/') return null
+  if (!next?.startsWith('/')) return null
   if (next[1] === '/' || next[1] === '\\') return null
   for (let i = 0; i < next.length; i++) {
     const code = next.charCodeAt(i)

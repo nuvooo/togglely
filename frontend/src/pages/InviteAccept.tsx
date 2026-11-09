@@ -154,7 +154,7 @@ export default function InviteAccept() {
   if (!info) {
     return (
       <AuthLayout>
-        <div className="flex justify-center py-12" aria-busy="true" aria-label={t('common.loading')}>
+        <div role="status" className="flex justify-center py-12" aria-busy="true" aria-label={t('common.loading')}>
           <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
         </div>
       </AuthLayout>

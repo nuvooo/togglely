@@ -120,7 +120,7 @@ export default function OrganizationMembers() {
 
   if (isLoading) {
     return (
-      <div className="mx-auto max-w-4xl space-y-3" aria-busy="true" aria-label={t('common.loading')}>
+      <div role="status" className="mx-auto max-w-4xl space-y-3" aria-busy="true" aria-label={t('common.loading')}>
         <Skeleton className="h-7 w-48" />
         <Skeleton className="h-4 w-72" />
         <Skeleton className="h-14 w-full" />
