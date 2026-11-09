@@ -4,6 +4,7 @@ import { useParams } from 'react-router-dom'
 import { ErrorState } from '@/components/feedback/ErrorState'
 import { RoleUnavailableNotice } from '@/components/feedback/RoleUnavailableNotice'
 import { PageHeader } from '@/components/page/PageHeader'
+import { SettingsSection } from '@/components/page/SettingsSection'
 import { Skeleton } from '@/components/ui/skeleton'
 import { IntegrationCard } from '@/components/webhooks/IntegrationCard'
 import api from '@/lib/axios'
@@ -15,7 +16,6 @@ import {
   type ProjectDetails,
   useCanManageProject,
 } from './project'
-import { SettingsSection } from './SettingsSection'
 
 export default function ProjectSettingsPage() {
   const { t } = useTranslation()

@@ -3,6 +3,7 @@ import { type FormEvent, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
+import { SettingsSection } from '@/components/page/SettingsSection'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -19,7 +20,6 @@ import { notifyWriteError } from '@/lib/permissions'
 import { ROUTES } from '@/lib/routes'
 import { refreshWorkspace, useWorkspace } from '@/lib/workspace'
 import { apiMessage } from '@/pages/projects/settings/project'
-import { SettingsSection } from '@/pages/projects/settings/SettingsSection'
 import { useWorkspaceStore } from '@/store/workspaceStore'
 
 /** Deleting the organization (OWNER only); confirmed by typing its name. */

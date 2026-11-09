@@ -3,7 +3,7 @@ import { type FormEvent, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
-import { notifyWriteError } from '@/lib/permissions'
+import { SettingsSection } from '@/components/page/SettingsSection'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -16,11 +16,11 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import api from '@/lib/axios'
+import { notifyWriteError } from '@/lib/permissions'
 import { orgPath, ROUTES } from '@/lib/routes'
 import { refreshWorkspace } from '@/lib/workspace'
 import { useWorkspaceStore } from '@/store/workspaceStore'
 import { apiMessage, type ProjectDetails } from './project'
-import { SettingsSection } from './SettingsSection'
 
 /** Deleting the project; confirmed by typing its key. */
 export function DangerZone({ project }: { project: ProjectDetails }) {
