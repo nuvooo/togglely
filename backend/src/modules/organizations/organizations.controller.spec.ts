@@ -90,12 +90,23 @@ function setup(roles: Record<string, OrganizationRole>) {
   const access = new AccessService(prisma)
   const service = new OrganizationsService(prisma)
   const invites = new OrganizationInvitesService(prisma, mail, config, audit)
-  const controller = new OrganizationsController(service, access, invites)
+  const memberPasswordReset = {
+    createLink: jest.fn().mockResolvedValue({
+      resetUrl: 'http://localhost:3000/reset-password?token=t',
+      expiresAt: new Date(0),
+    }),
+  } as any
+  const controller = new OrganizationsController(
+    service,
+    access,
+    invites,
+    memberPasswordReset
+  )
   const req = (userId: string) => ({ user: { userId } })
   const roleOf = (userId: string) =>
     members.find((m) => m.userId === userId)?.role
 
-  return { controller, prisma, mail, req, roleOf }
+  return { controller, prisma, mail, req, roleOf, memberPasswordReset }
 }
 
 const DEFAULT_ROLES: Record<string, OrganizationRole> = {
@@ -385,6 +396,33 @@ describe('OrganizationsController - access control', () => {
       await expect(
         controller.cancelInvite(ORG, OUTSIDER, req(ADMIN))
       ).rejects.toBeInstanceOf(NotFoundException)
+    })
+  })
+
+  describe('createPasswordResetLink', () => {
+    it('delegates to the member password reset service with the actor', async () => {
+      const { controller, req, memberPasswordReset } = setup(DEFAULT_ROLES)
+      const result = await controller.createPasswordResetLink(
+        ORG,
+        MEMBER,
+        req(OWNER)
+      )
+      expect(memberPasswordReset.createLink).toHaveBeenCalledWith(
+        ORG,
+        OWNER,
+        MEMBER
+      )
+      expect(result).toEqual({
+        resetUrl: 'http://localhost:3000/reset-password?token=t',
+        expiresAt: new Date(0),
+      })
+    })
+
+    it('is throttled to 10 requests per 15 minutes', () => {
+      const proto = OrganizationsController.prototype as any
+      const handler = proto.createPasswordResetLink
+      expect(Reflect.getMetadata('THROTTLER:LIMITdefault', handler)).toBe(10)
+      expect(Reflect.getMetadata('THROTTLER:TTLdefault', handler)).toBe(900000)
     })
   })
 })

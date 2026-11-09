@@ -12,6 +12,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common'
+import { Throttle } from '@nestjs/throttler'
 import { AccessService, isObjectId } from '../../shared/access/access.service'
 import { AuthGuard } from '../../shared/auth.guard'
 import {
@@ -21,6 +22,7 @@ import {
   UpdateMemberRoleDto,
   UpdateOrganizationDto,
 } from './dto/organization.dto'
+import { MemberPasswordResetService } from './member-password-reset.service'
 import { OrganizationInvitesService } from './organization-invites.service'
 import { OrganizationsService } from './organizations.service'
 import { assertCanGrantRole, PRIVILEGED_ROLES } from './roles'
@@ -37,7 +39,8 @@ export class OrganizationsController {
   constructor(
     private readonly orgsService: OrganizationsService,
     private readonly access: AccessService,
-    private readonly invites: OrganizationInvitesService
+    private readonly invites: OrganizationInvitesService,
+    private readonly memberPasswordReset: MemberPasswordResetService
   ) {}
 
   @Get()
@@ -129,6 +132,20 @@ export class OrganizationsController {
 
     await this.orgsService.removeMember(id, userId)
     return { success: true }
+  }
+
+  /**
+   * OWNER-only: creates a password reset link for a member without sending
+   * mail (for servers without SMTP). The link is shown once to the owner.
+   */
+  @Post(':id/members/:userId/password-reset-link')
+  @Throttle({ default: { ttl: 900000, limit: 10 } })
+  async createPasswordResetLink(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @Req() req: any
+  ) {
+    return this.memberPasswordReset.createLink(id, req.user.userId, userId)
   }
 
   // Invites (ADMIN+). The plain invite link is only returned on creation.
