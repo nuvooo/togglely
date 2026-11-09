@@ -1,5 +1,5 @@
 import { FlaskConical, Loader2, Play, Plus, X } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router-dom'
 import { EmptyState } from '@/components/feedback/EmptyState'
@@ -61,6 +61,9 @@ function buildContext(attrs: ContextAttr[]): SdkContext {
   return context
 }
 
+/** Error shown below the form: a translation key (re-translated on language change) or a raw message. */
+type RunError = { key: string } | { text: string }
+
 /** Evaluates the project's flags through the public SDK endpoint, per brand for MULTI projects. */
 export default function SdkTesterPage() {
   const { t } = useTranslation()
@@ -76,12 +79,16 @@ export default function SdkTesterPage() {
 
   const [running, setRunning] = useState(false)
   const [matrix, setMatrix] = useState<Matrix | null>(null)
-  const [error, setError] = useState<string | null>(null)
+  const [error, setError] = useState<RunError | null>(null)
+  /** Bumped per project load; results of an older load or run are dropped. */
+  const loadId = useRef(0)
   // Flag/brand shown in the generated code (defaults: first flag, no brand)
   const [snippetFlagKey, setSnippetFlagKey] = useState<string | null>(null)
   const [snippetBrandKey, setSnippetBrandKey] = useState<string | null>(null)
 
   const load = useCallback(async () => {
+    const id = ++loadId.current
+    const current = () => id === loadId.current
     setIsLoading(true)
     setLoadError(false)
     // The route stays mounted when switching projects; drop the previous project's state.
@@ -92,23 +99,24 @@ export default function SdkTesterPage() {
     setBrands([])
     try {
       const loaded = await fetchProject(projectId)
+      if (!current()) return
       setProject(loaded)
       setEnvironmentId(loaded.environments?.[0]?.id ?? '')
       if (loaded.type === 'MULTI') {
         // Multi-brand projects are evaluated once per brand
         try {
           const response = await api.get(`/brands/project/${projectId}`)
-          setBrands(response.data.brands ?? [])
+          if (current()) setBrands(response.data.brands ?? [])
         } catch {
-          setError(t('sdk-tester.errors.brands'))
+          if (current()) setError({ key: 'sdk-tester.errors.brands' })
         }
       }
     } catch {
-      setLoadError(true)
+      if (current()) setLoadError(true)
     } finally {
-      setIsLoading(false)
+      if (current()) setIsLoading(false)
     }
-  }, [projectId, t])
+  }, [projectId])
 
   useEffect(() => {
     if (projectId) load()
@@ -145,13 +153,14 @@ export default function SdkTesterPage() {
 
   const runTest = async () => {
     if (!project || !environmentId) {
-      setError(t('sdk-tester.errors.environment'))
+      setError({ key: 'sdk-tester.errors.environment' })
       return
     }
     if (!apiKey.trim()) {
-      setError(t('sdk-tester.errors.api-key'))
+      setError({ key: 'sdk-tester.errors.api-key' })
       return
     }
+    const id = loadId.current
     setRunning(true)
     setError(null)
     setMatrix(null)
@@ -163,17 +172,22 @@ export default function SdkTesterPage() {
         context,
         brands: isMultiBrand ? brands : [],
       })
+      if (id !== loadId.current) return // project switched meanwhile
       const failed = Object.values(result.errors)
       if (result.rows.length === 0 && failed.length > 0) {
         // Every request failed (e.g. wrong API key): show the reason
-        setError(failed[0])
+        setError({ text: failed[0] })
       } else {
         setMatrix(result)
-        if (result.rows.length === 0) setError(t('sdk-tester.errors.no-flags'))
+        if (result.rows.length === 0)
+          setError({ key: 'sdk-tester.errors.no-flags' })
       }
     } catch (err) {
+      if (id !== loadId.current) return
       setError(
-        err instanceof Error ? err.message : t('sdk-tester.errors.failed')
+        err instanceof Error
+          ? { text: err.message }
+          : { key: 'sdk-tester.errors.failed' }
       )
     } finally {
       setRunning(false)
@@ -355,7 +369,7 @@ export default function SdkTesterPage() {
               role="alert"
               className="rounded-md bg-destructive/10 p-3 text-sm text-destructive"
             >
-              {error}
+              {'key' in error ? t(error.key) : error.text}
             </p>
           )}
         </section>

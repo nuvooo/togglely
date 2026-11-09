@@ -1,6 +1,7 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { act } from 'react'
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n from '@/i18n'
 
@@ -198,6 +199,66 @@ describe('SdkTesterPage', () => {
     expect(
       screen.queryByRole('table', { name: 'Results' })
     ).not.toBeInTheDocument()
+  })
+
+  it('keeps the results when the language changes', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await run(user)
+    await screen.findByRole('table', { name: 'Results' })
+
+    await act(() => i18n.changeLanguage('de'))
+
+    expect(screen.getByRole('table', { name: 'Ergebnisse' })).toBeInTheDocument()
+    expect(api.get).toHaveBeenCalledTimes(2) // project + brands, no reload
+  })
+
+  it('ignores a late project response after switching projects', async () => {
+    let resolveFirst: (value: unknown) => void = () => {}
+    const project = (id: string, key: string) => ({
+      data: {
+        project: {
+          id,
+          name: key,
+          key,
+          description: null,
+          type: 'SINGLE',
+          allowedOrigins: [],
+          organizationId: 'o1',
+          environments: [{ id: `${id}-env`, name: `Env ${key}`, key: 'dev' }],
+        },
+      },
+    })
+    api.get.mockImplementation((url: string) => {
+      if (url === `/projects/${PROJECT_ID}`)
+        return new Promise((resolve) => {
+          resolveFirst = resolve
+        })
+      if (url === '/projects/p2') return Promise.resolve(project('p2', 'second'))
+      return Promise.reject(new Error(`unexpected GET ${url}`))
+    })
+    function Switcher() {
+      const navigate = useNavigate()
+      return (
+        <button type="button" onClick={() => navigate('/projects/p2/sdk')}>
+          switch
+        </button>
+      )
+    }
+    render(
+      <MemoryRouter initialEntries={[`/projects/${PROJECT_ID}/sdk`]}>
+        <Switcher />
+        <Routes>
+          <Route path="/projects/:projectId/sdk" element={<SdkTesterPage />} />
+        </Routes>
+      </MemoryRouter>
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'switch' }))
+    await waitFor(() => expect(code()).toContain("project: 'second'"))
+
+    resolveFirst(project(PROJECT_ID, 'first'))
+    await new Promise((r) => setTimeout(r, 20))
+    expect(code()).toContain("project: 'second'")
   })
 
   it('shows an error state when the project cannot be loaded', async () => {
