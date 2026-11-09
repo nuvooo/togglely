@@ -1,4 +1,4 @@
-import { ConflictException } from '@nestjs/common'
+import { ConflictException, ForbiddenException } from '@nestjs/common'
 import { Prisma } from '@prisma/client'
 import * as bcrypt from 'bcryptjs'
 import { BCRYPT_ROUNDS } from '../../shared/utils'
@@ -22,7 +22,9 @@ function uniqueError() {
 }
 
 /** In-memory fake of the Prisma calls the setup flow uses. */
-function createService(opts: { users?: number; mailEnabled?: boolean } = {}) {
+function createService(
+  opts: { users?: number; mailEnabled?: boolean; setupToken?: string } = {}
+) {
   const state = {
     users: [] as any[],
     orgs: [] as any[],
@@ -58,12 +60,17 @@ function createService(opts: { users?: number; mailEnabled?: boolean } = {}) {
     instanceLock: {
       create: jest.fn(async ({ data }: any) => {
         if (state.locks.some((l) => l.key === data.key)) throw uniqueError()
-        state.locks.push(data)
-        return data
+        const lock = { createdAt: new Date(), ...data }
+        state.locks.push(lock)
+        return lock
       }),
       deleteMany: jest.fn(async ({ where }: any) => {
         const before = state.locks.length
-        state.locks = state.locks.filter((l) => l.key !== where.key)
+        state.locks = state.locks.filter(
+          (l) =>
+            l.key !== where.key ||
+            (where.createdAt?.lt && !(l.createdAt < where.createdAt.lt))
+        )
         return { count: before - state.locks.length }
       }),
     },
@@ -90,7 +97,13 @@ function createService(opts: { users?: number; mailEnabled?: boolean } = {}) {
     isEnabled: jest.fn().mockReturnValue(opts.mailEnabled ?? false),
   } as any
 
-  const service = new SetupService(prisma, authService, mailService)
+  const config = {
+    get: jest.fn((key: string) =>
+      key === 'SETUP_TOKEN' ? opts.setupToken : undefined
+    ),
+  } as any
+
+  const service = new SetupService(prisma, authService, mailService, config)
   return { service, prisma, state, authService, mailService }
 }
 
@@ -106,6 +119,7 @@ describe('SetupService', () => {
       await expect(service.getStatus()).resolves.toEqual({
         setupRequired: true,
         mailEnabled: false,
+        setupTokenRequired: false,
       })
     })
 
@@ -114,6 +128,14 @@ describe('SetupService', () => {
       await expect(service.getStatus()).resolves.toEqual({
         setupRequired: false,
         mailEnabled: true,
+        setupTokenRequired: false,
+      })
+    })
+
+    it('reports whether a setup token is required', async () => {
+      const { service } = createService({ setupToken: 's3cret' })
+      await expect(service.getStatus()).resolves.toMatchObject({
+        setupTokenRequired: true,
       })
     })
   })
@@ -139,7 +161,9 @@ describe('SetupService', () => {
       expect(state.members).toEqual([
         { userId: 'user-1', organizationId: 'org-1', role: 'OWNER' },
       ])
-      expect(state.locks).toEqual([{ key: 'setup' }])
+      expect(state.locks).toEqual([
+        { key: 'setup', createdAt: expect.any(Date) },
+      ])
       expect(authService.issueToken).toHaveBeenCalledWith(
         expect.objectContaining({ id: 'user-1', email: DTO.email })
       )
@@ -176,6 +200,71 @@ describe('SetupService', () => {
       state.locks.push({ key: 'setup' })
       await expect(service.setup(DTO)).rejects.toBeInstanceOf(ConflictException)
       expect(prisma.user.create).not.toHaveBeenCalled()
+    })
+
+    it('removes a stale lock (older than 5 minutes) and sets up', async () => {
+      const { service, prisma, state } = createService()
+      // A crashed earlier attempt left its lock behind
+      state.locks.push({
+        key: 'setup',
+        createdAt: new Date(Date.now() - 6 * 60 * 1000),
+      })
+      await expect(service.setup(DTO)).resolves.toMatchObject({
+        token: 'jwt-token',
+      })
+      expect(prisma.instanceLock.deleteMany).toHaveBeenCalledWith({
+        where: { key: 'setup', createdAt: { lt: expect.any(Date) } },
+      })
+      expect(state.users).toHaveLength(1)
+    })
+
+    it('keeps a fresh lock of a running setup (409)', async () => {
+      const { service, prisma, state } = createService()
+      state.locks.push({
+        key: 'setup',
+        createdAt: new Date(Date.now() - 60 * 1000),
+      })
+      await expect(service.setup(DTO)).rejects.toBeInstanceOf(ConflictException)
+      expect(state.locks).toHaveLength(1)
+      expect(prisma.user.create).not.toHaveBeenCalled()
+    })
+
+    it('runs the setup transaction with an explicit timeout', async () => {
+      const { service, prisma } = createService()
+      await service.setup(DTO)
+      expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+        timeout: 10_000,
+      })
+    })
+
+    describe('with SETUP_TOKEN', () => {
+      it('sets up with the matching token', async () => {
+        const { service, state } = createService({ setupToken: 's3cret' })
+        await expect(
+          service.setup({ ...DTO, setupToken: 's3cret' })
+        ).resolves.toMatchObject({ token: 'jwt-token' })
+        expect(state.users).toHaveLength(1)
+      })
+
+      it.each([
+        ['missing', undefined],
+        ['wrong', 'wrong'],
+        ['longer', 's3cret-and-more'],
+      ])('rejects a %s token with 403', async (_label, setupToken) => {
+        const { service, prisma } = createService({ setupToken: 's3cret' })
+        await expect(
+          service.setup({ ...DTO, setupToken })
+        ).rejects.toBeInstanceOf(ForbiddenException)
+        expect(prisma.instanceLock.create).not.toHaveBeenCalled()
+        expect(prisma.user.create).not.toHaveBeenCalled()
+      })
+    })
+
+    it('ignores a setupToken when SETUP_TOKEN is not configured', async () => {
+      const { service } = createService()
+      await expect(
+        service.setup({ ...DTO, setupToken: 'anything' })
+      ).resolves.toMatchObject({ token: 'jwt-token' })
     })
 
     it('lets exactly one of two parallel calls succeed', async () => {

@@ -1,7 +1,13 @@
-import { ConflictException, Injectable, Logger } from '@nestjs/common'
+import {
+  ConflictException,
+  ForbiddenException,
+  Injectable,
+  Logger,
+} from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
 import { Prisma } from '@prisma/client'
 import * as bcrypt from 'bcryptjs'
-import { randomUUID } from 'crypto'
+import { createHash, randomUUID, timingSafeEqual } from 'crypto'
 import { MailService } from '../../shared/mail.service'
 import { PrismaService } from '../../shared/prisma.service'
 import { BCRYPT_ROUNDS } from '../../shared/utils'
@@ -9,6 +15,14 @@ import { AuthService } from '../auth/auth.service'
 import { SetupDto } from './dto/setup.dto'
 
 const SETUP_LOCK_KEY = 'setup'
+
+/**
+ * A lock older than this belongs to a setup that crashed between taking the
+ * lock and committing (a successful setup leaves users behind, so the lock
+ * is never considered once the instance is set up).
+ */
+const STALE_LOCK_MS = 5 * 60 * 1000
+const TRANSACTION_TIMEOUT_MS = 10_000
 
 const alreadySetUp = () => new ConflictException('Instance is already set up')
 
@@ -18,6 +32,12 @@ function isConcurrencyError(error: unknown): boolean {
     error instanceof Prisma.PrismaClientKnownRequestError &&
     (error.code === 'P2002' || error.code === 'P2034')
   )
+}
+
+/** Constant-time comparison; hashing first equalizes the lengths. */
+function safeEqual(a: string, b: string): boolean {
+  const digest = (value: string) => createHash('sha256').update(value).digest()
+  return timingSafeEqual(digest(a), digest(b))
 }
 
 /**
@@ -31,19 +51,46 @@ export class SetupService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly authService: AuthService,
-    private readonly mailService: MailService
+    private readonly mailService: MailService,
+    private readonly config: ConfigService
   ) {}
+
+  /**
+   * Optional shared secret for public deployments: without it, whoever
+   * reaches a fresh instance first becomes its owner.
+   */
+  private get setupToken(): string | undefined {
+    return this.config.get<string>('SETUP_TOKEN') || undefined
+  }
+
+  private assertSetupToken(provided: string | undefined) {
+    const expected = this.setupToken
+    if (!expected) return
+    if (typeof provided !== 'string' || !safeEqual(provided, expected)) {
+      throw new ForbiddenException('Invalid setup token')
+    }
+  }
 
   async getStatus() {
     const users = await this.prisma.user.count()
     return {
       setupRequired: users === 0,
       mailEnabled: this.mailService.isEnabled(),
+      setupTokenRequired: !!this.setupToken,
     }
   }
 
   async setup(dto: SetupDto) {
+    this.assertSetupToken(dto.setupToken)
     if ((await this.prisma.user.count()) > 0) throw alreadySetUp()
+
+    // Free a lock left behind by a setup that crashed mid-way
+    await this.prisma.instanceLock.deleteMany({
+      where: {
+        key: SETUP_LOCK_KEY,
+        createdAt: { lt: new Date(Date.now() - STALE_LOCK_MS) },
+      },
+    })
 
     // A second, parallel setup call fails on the unique lock key
     try {
@@ -59,26 +106,29 @@ export class SetupService {
 
     let user: { id: string; email: string }
     try {
-      user = await this.prisma.$transaction(async (tx) => {
-        if ((await tx.user.count()) > 0) throw alreadySetUp()
+      user = await this.prisma.$transaction(
+        async (tx) => {
+          if ((await tx.user.count()) > 0) throw alreadySetUp()
 
-        const created = await tx.user.create({
-          data: {
-            email: dto.email,
-            password: passwordHash,
-            firstName,
-            lastName,
-            emailVerified: true,
-          },
-        })
-        const org = await tx.organization.create({
-          data: { name: dto.organizationName, slug: randomUUID() },
-        })
-        await tx.organizationMember.create({
-          data: { userId: created.id, organizationId: org.id, role: 'OWNER' },
-        })
-        return created
-      })
+          const created = await tx.user.create({
+            data: {
+              email: dto.email,
+              password: passwordHash,
+              firstName,
+              lastName,
+              emailVerified: true,
+            },
+          })
+          const org = await tx.organization.create({
+            data: { name: dto.organizationName, slug: randomUUID() },
+          })
+          await tx.organizationMember.create({
+            data: { userId: created.id, organizationId: org.id, role: 'OWNER' },
+          })
+          return created
+        },
+        { timeout: TRANSACTION_TIMEOUT_MS }
+      )
     } catch (error) {
       // Nothing was created, so release the lock to allow a retry
       await this.prisma.instanceLock
