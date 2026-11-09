@@ -23,7 +23,7 @@ function staticKeys(): { key: string; file: string }[] {
   return sourceFiles(SRC).flatMap((file) =>
     [...readFileSync(file, 'utf8').matchAll(calls)].map((m) => ({
       key: m[2],
-      file: relative(SRC, file).replaceAll('\\', '/'),
+      file: relative(SRC, file).replace(/\\/g, '/'),
     }))
   )
 }
