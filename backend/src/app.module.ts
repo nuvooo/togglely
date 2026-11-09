@@ -12,6 +12,7 @@ import { EventsModule } from './modules/events/events.module'
 import { ExperimentsModule } from './modules/experiments/experiments.module'
 import { FlagsModule } from './modules/flags/flags.module'
 import { HealthModule } from './modules/health/health.module'
+import { McpModule } from './modules/mcp/mcp.module'
 import { OrganizationsModule } from './modules/organizations/organizations.module'
 import { OverviewModule } from './modules/overview/overview.module'
 import { PasswordResetModule } from './modules/password-reset/password-reset.module'
@@ -52,6 +53,7 @@ import { PrismaModule } from './shared/prisma.module'
     EventsModule,
     WebhooksModule,
     OverviewModule,
+    McpModule,
   ],
   providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }, MailService],
   exports: [MailService],
