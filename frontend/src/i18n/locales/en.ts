@@ -353,6 +353,19 @@ export const en = {
   'org-pages.api-keys.type-hint.SERVER':
     'For backends and scripts. Keep it secret – it never belongs in browser code.',
   'org-pages.api-keys.type-hint.SDK': 'Older key type; create Client or Server keys instead.',
+  'org-pages.api-keys.type.MCP': 'MCP (AI agent)',
+  'org-pages.api-keys.type-hint.MCP':
+    'For AI agents such as Claude Code. Can create and toggle flags in one project, only in the environments you allow.',
+  'org-pages.api-keys.project-label': 'Project',
+  'org-pages.api-keys.project-placeholder': 'Select a project',
+  'org-pages.api-keys.toggle-envs-label': 'May toggle in',
+  'org-pages.api-keys.toggle-envs-hint': 'The agent can only change flags in the selected environments.',
+  'org-pages.api-keys.envs-loading': 'Loading environments…',
+  'org-pages.api-keys.created-warning-mcp':
+    'This key lets an AI agent change flags. Store it like a password and never commit it.',
+  'org-pages.api-keys.created-once': 'Shown only once: afterwards the key is masked for everyone.',
+  'org-pages.api-keys.mcp-command-label': 'Command for Claude Code',
+  'org-pages.api-keys.toggles-in': 'toggles: {{envs}}',
   'org-pages.api-keys.col-name': 'Name',
   'org-pages.api-keys.col-type': 'Type',
   'org-pages.api-keys.col-environment': 'Environment',

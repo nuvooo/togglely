@@ -354,6 +354,19 @@ export const de = {
   'org-pages.api-keys.type-hint.SERVER':
     'Für Backends und Skripte. Geheim halten – gehört nie in Browser-Code.',
   'org-pages.api-keys.type-hint.SDK': 'Älterer Key-Typ; lege stattdessen Client- oder Server-Keys an.',
+  'org-pages.api-keys.type.MCP': 'MCP (KI-Agent)',
+  'org-pages.api-keys.type-hint.MCP':
+    'Für KI-Agenten wie Claude Code. Kann Flags in einem Projekt anlegen und schalten, nur in den erlaubten Environments.',
+  'org-pages.api-keys.project-label': 'Projekt',
+  'org-pages.api-keys.project-placeholder': 'Projekt wählen',
+  'org-pages.api-keys.toggle-envs-label': 'Darf schalten in',
+  'org-pages.api-keys.toggle-envs-hint': 'Der Agent kann Flags nur in den gewählten Environments ändern.',
+  'org-pages.api-keys.envs-loading': 'Environments werden geladen…',
+  'org-pages.api-keys.created-warning-mcp':
+    'Dieser Key erlaubt einem KI-Agenten, Flags zu ändern. Bewahre ihn wie ein Passwort auf und committe ihn nie.',
+  'org-pages.api-keys.created-once': 'Wird nur einmal angezeigt: danach ist der Key für alle maskiert.',
+  'org-pages.api-keys.mcp-command-label': 'Befehl für Claude Code',
+  'org-pages.api-keys.toggles-in': 'schaltet: {{envs}}',
   'org-pages.api-keys.col-name': 'Name',
   'org-pages.api-keys.col-type': 'Typ',
   'org-pages.api-keys.col-environment': 'Environment',

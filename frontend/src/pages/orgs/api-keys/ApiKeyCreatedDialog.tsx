@@ -17,7 +17,13 @@ import type { ApiKeyType } from './apiKeys'
 
 interface ApiKeyCreatedDialogProps {
   /** The new key in plain text; the dialog is open while it is set. */
-  created: { name: string; type: ApiKeyType; key: string } | null
+  created: {
+    name: string
+    type: ApiKeyType
+    key: string
+    /** MCP keys: ready-to-copy `claude mcp add` command. */
+    command?: string
+  } | null
   onClose: () => void
 }
 
@@ -66,19 +72,30 @@ export function ApiKeyCreatedDialog({
               value={created.key}
             />
           )}
+          {created?.command && (
+            <CopyLinkField
+              id="new-api-key-command"
+              label={t('org-pages.api-keys.mcp-command-label')}
+              value={created.command}
+            />
+          )}
           <p className="flex items-start gap-2 rounded-md border border-warning/40 bg-warning/10 px-3 py-2 text-sm">
             <ShieldAlert
               className="mt-0.5 h-4 w-4 shrink-0 text-warning"
               aria-hidden
             />
             <span>
-              {created?.type === 'CLIENT'
-                ? t('org-pages.api-keys.created-warning-client')
-                : t('org-pages.api-keys.created-warning-server')}
+              {created?.type === 'MCP'
+                ? t('org-pages.api-keys.created-warning-mcp')
+                : created?.type === 'CLIENT'
+                  ? t('org-pages.api-keys.created-warning-client')
+                  : t('org-pages.api-keys.created-warning-server')}
             </span>
           </p>
           <p className="text-sm text-muted-foreground">
-            {t('org-pages.api-keys.created-visibility')}
+            {created?.type === 'MCP'
+              ? t('org-pages.api-keys.created-once')
+              : t('org-pages.api-keys.created-visibility')}
           </p>
         </div>
 
