@@ -300,14 +300,19 @@ export function useProjectFlags(projectId: string | null) {
   const createFlag = async ({ name, key, type }: NewFlag) => {
     if (!projectId) return
     const value = INITIAL_VALUE[type]
+    // The backend falls back to 'false' for environments missing here, which
+    // is no valid value for non-boolean flags: send every environment.
+    const envKeys = project?.environments?.length
+      ? project.environments.map((env) => env.key)
+      : ['development', 'production']
+    const initialValues = Object.fromEntries(
+      envKeys.map((envKey) => [envKey, { enabled: false, value }])
+    )
     await api.post(`/feature-flags/project/${projectId}`, {
       name,
       key,
       type,
-      initialValues: {
-        development: { enabled: false, value },
-        production: { enabled: false, value },
-      },
+      initialValues,
     })
     await refresh()
   }

@@ -154,6 +154,12 @@ describe('FlagsPage (single)', () => {
           name: 'Dark Mode',
           key: 'dark-mode',
           type: 'NUMBER',
+          // Every project environment gets the type's initial value
+          initialValues: {
+            development: { enabled: false, value: '0' },
+            staging: { enabled: false, value: '0' },
+            production: { enabled: false, value: '0' },
+          },
         })
       )
     )
