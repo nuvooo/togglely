@@ -17,6 +17,13 @@ function createService() {
     configVersion: {
       deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
+    webhook: {
+      findMany: jest.fn().mockResolvedValue([]),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
+    auditLog: {
+      create: jest.fn().mockResolvedValue({}),
+    },
     $transaction: jest.fn(async (ops: any[]) => Promise.all(ops)),
   } as any
   const auditLogs = { create: jest.fn().mockResolvedValue({}) } as any
@@ -344,6 +351,90 @@ describe('EnvironmentsService change events', () => {
     prisma.configVersion.deleteMany.mockRejectedValue(new Error('db down'))
 
     await expect(service.delete('env-1')).resolves.toBeUndefined()
+  })
+
+  describe('delete: webhook scopes', () => {
+    const scoped = [
+      {
+        id: 'hook-multi',
+        organizationId: 'org-1',
+        projectId: 'proj-1',
+        environmentIds: ['env-1', 'env-2'],
+        enabled: true,
+      },
+      {
+        id: 'hook-only',
+        organizationId: 'org-1',
+        projectId: 'proj-1',
+        environmentIds: ['env-1'],
+        enabled: true,
+      },
+    ]
+
+    it('removes the environment from webhook scopes', async () => {
+      const { service, prisma } = createService()
+      prisma.environment.delete.mockResolvedValue(env)
+      prisma.webhook.findMany.mockResolvedValue(scoped)
+
+      await service.delete('env-1')
+
+      expect(prisma.webhook.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: { projectId: 'proj-1', environmentIds: { has: 'env-1' } },
+        })
+      )
+      expect(prisma.webhook.updateMany).toHaveBeenCalledWith({
+        where: { id: 'hook-multi', environmentIds: { has: 'env-1' } },
+        data: { environmentIds: { set: ['env-2'] } },
+      })
+    })
+
+    it('disables (never widens to all) a webhook scoped only to the deleted environment', async () => {
+      const { service, prisma } = createService()
+      prisma.environment.delete.mockResolvedValue(env)
+      prisma.webhook.findMany.mockResolvedValue(scoped)
+
+      await service.delete('env-1')
+
+      expect(prisma.webhook.updateMany).toHaveBeenCalledWith({
+        where: { id: 'hook-only', environmentIds: { has: 'env-1' } },
+        data: { environmentIds: { set: [] }, enabled: false },
+      })
+      expect(prisma.auditLog.create).toHaveBeenCalledTimes(1)
+      expect(prisma.auditLog.create.mock.calls[0][0].data).toMatchObject({
+        action: 'webhook.disabled_environment_deleted',
+        entityType: 'webhook',
+        entityId: 'hook-only',
+        organizationId: 'org-1',
+        projectId: 'proj-1',
+        oldValues: { enabled: true, environmentIds: ['env-1'] },
+        newValues: {
+          enabled: false,
+          environmentIds: [],
+          deletedEnvironmentId: 'env-1',
+          actor: 'system',
+        },
+      })
+    })
+
+    it('does not audit when the webhook changed meanwhile', async () => {
+      const { service, prisma } = createService()
+      prisma.environment.delete.mockResolvedValue(env)
+      prisma.webhook.findMany.mockResolvedValue([scoped[1]])
+      prisma.webhook.updateMany.mockResolvedValue({ count: 0 })
+
+      await service.delete('env-1')
+
+      expect(prisma.auditLog.create).not.toHaveBeenCalled()
+    })
+
+    it('delete succeeds even when the webhook cleanup fails', async () => {
+      const { service, prisma } = createService()
+      prisma.environment.delete.mockResolvedValue(env)
+      prisma.webhook.findMany.mockRejectedValue(new Error('db down'))
+
+      await expect(service.delete('env-1')).resolves.toBeUndefined()
+    })
   })
 
   it('delete records nothing when the write fails', async () => {

@@ -101,6 +101,75 @@ export class EnvironmentsService {
         `Config version cleanup for environment ${envId} failed: ${String(error)}`
       )
     }
+    try {
+      await this.removeFromWebhookScopes(environment)
+    } catch (error) {
+      // A stale id in a webhook scope matches nothing, so it stays safe.
+      this.logger.warn(
+        `Webhook scope cleanup for environment ${envId} failed: ${String(error)}`
+      )
+    }
+  }
+
+  /**
+   * Removes a deleted environment from webhook scopes. An empty scope means
+   * "all environments", so a webhook that was scoped only to the deleted
+   * environment is disabled instead of silently widened (audited, actor
+   * system).
+   */
+  private async removeFromWebhookScopes(environment: {
+    id: string
+    projectId: string
+  }) {
+    const webhooks = await this.prisma.webhook.findMany({
+      where: {
+        projectId: environment.projectId,
+        environmentIds: { has: environment.id },
+      },
+      select: {
+        id: true,
+        organizationId: true,
+        projectId: true,
+        environmentIds: true,
+        enabled: true,
+      },
+    })
+    for (const webhook of webhooks) {
+      const remaining = webhook.environmentIds.filter(
+        (id) => id !== environment.id
+      )
+      const emptied = remaining.length === 0
+      // Conditional: skipped if the scope was changed meanwhile
+      const { count } = await this.prisma.webhook.updateMany({
+        where: { id: webhook.id, environmentIds: { has: environment.id } },
+        data: emptied
+          ? { environmentIds: { set: [] }, enabled: false }
+          : { environmentIds: { set: remaining } },
+      })
+      if (count !== 1 || !emptied) continue
+      this.logger.warn(
+        `Webhook ${webhook.id} disabled: its only environment ${environment.id} was deleted`
+      )
+      await this.prisma.auditLog.create({
+        data: {
+          action: 'webhook.disabled_environment_deleted',
+          entityType: 'webhook',
+          entityId: webhook.id,
+          organizationId: webhook.organizationId,
+          projectId: webhook.projectId,
+          oldValues: {
+            enabled: webhook.enabled,
+            environmentIds: webhook.environmentIds,
+          },
+          newValues: {
+            enabled: false,
+            environmentIds: [],
+            deletedEnvironmentId: environment.id,
+            actor: 'system',
+          },
+        },
+      })
+    }
   }
 
   /**
