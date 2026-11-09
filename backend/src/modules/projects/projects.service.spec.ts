@@ -45,6 +45,16 @@ function createService() {
     project: {
       delete: jest.fn().mockResolvedValue({}),
     },
+    configVersion: {
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
+    webhook: {
+      findMany: jest.fn().mockResolvedValue([]),
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
+    webhookDelivery: {
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
   }
 
   const prisma = {
@@ -80,8 +90,12 @@ function createService() {
     $transaction: jest.fn().mockImplementation((cb: any) => cb(txMock)),
   } as any
 
-  const service = new ProjectsService(prisma)
-  return { service, prisma, txMock }
+  const changes = {
+    recordChange: jest.fn().mockResolvedValue(undefined),
+  } as any
+
+  const service = new ProjectsService(prisma, changes)
+  return { service, prisma, txMock, changes }
 }
 
 describe('ProjectsService', () => {
@@ -643,5 +657,114 @@ describe('ProjectsService (environment order)', () => {
       'production',
       'development',
     ])
+  })
+})
+
+describe('ProjectsService change notifications', () => {
+  const admin = { userId: 'user-1', organizationId: 'org-1', role: 'OWNER' }
+  const importFlag = (key: string) => ({
+    key,
+    name: key,
+    flagType: 'BOOLEAN' as const,
+    environments: [
+      { environmentKey: 'development', enabled: true, defaultValue: 'true' },
+    ],
+  })
+
+  it('delete removes config versions, webhooks and deliveries of the project', async () => {
+    const { service, prisma, txMock, changes } = createService()
+    prisma.project.findUnique.mockResolvedValue(mockProject)
+    prisma.organizationMember.findFirst.mockResolvedValue(admin)
+    txMock.webhook.findMany.mockResolvedValue([{ id: 'wh-1' }])
+
+    await service.delete('proj-1', 'user-1')
+
+    expect(txMock.configVersion.deleteMany).toHaveBeenCalledWith({
+      where: { projectId: 'proj-1' },
+    })
+    expect(txMock.webhookDelivery.deleteMany).toHaveBeenCalledWith({
+      where: { webhookId: { in: ['wh-1'] } },
+    })
+    expect(txMock.webhook.deleteMany).toHaveBeenCalledWith({
+      where: { projectId: 'proj-1' },
+    })
+    expect(changes.recordChange).not.toHaveBeenCalled()
+  })
+
+  it('importFlags records one imported change per written flag for all environments', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.project.findUnique.mockResolvedValue(mockProject)
+    prisma.organizationMember.findFirst.mockResolvedValue(admin)
+    prisma.featureFlag.findFirst.mockResolvedValue(null)
+    prisma.featureFlag.create.mockImplementation(({ data }: any) =>
+      Promise.resolve({ id: `id-${data.key}` })
+    )
+    prisma.flagEnvironment.findFirst.mockResolvedValue(null)
+    prisma.flagEnvironment.create.mockResolvedValue({})
+
+    await service.importFlags('proj-1', 'user-1', [
+      importFlag('a'),
+      importFlag('b'),
+    ])
+
+    expect(changes.recordChange).toHaveBeenCalledTimes(1)
+    expect(changes.recordChange).toHaveBeenCalledWith({
+      organizationId: 'org-1',
+      projectId: 'proj-1',
+      environmentIds: 'all',
+      changes: [
+        { flagKey: 'a', action: 'imported' },
+        { flagKey: 'b', action: 'imported' },
+      ],
+    })
+  })
+
+  it('importFlags records a flag that was written before a later step failed', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.project.findUnique.mockResolvedValue(mockProject)
+    prisma.organizationMember.findFirst.mockResolvedValue(admin)
+    prisma.featureFlag.findFirst.mockResolvedValue(null)
+    prisma.featureFlag.create.mockResolvedValue({ id: 'flag-a' })
+    prisma.flagEnvironment.findFirst.mockRejectedValue(new Error('db down'))
+
+    const result = await service.importFlags('proj-1', 'user-1', [
+      importFlag('a'),
+    ])
+
+    expect(result.errors).toHaveLength(1)
+    expect(changes.recordChange).toHaveBeenCalledWith(
+      expect.objectContaining({
+        changes: [{ flagKey: 'a', action: 'imported' }],
+      })
+    )
+  })
+
+  it('importFlags records nothing when every flag was skipped or failed', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.project.findUnique.mockResolvedValue(mockProject)
+    prisma.organizationMember.findFirst.mockResolvedValue(admin)
+    prisma.featureFlag.findFirst.mockResolvedValueOnce({ id: 'existing' })
+    prisma.featureFlag.findFirst.mockResolvedValueOnce(null)
+    prisma.featureFlag.create.mockRejectedValue(new Error('db down'))
+
+    await service.importFlags(
+      'proj-1',
+      'user-1',
+      [importFlag('existing'), importFlag('broken')],
+      { skipExisting: true }
+    )
+
+    expect(changes.recordChange).not.toHaveBeenCalled()
+  })
+
+  it('importFlags records nothing without permission', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.project.findUnique.mockResolvedValue(mockProject)
+    prisma.organizationMember.findFirst.mockResolvedValue(null)
+
+    await expect(
+      service.importFlags('proj-1', 'user-1', [importFlag('a')])
+    ).rejects.toBeInstanceOf(ForbiddenException)
+    expect(changes.recordChange).not.toHaveBeenCalled()
   })
 })

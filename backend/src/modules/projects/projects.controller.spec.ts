@@ -39,7 +39,10 @@ function setup(role: string | null) {
     },
   } as any
   const access = new AccessService(prisma)
-  const service = new ProjectsService(prisma)
+  const changes = {
+    recordChange: jest.fn().mockResolvedValue(undefined),
+  } as any
+  const service = new ProjectsService(prisma, changes)
   const controller = new ProjectsController(service, access)
   return { controller, service, prisma }
 }

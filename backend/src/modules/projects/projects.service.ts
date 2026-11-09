@@ -7,6 +7,8 @@ import {
 import { Project } from '../../domain/project.entity'
 import { PrismaService } from '../../shared/prisma.service'
 import { isPrismaUniqueConstraintError } from '../../shared/prisma-errors'
+import { ChangeEventsService } from '../change-events/change-events.service'
+import { deleteProjectChangeData } from '../change-events/project-cleanup'
 import {
   ENVIRONMENT_ORDER_BY,
   sortByEnvironmentPosition,
@@ -18,7 +20,10 @@ import { UpdateProjectDto } from './dto/update-project.dto'
 
 @Injectable()
 export class ProjectsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly changes: ChangeEventsService
+  ) {}
 
   async findAll(userId: string) {
     const memberships = await this.prisma.organizationMember.findMany({
@@ -415,7 +420,10 @@ export class ProjectsService {
       // 7. Delete audit logs
       await tx.auditLog.deleteMany({ where: { projectId } })
 
-      // 8. Finally delete the project
+      // 8. Delete config versions, webhooks and webhook deliveries
+      await deleteProjectChangeData(tx, projectId)
+
+      // 9. Finally delete the project
       await tx.project.delete({ where: { id: projectId } })
     })
   }
@@ -494,6 +502,9 @@ export class ProjectsService {
     }
 
     const results = { imported: 0, skipped: 0, errors: [] as string[] }
+    // Keys of flags that were written (even if a later step for that flag
+    // failed): they may change SDK results.
+    const writtenKeys: string[] = []
 
     for (const flagData of flags) {
       try {
@@ -535,6 +546,7 @@ export class ProjectsService {
           results.skipped++
           continue
         }
+        writtenKeys.push(flagData.key.toLowerCase())
 
         // Create/update flag environments
         for (const envData of flagData.environments || []) {
@@ -578,6 +590,18 @@ export class ProjectsService {
           `Failed to import flag '${flagData.key}': ${error.message}`
         )
       }
+    }
+
+    if (writtenKeys.length > 0) {
+      void this.changes.recordChange({
+        organizationId: project.organizationId,
+        projectId,
+        environmentIds: 'all',
+        changes: writtenKeys.map((flagKey) => ({
+          flagKey,
+          action: 'imported' as const,
+        })),
+      })
     }
 
     return results

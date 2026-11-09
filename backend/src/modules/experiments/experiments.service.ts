@@ -6,9 +6,10 @@ import {
   NotFoundException,
 } from '@nestjs/common'
 import { ExperimentStatus } from '@prisma/client'
+import { isObjectId } from '../../shared/access/access.service'
 import { PrismaService } from '../../shared/prisma.service'
 import { AuditLogsService } from '../audit-logs/audit-logs.service'
-import { isObjectId } from '../../shared/access/access.service'
+import { ChangeEventsService } from '../change-events/change-events.service'
 import {
   CreateExperimentDto,
   CreateVariantDto,
@@ -22,7 +23,8 @@ export class ExperimentsService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly auditLogs: AuditLogsService
+    private readonly auditLogs: AuditLogsService,
+    private readonly changes: ChangeEventsService
   ) {}
 
   async create(userId: string, dto: CreateExperimentDto) {
@@ -251,6 +253,7 @@ export class ExperimentsService {
       },
       include: { variants: true },
     })
+    await this.recordExperimentChanged(experiment)
 
     await this.auditLogs.create({
       action: 'experiment.started',
@@ -281,6 +284,7 @@ export class ExperimentsService {
       data: { status: 'PAUSED' },
       include: { variants: true },
     })
+    await this.recordExperimentChanged(experiment)
 
     await this.auditLogs.create({
       action: 'experiment.paused',
@@ -314,6 +318,10 @@ export class ExperimentsService {
       },
       include: { variants: true },
     })
+    // Only RUNNING experiments are evaluated by the SDK
+    if (experiment.status === 'RUNNING') {
+      await this.recordExperimentChanged(experiment)
+    }
 
     await this.auditLogs.create({
       action: 'experiment.completed',
@@ -325,6 +333,43 @@ export class ExperimentsService {
     })
 
     return updated
+  }
+
+  /**
+   * Records an evaluation change for the experiment's flag in its
+   * environment. Only status changes from or to RUNNING matter: update,
+   * delete and variant changes are restricted to DRAFT/PAUSED experiments,
+   * which the SDK does not evaluate. Never throws.
+   */
+  private async recordExperimentChanged(experiment: {
+    flagId: string
+    environmentId: string
+    projectId: string
+    organizationId: string
+  }) {
+    let flagKey: string | undefined
+    try {
+      const flag = await this.prisma.featureFlag.findUnique({
+        where: { id: experiment.flagId },
+        select: { key: true },
+      })
+      flagKey = flag?.key
+    } catch (error) {
+      this.logger.warn(
+        `Flag lookup for experiment change failed: ${String(error)}`
+      )
+    }
+    void this.changes.recordChange({
+      organizationId: experiment.organizationId,
+      projectId: experiment.projectId,
+      environmentIds: [experiment.environmentId],
+      changes: [
+        {
+          ...(flagKey !== undefined && { flagKey }),
+          action: 'experiment_changed',
+        },
+      ],
+    })
   }
 
   // --- Variant CRUD ---

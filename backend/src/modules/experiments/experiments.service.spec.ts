@@ -86,8 +86,12 @@ function createService() {
     create: jest.fn().mockResolvedValue({ id: 'audit-1' }),
   } as any
 
-  const service = new ExperimentsService(prisma, auditLogs)
-  return { service, prisma, auditLogs }
+  const changes = {
+    recordChange: jest.fn().mockResolvedValue(undefined),
+  } as any
+
+  const service = new ExperimentsService(prisma, auditLogs, changes)
+  return { service, prisma, auditLogs, changes }
 }
 
 describe('ExperimentsService', () => {
@@ -1027,5 +1031,124 @@ describe('ExperimentsService', () => {
         service.deleteVariant('exp-1', 'missing-var')
       ).rejects.toBeInstanceOf(NotFoundException)
     })
+  })
+})
+
+describe('ExperimentsService change events', () => {
+  const experimentChanged = {
+    organizationId: 'org-1',
+    projectId: 'proj-1',
+    environmentIds: ['env-1'],
+    changes: [{ flagKey: 'test-flag', action: 'experiment_changed' }],
+  }
+
+  function withExperiment(status: string, extra: Record<string, unknown> = {}) {
+    const ctx = createService()
+    ctx.prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+    ctx.prisma.experiment.findUnique.mockResolvedValue({
+      ...mockExperiment,
+      status,
+      variants: [mockVariant, mockVariantB],
+      ...extra,
+    })
+    ctx.prisma.experiment.findFirst.mockResolvedValue(null)
+    ctx.prisma.experiment.update.mockResolvedValue({ ...mockExperiment })
+    return ctx
+  }
+
+  it('start records experiment_changed for the experiment environment', async () => {
+    const { service, prisma, changes } = withExperiment('DRAFT')
+
+    await service.start('exp-1', 'user-1')
+
+    expect(prisma.featureFlag.findUnique).toHaveBeenCalledWith({
+      where: { id: 'flag-1' },
+      select: { key: true },
+    })
+    expect(changes.recordChange).toHaveBeenCalledWith(experimentChanged)
+  })
+
+  it('start records nothing when validation fails', async () => {
+    const { service, changes } = withExperiment('DRAFT', {
+      variants: [mockVariant],
+    })
+
+    await expect(service.start('exp-1', 'user-1')).rejects.toBeInstanceOf(
+      BadRequestException
+    )
+    expect(changes.recordChange).not.toHaveBeenCalled()
+  })
+
+  it('start records nothing when the write fails', async () => {
+    const { service, prisma, changes } = withExperiment('DRAFT')
+    prisma.experiment.update.mockRejectedValue(new Error('db down'))
+
+    await expect(service.start('exp-1', 'user-1')).rejects.toThrow('db down')
+    expect(changes.recordChange).not.toHaveBeenCalled()
+  })
+
+  it('start still succeeds when the flag key lookup fails', async () => {
+    const { service, prisma, changes } = withExperiment('DRAFT')
+    prisma.featureFlag.findUnique.mockRejectedValue(new Error('db down'))
+
+    await expect(service.start('exp-1', 'user-1')).resolves.toBeDefined()
+    expect(changes.recordChange).toHaveBeenCalledWith({
+      ...experimentChanged,
+      changes: [{ action: 'experiment_changed' }],
+    })
+  })
+
+  it('pause records experiment_changed', async () => {
+    const { service, changes } = withExperiment('RUNNING')
+
+    await service.pause('exp-1', 'user-1')
+
+    expect(changes.recordChange).toHaveBeenCalledWith(experimentChanged)
+  })
+
+  it('pause records nothing when the write fails', async () => {
+    const { service, prisma, changes } = withExperiment('RUNNING')
+    prisma.experiment.update.mockRejectedValue(new Error('x'))
+
+    await expect(service.pause('exp-1', 'user-1')).rejects.toThrow()
+    expect(changes.recordChange).not.toHaveBeenCalled()
+  })
+
+  it('complete records experiment_changed for a RUNNING experiment', async () => {
+    const { service, changes } = withExperiment('RUNNING')
+
+    await service.complete('exp-1', 'user-1')
+
+    expect(changes.recordChange).toHaveBeenCalledWith(experimentChanged)
+  })
+
+  it('complete records nothing for a PAUSED experiment (it was not evaluated)', async () => {
+    const { service, changes } = withExperiment('PAUSED')
+
+    await service.complete('exp-1', 'user-1')
+
+    expect(changes.recordChange).not.toHaveBeenCalled()
+  })
+
+  it('complete records nothing when the write fails', async () => {
+    const { service, prisma, changes } = withExperiment('RUNNING')
+    prisma.experiment.update.mockRejectedValue(new Error('x'))
+
+    await expect(service.complete('exp-1', 'user-1')).rejects.toThrow()
+    expect(changes.recordChange).not.toHaveBeenCalled()
+  })
+
+  it('update and delete record nothing (only DRAFT/PAUSED experiments, never evaluated)', async () => {
+    const { service, prisma, changes } = withExperiment('PAUSED')
+    await service.update('exp-1', { name: 'Renamed' } as any)
+
+    prisma.experiment.findUnique.mockResolvedValue({
+      ...mockExperiment,
+      status: 'DRAFT',
+    })
+    prisma.$transaction.mockResolvedValue(undefined)
+    await service.delete('exp-1', 'user-1')
+
+    expect(changes.recordChange).not.toHaveBeenCalled()
   })
 })

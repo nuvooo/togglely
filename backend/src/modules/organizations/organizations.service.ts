@@ -8,6 +8,7 @@ import { Organization, OrganizationRole } from '@prisma/client'
 import { randomUUID } from 'crypto'
 import { PrismaService } from '../../shared/prisma.service'
 import { findUserByEmail } from '../../shared/users'
+import { deleteProjectChangeData } from '../change-events/project-cleanup'
 
 @Injectable()
 export class OrganizationsService {
@@ -194,6 +195,7 @@ export class OrganizationsService {
       await this.prisma.auditLog.deleteMany({
         where: { projectId: project.id },
       })
+      await deleteProjectChangeData(this.prisma, project.id)
       await this.prisma.project.delete({ where: { id: project.id } })
     }
 
