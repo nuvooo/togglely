@@ -54,9 +54,12 @@ function pinnedAgent(address: string, family: 4 | 6): Agent {
       callback(null, address, family)
     }
   }
+  // A fresh agent is created per request and destroyed in
+  // sendWebhookRequest's finally block; that is what keeps connections from
+  // being reused across deliveries. pipelining: 0 only disables HTTP/1.1
+  // pipelining on this agent's own connection.
   return new Agent({
     connect: { lookup: lookup as never },
-    // One request per agent; no pooling across deliveries
     pipelining: 0,
   })
 }

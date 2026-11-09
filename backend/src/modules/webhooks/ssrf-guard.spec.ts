@@ -1,5 +1,6 @@
 import {
   assertPublicUrl,
+  DNS_TIMEOUT_MS,
   isBlockedAddress,
   isBlockedHostname,
   resolvePublicAddress,
@@ -54,6 +55,10 @@ describe('isBlockedAddress', () => {
     '::127.0.0.1',
     '64:ff9b::a00:1',
     '2002:c0a8:0101::1',
+    // Teredo 2001::/32 (embeds an obfuscated IPv4 address)
+    '2001::1',
+    '2001:0:4136:e378:8000:63bf:3fff:fdd2',
+    '2001:0:ffff:ffff:ffff:ffff:ffff:ffff',
   ])('blocks %s', (address) => {
     expect(isBlockedAddress(address)).toBe(true)
   })
@@ -75,6 +80,9 @@ describe('isBlockedAddress', () => {
     '::ffff:8.8.8.8',
     '64:ff9b::808:808',
     '2002:808:808::1',
+    // Outside Teredo: 2001:1::/32 and 2001:4860:: (Google)
+    '2001:1::1',
+    '2001:4860:4860::8888',
   ])('allows public %s', (address) => {
     expect(isBlockedAddress(address)).toBe(false)
   })
@@ -282,6 +290,33 @@ describe('resolvePublicAddress', () => {
     await expect(
       resolvePublicAddress('missing.example', { allowPrivate: false, lookup })
     ).rejects.toMatchObject({ code: 'dns_error' })
+  })
+
+  it('reports a hanging DNS lookup as dns_error after the timeout', async () => {
+    jest.useFakeTimers()
+    try {
+      const lookup = jest.fn(() => new Promise<never>(() => undefined))
+      const pending = resolvePublicAddress('slow.example', {
+        allowPrivate: false,
+        lookup,
+      })
+      const assertion = expect(pending).rejects.toMatchObject({
+        code: 'dns_error',
+      })
+      await jest.advanceTimersByTimeAsync(DNS_TIMEOUT_MS - 1)
+      let settled = false
+      pending.catch(() => undefined).finally(() => (settled = true))
+      await Promise.resolve()
+      expect(settled).toBe(false)
+      await jest.advanceTimersByTimeAsync(1)
+      await assertion
+    } finally {
+      jest.useRealTimers()
+    }
+  })
+
+  it('uses a 5 second DNS timeout', () => {
+    expect(DNS_TIMEOUT_MS).toBe(5_000)
   })
 
   it('reports an empty DNS answer as dns_error', async () => {

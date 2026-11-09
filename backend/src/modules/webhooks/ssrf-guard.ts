@@ -142,6 +142,8 @@ function isBlockedV6(h: number[]): boolean {
   if (h[0] === 0x2002) return isBlockedV4Int(embeddedV4(h, 1))
   // Discard-only 100::/64
   if (h[0] === 0x100 && h[1] === 0 && h[2] === 0 && h[3] === 0) return true
+  // Teredo 2001::/32: tunnels to an (obfuscated) embedded IPv4 address
+  if (h[0] === 0x2001 && h[1] === 0) return true
   // Documentation 2001:db8::/32
   if (h[0] === 0x2001 && h[1] === 0xdb8) return true
   // Unique local fc00::/7
@@ -235,6 +237,31 @@ export type LookupAllFn = (
 const defaultLookup: LookupAllFn = (hostname, options) =>
   dns.lookup(hostname, options)
 
+/** Max. time for the DNS lookup of a webhook host. */
+export const DNS_TIMEOUT_MS = 5_000
+
+/** Rejects with `dns_error` when the lookup does not settle in time. */
+function lookupWithTimeout(
+  lookup: LookupAllFn,
+  host: string
+): Promise<Array<{ address: string; family: number }>> {
+  let timer: ReturnType<typeof setTimeout> | undefined
+  const timeout = new Promise<never>((_, reject) => {
+    timer = setTimeout(
+      () =>
+        reject(
+          new WebhookUrlError('dns_error', 'DNS lookup failed (ETIMEOUT)')
+        ),
+      DNS_TIMEOUT_MS
+    )
+    timer.unref?.()
+  })
+  return Promise.race([
+    lookup(host, { all: true, verbatim: true }),
+    timeout,
+  ]).finally(() => clearTimeout(timer))
+}
+
 /**
  * Resolves the hostname and validates every returned address. The returned
  * address is the one the connection gets pinned to, so a second DNS answer
@@ -260,11 +287,9 @@ export async function resolvePublicAddress(
 
   let records: Array<{ address: string; family: number }>
   try {
-    records = await (options.lookup ?? defaultLookup)(host, {
-      all: true,
-      verbatim: true,
-    })
+    records = await lookupWithTimeout(options.lookup ?? defaultLookup, host)
   } catch (error) {
+    if (error instanceof WebhookUrlError) throw error
     const code = (error as { code?: string })?.code ?? 'unknown'
     throw new WebhookUrlError('dns_error', `DNS lookup failed (${code})`)
   }
