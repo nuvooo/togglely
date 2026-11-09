@@ -20,7 +20,7 @@
     --accent-foreground: 240 5.9% 10%;
     --destructive: 0 72.2% 50.6%;
     --destructive-foreground: 0 0% 98%;
-    --success: 142.1 76.2% 36.3%;
+    --success: 142.1 72.2% 29.2%;
     --success-foreground: 0 0% 100%;
     --warning: 37.7 92.1% 50.2%;
     --warning-foreground: 240 10% 3.9%;
@@ -70,7 +70,7 @@
     font-family: 'Geist Variable', ui-sans-serif, system-ui, sans-serif;
     font-feature-settings: 'cv11', 'ss01';
   }
-  code, kbd, pre, .font-mono {
+  code, kbd, pre {
     font-family: 'Geist Mono Variable', ui-monospace, 'Cascadia Code', Consolas, monospace;
   }
 }
