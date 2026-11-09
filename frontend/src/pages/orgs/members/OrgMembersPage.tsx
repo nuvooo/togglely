@@ -26,7 +26,11 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import api from '@/lib/axios'
-import { handleForbidden, notifyWriteError } from '@/lib/permissions'
+import {
+  handleForbidden,
+  isForbidden,
+  notifyWriteError,
+} from '@/lib/permissions'
 import { apiMessage } from '@/pages/projects/settings/project'
 
 interface Organization {
@@ -89,6 +93,23 @@ export default function OrgMembersPage() {
     }
   }, [orgId])
 
+  /**
+   * The member list is this page's role source: after a 403 the user's role
+   * changed, so reload it (quietly) and the write actions follow.
+   */
+  const refreshMembers = useCallback(async () => {
+    try {
+      const res = await api.get(`/organizations/${orgId}/members`)
+      setMembers(res.data.members ?? [])
+    } catch {
+      // Keep the current list; the workspace refresh still runs.
+    }
+  }, [orgId])
+
+  const refreshOnForbidden = (err: unknown) => {
+    if (isForbidden(err)) refreshMembers()
+  }
+
   // biome-ignore lint/correctness/useExhaustiveDependencies: `reload` re-runs the load on retry
   useEffect(() => {
     if (!orgId) return
@@ -127,6 +148,7 @@ export default function OrgMembersPage() {
       )
       toast.success(t('members.role-updated'))
     } catch (err: unknown) {
+      refreshOnForbidden(err)
       notifyWriteError(
         err,
         t,
@@ -152,6 +174,7 @@ export default function OrgMembersPage() {
       }
     } catch (err: unknown) {
       // The confirm dialog stays open and shows the message.
+      refreshOnForbidden(err)
       handleForbidden(err, t)
       throw new Error(apiMessage(err, t('org-pages.members.action-failed')))
     }
@@ -365,6 +388,7 @@ export default function OrgMembersPage() {
           open={showInviteDialog}
           onOpenChange={setShowInviteDialog}
           onCreated={loadInvites}
+          onForbidden={refreshMembers}
         />
       )}
 
@@ -372,6 +396,7 @@ export default function OrgMembersPage() {
         orgId={orgId}
         member={resetMember}
         onClose={() => setResetMember(null)}
+        onForbidden={refreshMembers}
       />
 
       <ConfirmDialog

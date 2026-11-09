@@ -238,6 +238,40 @@ describe('OrgMembersPage', () => {
     await waitFor(() => expect(screen.queryByText('cy@example.com')).toBeNull())
   })
 
+  it('refetches the members (role source) after a 403', async () => {
+    mocks.others = [
+      {
+        id: 'm3',
+        userId: 'u3',
+        email: 'cy@example.com',
+        firstName: 'Cy',
+        lastName: 'C',
+        role: 'MEMBER',
+        joinedAt: '',
+      },
+    ]
+    mocks.del.mockImplementationOnce(() =>
+      Promise.reject({ isAxiosError: true, response: { status: 403, data: {} } })
+    )
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: 'Remove Cy C' }))
+    // Meanwhile the current user was demoted.
+    mocks.role = 'VIEWER'
+    const dialog = await screen.findByRole('dialog')
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Remove' }))
+    await waitFor(() =>
+      expect(
+        mocks.get.mock.calls.filter(
+          ([url]) => url === '/organizations/o1/members'
+        )
+      ).toHaveLength(2)
+    )
+    fireEvent.click(within(dialog).getByRole('button', { name: 'Cancel' }))
+    await waitFor(() => expect(screen.queryByRole('dialog')).toBeNull())
+    expect(screen.getByText('cy@example.com')).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Remove Cy C' })).toBeNull()
+  })
+
   it('shows a load error with retry', async () => {
     const original = mocks.get.getMockImplementation()!
     mocks.get.mockImplementation((url: string) =>
