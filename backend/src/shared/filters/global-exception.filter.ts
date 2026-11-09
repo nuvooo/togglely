@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common'
 import { Request, Response } from 'express'
+import { redactUrl } from '../security/http-security'
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -49,7 +50,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     // to clients; they are logged below.
     const internalMessage =
       exception instanceof Error ? exception.message : String(exception)
-    const logPath = request.path ?? request.url
+    // Paths can carry secrets (invite and verification tokens)
+    const logPath = redactUrl(request.originalUrl ?? request.url)
 
     if (status >= 500) {
       message = 'Internal server error'

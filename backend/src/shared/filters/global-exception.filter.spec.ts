@@ -187,4 +187,44 @@ describe('GlobalExceptionFilter', () => {
       )
     })
   })
+
+  describe('token redaction', () => {
+    it('masks invite tokens in the logged path and the response path', () => {
+      const filter = createFilter()
+      const { host, request, json } = createMockHost()
+      const warn = jest
+        .spyOn((filter as any).logger, 'warn')
+        .mockImplementation(() => undefined)
+      const secret = 'f'.repeat(64)
+      Object.assign(request, {
+        method: 'POST',
+        url: `/auth/invite/${secret}/register`,
+        originalUrl: `/api/auth/invite/${secret}/register?x=1`,
+        path: `/auth/invite/${secret}/register`,
+      })
+
+      filter.catch(new NotFoundException('Invite not found'), host)
+
+      expect(warn.mock.calls[0][0]).not.toContain(secret)
+      expect(warn.mock.calls[0][0]).toContain(
+        '/api/auth/invite/[REDACTED]/register'
+      )
+      const body = json.mock.calls[0][0]
+      expect(body.path).toBe('/api/auth/invite/[REDACTED]/register')
+    })
+
+    it('masks tokens in 5xx error logs', () => {
+      const filter = createFilter()
+      const { host, request, json } = createMockHost()
+      const error = jest
+        .spyOn((filter as any).logger, 'error')
+        .mockImplementation(() => undefined)
+      Object.assign(request, { url: '/auth/verify-email/abc123' })
+
+      filter.catch(new Error('boom'), host)
+
+      expect(error.mock.calls[0][0]).not.toContain('abc123')
+      expect(json.mock.calls[0][0].path).toBe('/auth/verify-email/[REDACTED]')
+    })
+  })
 })
