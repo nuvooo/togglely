@@ -19,7 +19,7 @@ vi.mock('@/lib/axios', () => ({ default: api }))
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }))
 vi.mock('sonner', () => ({ toast }))
 
-import ProjectDetail from './ProjectDetail'
+import FlagsPage from './FlagsPage'
 
 function flag(flagType: string, defaultValue: string, brandOverride: string) {
   return {
@@ -61,7 +61,7 @@ function renderPage() {
   return render(
     <MemoryRouter initialEntries={[`/projects/${PROJECT_ID}/flags`]}>
       <Routes>
-        <Route path="/projects/:projectId/flags" element={<ProjectDetail />} />
+        <Route path="/projects/:projectId/flags" element={<FlagsPage />} />
       </Routes>
     </MemoryRouter>
   )
@@ -71,8 +71,19 @@ function renderPage() {
 const linkButton = (r: HTMLElement) =>
   within(r).getByRole('button', { name: /inherits default|own value/i })
 
-/** Row of the value list whose label matches. */
+/** Expands the brand matrix of the flag (once). */
+async function expand() {
+  const toggle = await screen.findByRole('button', {
+    name: 'Brand values of Banner',
+  })
+  if (toggle.getAttribute('aria-expanded') !== 'true') {
+    await userEvent.click(toggle)
+  }
+}
+
+/** Row of the (expanded) brand matrix whose label matches. */
 async function row(label: string) {
+  await expand()
   const rows = await screen.findAllByTestId('flag-value-row')
   const found = rows.find((r) => within(r).queryByText(label))
   if (!found) throw new Error(`row ${label} not found`)
@@ -100,7 +111,7 @@ beforeEach(async () => {
   )
 })
 
-describe('ProjectDetail (multi-brand)', () => {
+describe('FlagsPage (multi-brand)', () => {
   it('renders the default switch and the link state per brand', async () => {
     state.flags = [flag('BOOLEAN', 'true', 'false')]
     renderPage()
@@ -299,5 +310,64 @@ describe('ProjectDetail (multi-brand)', () => {
       'Please enter a valid number.'
     )
     expect(api.patch).not.toHaveBeenCalled()
+  })
+
+  it('shows defaults in the table and expands the brand matrix on demand', async () => {
+    state.flags = [flag('STRING', 'blue', 'red')]
+    renderPage()
+
+    const toggle = await screen.findByRole('button', {
+      name: 'Brand values of Banner',
+    })
+    expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    expect(screen.queryByTestId('flag-value-row')).not.toBeInTheDocument()
+    expect(screen.getByText('1 override')).toBeInTheDocument()
+
+    await userEvent.click(
+      screen.getByRole('switch', {
+        name: 'Banner default (all brands) enabled in Development',
+      })
+    )
+    expect(api.post).toHaveBeenCalledWith('/feature-flags/flag-1/toggle', {
+      environmentId: 'env-1',
+      enabled: false,
+    })
+
+    await userEvent.click(toggle)
+    expect(toggle).toHaveAttribute('aria-expanded', 'true')
+    const panel = document.getElementById(
+      toggle.getAttribute('aria-controls') ?? ''
+    )
+    expect(panel).not.toBeNull()
+    expect(
+      within(panel as HTMLElement).getByTestId('env-card-env-1')
+    ).toBeInTheDocument()
+    expect(
+      within(panel as HTMLElement).getAllByTestId('flag-value-row')
+    ).toHaveLength(3)
+  })
+
+  it('edits the default from the table value chip with the default target', async () => {
+    state.flags = [flag('STRING', 'blue', 'red')]
+    renderPage()
+
+    await userEvent.click(
+      await screen.findByRole('button', {
+        name: 'Edit value of Banner in Development',
+      })
+    )
+    const input = await screen.findByLabelText('Value (STRING)')
+    expect(input).toHaveValue('blue')
+    expect(screen.getByRole('dialog')).toHaveTextContent('Default (all brands)')
+    await userEvent.clear(input)
+    await userEvent.type(input, 'teal')
+    await userEvent.click(screen.getByRole('button', { name: 'Save value' }))
+
+    await waitFor(() =>
+      expect(api.patch).toHaveBeenCalledWith(
+        '/feature-flags/flag-1/environments/env-1/value',
+        { value: 'teal' }
+      )
+    )
   })
 })
