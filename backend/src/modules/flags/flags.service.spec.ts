@@ -582,7 +582,9 @@ describe('FlagsService change events', () => {
 
     await expect(service.delete('flag-1', 'user-1')).resolves.toBeUndefined()
 
-    prisma.featureFlag.update = jest.fn().mockResolvedValue({ ...mockFlag, name: 'New' })
+    prisma.featureFlag.update = jest
+      .fn()
+      .mockResolvedValue({ ...mockFlag, name: 'New' })
     await expect(
       service.update('flag-1', { name: 'New' }, 'user-1')
     ).resolves.toEqual(expect.objectContaining({ name: 'New' }))

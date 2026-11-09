@@ -166,7 +166,9 @@ describe('ProjectSettingsPage', () => {
 
     const dialog = await screen.findByRole('dialog')
     // The backend keeps the brands; SINGLE projects ignore them.
-    expect(within(dialog).getByText(/All 2 brands are kept/)).toBeInTheDocument()
+    expect(
+      within(dialog).getByText(/All 2 brands are kept/)
+    ).toBeInTheDocument()
     expect(within(dialog).queryByText(/deleted/)).not.toBeInTheDocument()
     expect(api.patch).not.toHaveBeenCalled()
     await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
@@ -197,9 +199,7 @@ describe('ProjectSettingsPage', () => {
 
     resolveBrands({ data: { brands: [{ id: 'b1' }] } })
     await waitFor(() =>
-      expect(
-        screen.getByRole('button', { name: 'Save changes' })
-      ).toBeEnabled()
+      expect(screen.getByRole('button', { name: 'Save changes' })).toBeEnabled()
     )
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
     const dialog = await screen.findByRole('dialog')
@@ -227,7 +227,9 @@ describe('ProjectSettingsPage', () => {
     await user.click(screen.getByRole('button', { name: 'Save changes' }))
 
     const dialog = await screen.findByRole('dialog')
-    expect(within(dialog).getByText(/Existing brands are kept/)).toBeInTheDocument()
+    expect(
+      within(dialog).getByText(/Existing brands are kept/)
+    ).toBeInTheDocument()
     expect(api.patch).not.toHaveBeenCalled()
     await user.click(within(dialog).getByRole('button', { name: 'Convert' }))
     expect(api.patch).toHaveBeenCalled()

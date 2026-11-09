@@ -183,7 +183,9 @@ describe('DataTable', () => {
     expect(region).not.toBeNull()
     expect(region).toBeEmptyDOMElement()
     expect(region?.closest('tr')).toHaveAttribute('hidden')
-    expect(container.querySelector('#detail-b')?.closest('tr')).not.toHaveAttribute('hidden')
+    expect(
+      container.querySelector('#detail-b')?.closest('tr')
+    ).not.toHaveAttribute('hidden')
   })
 
   it('labels focusable rows and can keep them out of the tab order', () => {

@@ -111,6 +111,16 @@ const envGets = () =>
     ([url]) => url === `/environments/project/${PROJECT_ID}`
   ).length
 
+/** Navigates to `to` on click (switches project/flag while the page stays mounted). */
+function NavigateButton({ to, label }: { to: string; label: string }) {
+  const navigate = useNavigate()
+  return (
+    <button type="button" onClick={() => navigate(to)}>
+      {label}
+    </button>
+  )
+}
+
 describe('EnvironmentsPage', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
@@ -402,17 +412,12 @@ describe('EnvironmentsPage', () => {
       }
       return Promise.resolve({ data: { featureFlags: [] } })
     })
-    function Switcher() {
-      const navigate = useNavigate()
-      return (
-        <button type="button" onClick={() => navigate(`/projects/${OTHER_ID}/environments`)}>
-          switch
-        </button>
-      )
-    }
     render(
       <MemoryRouter initialEntries={[`/projects/${PROJECT_ID}/environments`]}>
-        <Switcher />
+        <NavigateButton
+          to={`/projects/${OTHER_ID}/environments`}
+          label="switch"
+        />
         <Routes>
           <Route
             path="/projects/:projectId/environments"

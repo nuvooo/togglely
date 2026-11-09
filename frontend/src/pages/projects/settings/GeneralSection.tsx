@@ -90,7 +90,8 @@ export function GeneralSection({
     if (waitingForBrands) return
     if (
       toSingle &&
-      (brandCount === 'failed' || (typeof brandCount === 'number' && brandCount > 0))
+      (brandCount === 'failed' ||
+        (typeof brandCount === 'number' && brandCount > 0))
     ) {
       setConfirmOpen(true)
       return

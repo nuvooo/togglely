@@ -140,6 +140,16 @@ beforeEach(async () => {
   })
 })
 
+/** Navigates to `to` on click (switches project/flag while the page stays mounted). */
+function NavigateButton({ to, label }: { to: string; label: string }) {
+  const navigate = useNavigate()
+  return (
+    <button type="button" onClick={() => navigate(to)}>
+      {label}
+    </button>
+  )
+}
+
 describe('FlagsPage (single)', () => {
   it('opens the create-flag dialog for ?new=1 and removes the param', async () => {
     state.flags = []
@@ -219,7 +229,9 @@ describe('FlagsPage (single)', () => {
 
   it('falls back to createdAt and shows "–" without any timestamp', async () => {
     // Shape of GET /feature-flags/project/:id: ISO strings, possibly missing
-    state.environments = [{ id: 'dev', name: 'Development', key: 'development' }]
+    state.environments = [
+      { id: 'dev', name: 'Development', key: 'development' },
+    ]
     state.flags = [
       {
         id: 'f1',
@@ -450,7 +462,9 @@ describe('FlagsPage (single)', () => {
       expect(api.post).toHaveBeenCalledWith(
         expect.any(String),
         expect.objectContaining({
-          initialValues: expect.objectContaining({ staging: expect.anything() }),
+          initialValues: expect.objectContaining({
+            staging: expect.anything(),
+          }),
         })
       )
     )
@@ -460,10 +474,20 @@ describe('FlagsPage (single)', () => {
     const OTHER = '0123456789abcdef0123cccc'
     let resolveFirst: (value: unknown) => void = () => {}
     const project = (id: string) => ({
-      data: { project: { id, name: id, key: id, type: 'SINGLE', organizationId: 'o1', environments: [] } },
+      data: {
+        project: {
+          id,
+          name: id,
+          key: id,
+          type: 'SINGLE',
+          organizationId: 'o1',
+          environments: [],
+        },
+      },
     })
     api.get.mockImplementation((url: string) => {
-      if (url === `/projects/${PROJECT_ID}`) return Promise.resolve(project(PROJECT_ID))
+      if (url === `/projects/${PROJECT_ID}`)
+        return Promise.resolve(project(PROJECT_ID))
       if (url === `/projects/${OTHER}`) return Promise.resolve(project(OTHER))
       if (url === `/feature-flags/project/${PROJECT_ID}`)
         return new Promise((resolve) => {
@@ -471,24 +495,18 @@ describe('FlagsPage (single)', () => {
         })
       return Promise.resolve({ data: { featureFlags: [FLAGS[1]] } })
     })
-    function Switcher() {
-      const navigate = useNavigate()
-      return (
-        <button type="button" onClick={() => navigate(`/projects/${OTHER}/flags`)}>
-          switch
-        </button>
-      )
-    }
     render(
       <MemoryRouter initialEntries={[`/projects/${PROJECT_ID}/flags`]}>
-        <Switcher />
+        <NavigateButton to={`/projects/${OTHER}/flags`} label="switch" />
         <Routes>
           <Route path="/projects/:projectId/flags" element={<FlagsPage />} />
         </Routes>
       </MemoryRouter>
     )
     await waitFor(() =>
-      expect(api.get).toHaveBeenCalledWith(`/feature-flags/project/${PROJECT_ID}`)
+      expect(api.get).toHaveBeenCalledWith(
+        `/feature-flags/project/${PROJECT_ID}`
+      )
     )
     await userEvent.click(screen.getByRole('button', { name: 'switch' }))
     await screen.findByText('Banner text')

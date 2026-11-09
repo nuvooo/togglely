@@ -345,7 +345,13 @@ export class FlagsService {
       newValues[field] = updated[field]
     }
     if (Object.keys(newValues).length > 0) {
-      await this.auditFlag('flag.updated', updated, userId, oldValues, newValues)
+      await this.auditFlag(
+        'flag.updated',
+        updated,
+        userId,
+        oldValues,
+        newValues
+      )
     }
 
     return {

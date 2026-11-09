@@ -257,9 +257,7 @@ describe('TargetingRulesService behaviour', () => {
     await expect(controller.create(FLAG, createDto(), req)).resolves.toEqual(
       expect.objectContaining({ rule: expect.anything() })
     )
-    await expect(
-      controller.delete(FLAG, RULE, req)
-    ).resolves.not.toThrow()
+    await expect(controller.delete(FLAG, RULE, req)).resolves.not.toThrow()
   })
 
   it('names the flag in update and delete audit entries', async () => {

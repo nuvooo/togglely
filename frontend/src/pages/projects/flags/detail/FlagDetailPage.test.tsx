@@ -130,6 +130,16 @@ const renderPage = (search = '') =>
     </MemoryRouter>
   )
 
+/** Navigates to `to` on click (switches project/flag while the page stays mounted). */
+function NavigateButton({ to, label }: { to: string; label: string }) {
+  const navigate = useNavigate()
+  return (
+    <button type="button" onClick={() => navigate(to)}>
+      {label}
+    </button>
+  )
+}
+
 describe('Flag detail page', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en')
@@ -267,13 +277,17 @@ describe('Flag detail page', () => {
   it('takes the project type from GET /projects/:id, not the workspace cache', async () => {
     mocks.projectType = 'MULTI'
     renderPage()
-    expect(await screen.findByRole('tab', { name: 'Brands' })).toBeInTheDocument()
+    expect(
+      await screen.findByRole('tab', { name: 'Brands' })
+    ).toBeInTheDocument()
   })
 
   it('is read only for viewers', async () => {
     mocks.role = 'VIEWER'
     renderPage()
-    const dev = await screen.findByRole('switch', { name: 'Development enabled' })
+    const dev = await screen.findByRole('switch', {
+      name: 'Development enabled',
+    })
     expect(dev).toBeDisabled()
     expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull()
@@ -282,8 +296,12 @@ describe('Flag detail page', () => {
   it('members edit but only admins delete the flag', async () => {
     mocks.role = 'MEMBER'
     renderPage()
-    expect(await screen.findByRole('button', { name: 'Edit' })).toBeInTheDocument()
-    expect(screen.getByRole('switch', { name: 'Development enabled' })).toBeEnabled()
+    expect(
+      await screen.findByRole('button', { name: 'Edit' })
+    ).toBeInTheDocument()
+    expect(
+      screen.getByRole('switch', { name: 'Development enabled' })
+    ).toBeEnabled()
     expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull()
   })
 
@@ -759,29 +777,38 @@ describe('Flag detail page', () => {
       const base = mocks.get.getMockImplementation()
       mocks.get.mockImplementation((url: string, config?: unknown) => {
         if (url === `/feature-flags/${FLAG2}`)
-          return Promise.resolve({ data: { featureFlag: flag({ id: FLAG2, name: 'Second', flagType: 'STRING' }) } })
+          return Promise.resolve({
+            data: {
+              featureFlag: flag({
+                id: FLAG2,
+                name: 'Second',
+                flagType: 'STRING',
+              }),
+            },
+          })
         if (url === `/feature-flags/${FLAG2}/environments`)
           return Promise.resolve({ data: { environments: envs() } })
-        if (url === `/projects/${PROJECT}/flags-with-brands` && ++brandCalls > 1)
+        if (
+          url === `/projects/${PROJECT}/flags-with-brands` &&
+          ++brandCalls > 1
+        )
           return new Promise((resolve) => {
             resolveSecond = resolve
           })
         return base?.(url, config)
       })
-      function Next() {
-        const navigate = useNavigate()
-        return (
-          <button type="button" onClick={() => navigate(`/projects/${PROJECT}/flags/${FLAG2}`)}>
-            next flag
-          </button>
-        )
-      }
       const user = userEvent.setup()
       render(
         <MemoryRouter initialEntries={[`/projects/${PROJECT}/flags/${FLAG}`]}>
-          <Next />
+          <NavigateButton
+            to={`/projects/${PROJECT}/flags/${FLAG2}`}
+            label="next flag"
+          />
           <Routes>
-            <Route path="/projects/:projectId/flags/:flagId" element={<FlagDetailPage />} />
+            <Route
+              path="/projects/:projectId/flags/:flagId"
+              element={<FlagDetailPage />}
+            />
           </Routes>
         </MemoryRouter>
       )

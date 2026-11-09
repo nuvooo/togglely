@@ -12,7 +12,8 @@ export function latestFlagUpdate(
 ): Date | undefined {
   let latest = flag.updatedAt ?? undefined
   for (const fe of flag.flagEnvironments ?? []) {
-    if (fe.updatedAt && (!latest || fe.updatedAt > latest)) latest = fe.updatedAt
+    if (fe.updatedAt && (!latest || fe.updatedAt > latest))
+      latest = fe.updatedAt
   }
   return latest
 }

@@ -232,10 +232,18 @@ export default function FlagDetailPage() {
   }
   const copyKey = () =>
     flag &&
-    copy(flag.key, t('flag-detail.key-copied'), t('flag-detail.key-copy-failed'))
+    copy(
+      flag.key,
+      t('flag-detail.key-copied'),
+      t('flag-detail.key-copy-failed')
+    )
   const copyId = () =>
     flag &&
-    copy(flag.id, t('flag-detail.meta.id-copied'), t('flag-detail.meta.id-copy-failed'))
+    copy(
+      flag.id,
+      t('flag-detail.meta.id-copied'),
+      t('flag-detail.meta.id-copy-failed')
+    )
 
   const saveDetails = async (values: { name: string; description: string }) => {
     if (!flag) return

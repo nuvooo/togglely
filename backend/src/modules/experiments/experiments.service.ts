@@ -62,24 +62,25 @@ export class ExperimentsService {
     // is a conflict, not a server error.
     const experiment = await this.prisma.experiment
       .create({
-      data: {
-        name: dto.name,
-        key: dto.key.trim().toLowerCase(),
-        description: dto.description,
-        hypothesis: dto.hypothesis,
-        flag: { connect: { id: dto.flagId } },
-        environment: { connect: { id: dto.environmentId } },
-        trafficPercent: dto.trafficPercent ?? 100,
-        createdBy: { connect: { id: userId } },
-        project: { connect: { id: flag.projectId } },
-        organization: { connect: { id: flag.organizationId } },
-      },
-      include: { variants: true },
-    })
+        data: {
+          name: dto.name,
+          key: dto.key.trim().toLowerCase(),
+          description: dto.description,
+          hypothesis: dto.hypothesis,
+          flag: { connect: { id: dto.flagId } },
+          environment: { connect: { id: dto.environmentId } },
+          trafficPercent: dto.trafficPercent ?? 100,
+          createdBy: { connect: { id: userId } },
+          project: { connect: { id: flag.projectId } },
+          organization: { connect: { id: flag.organizationId } },
+        },
+        include: { variants: true },
+      })
       .catch((error: unknown) => {
         if (isPrismaUniqueConstraintError(error)) {
           throw new ConflictException({
-            message: 'An experiment with this key already exists in this project',
+            message:
+              'An experiment with this key already exists in this project',
             error: 'Conflict',
             code: 'EXPERIMENT_KEY_TAKEN',
           })

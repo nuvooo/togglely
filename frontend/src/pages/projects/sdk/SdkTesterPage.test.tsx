@@ -95,6 +95,16 @@ async function run(user: ReturnType<typeof userEvent.setup>) {
   await user.click(screen.getByRole('button', { name: 'Run test' }))
 }
 
+/** Navigates to `to` on click (switches project/flag while the page stays mounted). */
+function NavigateButton({ to, label }: { to: string; label: string }) {
+  const navigate = useNavigate()
+  return (
+    <button type="button" onClick={() => navigate(to)}>
+      {label}
+    </button>
+  )
+}
+
 describe('SdkTesterPage', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
@@ -209,7 +219,9 @@ describe('SdkTesterPage', () => {
 
     await act(() => i18n.changeLanguage('de'))
 
-    expect(screen.getByRole('table', { name: 'Ergebnisse' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('table', { name: 'Ergebnisse' })
+    ).toBeInTheDocument()
     expect(api.get).toHaveBeenCalledTimes(2) // project + brands, no reload
   })
 
@@ -234,20 +246,13 @@ describe('SdkTesterPage', () => {
         return new Promise((resolve) => {
           resolveFirst = resolve
         })
-      if (url === '/projects/p2') return Promise.resolve(project('p2', 'second'))
+      if (url === '/projects/p2')
+        return Promise.resolve(project('p2', 'second'))
       return Promise.reject(new Error(`unexpected GET ${url}`))
     })
-    function Switcher() {
-      const navigate = useNavigate()
-      return (
-        <button type="button" onClick={() => navigate('/projects/p2/sdk')}>
-          switch
-        </button>
-      )
-    }
     render(
       <MemoryRouter initialEntries={[`/projects/${PROJECT_ID}/sdk`]}>
-        <Switcher />
+        <NavigateButton to={'/projects/p2/sdk'} label="switch" />
         <Routes>
           <Route path="/projects/:projectId/sdk" element={<SdkTesterPage />} />
         </Routes>

@@ -365,4 +365,3 @@ export function useProjectFlags(projectId: string | null) {
     deleteFlag,
   }
 }
-

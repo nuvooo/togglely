@@ -92,6 +92,16 @@ const renderPage = () =>
     </MemoryRouter>
   )
 
+/** Navigates to `to` on click (switches project/flag while the page stays mounted). */
+function NavigateButton({ to, label }: { to: string; label: string }) {
+  const navigate = useNavigate()
+  return (
+    <button type="button" onClick={() => navigate(to)}>
+      {label}
+    </button>
+  )
+}
+
 describe('BrandsPage', () => {
   beforeEach(async () => {
     vi.clearAllMocks()
@@ -246,11 +256,20 @@ describe('BrandsPage', () => {
     let resolveFirst: (value: unknown) => void = () => {}
     const project = (id: string) => ({
       data: {
-        project: { id, name: id, key: id, description: null, type: 'MULTI', allowedOrigins: [], organizationId: ORG_ID },
+        project: {
+          id,
+          name: id,
+          key: id,
+          description: null,
+          type: 'MULTI',
+          allowedOrigins: [],
+          organizationId: ORG_ID,
+        },
       },
     })
     api.get.mockImplementation((url: string) => {
-      if (url === `/projects/${PROJECT_ID}`) return Promise.resolve(project(PROJECT_ID))
+      if (url === `/projects/${PROJECT_ID}`)
+        return Promise.resolve(project(PROJECT_ID))
       if (url === '/projects/p2') return Promise.resolve(project('p2'))
       if (url === `/brands/project/${PROJECT_ID}`)
         return new Promise((resolve) => {
@@ -258,17 +277,9 @@ describe('BrandsPage', () => {
         })
       return Promise.resolve({ data: { brands: [BETA] } })
     })
-    function Switcher() {
-      const navigate = useNavigate()
-      return (
-        <button type="button" onClick={() => navigate('/projects/p2/brands')}>
-          switch
-        </button>
-      )
-    }
     render(
       <MemoryRouter initialEntries={[`/projects/${PROJECT_ID}/brands`]}>
-        <Switcher />
+        <NavigateButton to={'/projects/p2/brands'} label="switch" />
         <Routes>
           <Route path="/projects/:projectId/brands" element={<BrandsPage />} />
         </Routes>
