@@ -6,20 +6,27 @@ import { resetSetupStatus } from '@/lib/setup'
 import { useAuthStore } from '@/store/authStore'
 
 const mocks = vi.hoisted(() => ({
-  info: { organizationName: 'Acme', role: 'MEMBER', email: null as string | null, existingUser: false },
+  info: {
+    organizationName: 'Acme',
+    role: 'MEMBER',
+    email: null as string | null,
+    existingUser: false,
+  },
   infoError: null as unknown,
   mailEnabled: false,
   get: vi.fn(),
   post: vi.fn(),
   refreshWorkspace: vi.fn(() => Promise.resolve()),
 }))
-vi.mock('@/lib/axios', () => ({ default: { get: mocks.get, post: mocks.post } }))
+vi.mock('@/lib/axios', () => ({
+  default: { get: mocks.get, post: mocks.post },
+}))
 vi.mock('@/lib/workspace', () => ({
   refreshWorkspace: mocks.refreshWorkspace,
   resetWorkspaceCache: vi.fn(),
 }))
 
-import InviteAccept from './InviteAccept'
+import InviteAccept from './InviteAcceptPage'
 
 function Where() {
   const { pathname, search } = useLocation()
@@ -52,7 +59,12 @@ describe('InviteAccept', () => {
     resetSetupStatus()
     useAuthStore.setState({ token: null, user: null })
     localStorage.clear()
-    mocks.info = { organizationName: 'Acme', role: 'MEMBER', email: null, existingUser: false }
+    mocks.info = {
+      organizationName: 'Acme',
+      role: 'MEMBER',
+      email: null,
+      existingUser: false,
+    }
     mocks.infoError = null
     mocks.mailEnabled = false
     mocks.post.mockReset()
@@ -60,17 +72,27 @@ describe('InviteAccept', () => {
     mocks.get.mockReset()
     mocks.get.mockImplementation((url: string) => {
       if (url === '/auth/invite/tok123') {
-        return mocks.infoError ? Promise.reject(mocks.infoError) : Promise.resolve({ data: mocks.info })
+        return mocks.infoError
+          ? Promise.reject(mocks.infoError)
+          : Promise.resolve({ data: mocks.info })
       }
-      if (url === '/setup/status') return Promise.resolve({ data: { mailEnabled: mocks.mailEnabled } })
-      if (url === '/organizations') return Promise.resolve({ data: { organizations: [{ id: 'o1', name: 'Acme' }] } })
+      if (url === '/setup/status')
+        return Promise.resolve({ data: { mailEnabled: mocks.mailEnabled } })
+      if (url === '/organizations')
+        return Promise.resolve({
+          data: { organizations: [{ id: 'o1', name: 'Acme' }] },
+        })
       return Promise.reject(new Error(`unexpected ${url}`))
     })
   })
 
   it('registers via an open link with a chosen email and opens the organization', async () => {
     mocks.post.mockResolvedValueOnce({
-      data: { token: 'jwt', user: { id: 'u2', email: 'bob@example.com', name: 'Bob Builder' }, organizationId: 'o7' },
+      data: {
+        token: 'jwt',
+        user: { id: 'u2', email: 'bob@example.com', name: 'Bob Builder' },
+        organizationId: 'o7',
+      },
     })
     renderPage()
     expect(await screen.findByText('Join Acme')).toBeInTheDocument()
@@ -78,10 +100,14 @@ describe('InviteAccept', () => {
 
     fill(/email address/i, 'bob@example.com')
     fillAccount()
-    fireEvent.click(screen.getByRole('button', { name: /create account and join/i }))
+    fireEvent.click(
+      screen.getByRole('button', { name: /create account and join/i })
+    )
 
     // The register response names the joined organization: no guessing via /organizations
-    expect(await screen.findByTestId('where')).toHaveTextContent('/orgs/o7/projects')
+    expect(await screen.findByTestId('where')).toHaveTextContent(
+      '/orgs/o7/projects'
+    )
     expect(mocks.get).not.toHaveBeenCalledWith('/organizations')
     expect(mocks.post).toHaveBeenCalledWith('/auth/invite/tok123/register', {
       firstName: 'Bob',
@@ -95,14 +121,21 @@ describe('InviteAccept', () => {
 
   it('uses the bound email of the invite and does not send one', async () => {
     mocks.info = { ...mocks.info, email: 'carol@example.com' }
-    mocks.post.mockResolvedValueOnce({ data: { token: 'jwt', user: { id: 'u3', email: 'carol@example.com', name: 'C' } } })
+    mocks.post.mockResolvedValueOnce({
+      data: {
+        token: 'jwt',
+        user: { id: 'u3', email: 'carol@example.com', name: 'C' },
+      },
+    })
     renderPage()
     const email = await screen.findByLabelText(/email address/i)
     expect(email).toHaveValue('carol@example.com')
     expect(email).toHaveAttribute('readonly')
 
     fillAccount()
-    fireEvent.click(screen.getByRole('button', { name: /create account and join/i }))
+    fireEvent.click(
+      screen.getByRole('button', { name: /create account and join/i })
+    )
     await waitFor(() => expect(mocks.post).toHaveBeenCalled())
     expect(mocks.post.mock.calls[0][1]).not.toHaveProperty('email')
   })
@@ -113,7 +146,9 @@ describe('InviteAccept', () => {
     fill(/email address/i, 'bob@example.com')
     fillAccount()
     fill(/^password$/i, 'short')
-    fireEvent.click(screen.getByRole('button', { name: /create account and join/i }))
+    fireEvent.click(
+      screen.getByRole('button', { name: /create account and join/i })
+    )
     expect(await screen.findByRole('alert')).toHaveTextContent(/at least 8/i)
     expect(mocks.post).not.toHaveBeenCalled()
   })
@@ -121,43 +156,72 @@ describe('InviteAccept', () => {
   it('sends invitees with an existing account to the login with a return path', async () => {
     mocks.info = { ...mocks.info, email: 'dan@example.com', existingUser: true }
     renderPage()
-    fireEvent.click(await screen.findByRole('button', { name: /sign in to join/i }))
-    expect(await screen.findByTestId('where')).toHaveTextContent('/login?next=%2Finvite%2Ftok123')
+    fireEvent.click(
+      await screen.findByRole('button', { name: /sign in to join/i })
+    )
+    expect(await screen.findByTestId('where')).toHaveTextContent(
+      '/login?next=%2Finvite%2Ftok123'
+    )
   })
 
   it('offers the login link on the registration form', async () => {
     renderPage()
-    const link = await screen.findByRole('link', { name: /already have an account/i })
+    const link = await screen.findByRole('link', {
+      name: /already have an account/i,
+    })
     expect(link).toHaveAttribute('href', '/login?next=%2Finvite%2Ftok123')
   })
 
   it('lets a logged-in user join directly', async () => {
-    useAuthStore.setState({ token: 'jwt', user: { id: 'u1', email: 'eve@example.com', name: 'Eve' } })
-    mocks.post.mockResolvedValueOnce({ data: { success: true, organizationId: 'o9' } })
+    useAuthStore.setState({
+      token: 'jwt',
+      user: { id: 'u1', email: 'eve@example.com', name: 'Eve' },
+    })
+    mocks.post.mockResolvedValueOnce({
+      data: { success: true, organizationId: 'o9' },
+    })
     renderPage()
-    expect(await screen.findByText(/signed in as eve@example.com/i)).toBeInTheDocument()
+    expect(
+      await screen.findByText(/signed in as eve@example.com/i)
+    ).toBeInTheDocument()
     expect(screen.queryByLabelText(/first name/i)).toBeNull()
 
     fireEvent.click(screen.getByRole('button', { name: /^join$/i }))
-    expect(await screen.findByTestId('where')).toHaveTextContent('/orgs/o9/projects')
+    expect(await screen.findByTestId('where')).toHaveTextContent(
+      '/orgs/o9/projects'
+    )
     expect(mocks.post).toHaveBeenCalledWith('/auth/invite/tok123/accept')
     expect(mocks.refreshWorkspace).toHaveBeenCalled()
   })
 
   it('blocks joining a bound invite with a different account', async () => {
-    useAuthStore.setState({ token: 'jwt', user: { id: 'u1', email: 'eve@example.com', name: 'Eve' } })
-    mocks.info = { ...mocks.info, email: 'frank@example.com', existingUser: true }
+    useAuthStore.setState({
+      token: 'jwt',
+      user: { id: 'u1', email: 'eve@example.com', name: 'Eve' },
+    })
+    mocks.info = {
+      ...mocks.info,
+      email: 'frank@example.com',
+      existingUser: true,
+    }
     renderPage()
-    expect(await screen.findByText(/this invite is for frank@example.com/i)).toBeInTheDocument()
+    expect(
+      await screen.findByText(/this invite is for frank@example.com/i)
+    ).toBeInTheDocument()
     expect(screen.getByRole('button', { name: /^join$/i })).toBeDisabled()
-    expect(screen.getByRole('button', { name: /different account/i })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: /different account/i })
+    ).toBeInTheDocument()
   })
 
   it.each([
     [404, /invalid or has expired/i],
     [409, /already been used/i],
   ])('explains a %s invite error', async (status, message) => {
-    mocks.infoError = { isAxiosError: true, response: { status, data: { message: 'x' } } }
+    mocks.infoError = {
+      isAxiosError: true,
+      response: { status, data: { message: 'x' } },
+    }
     renderPage()
     expect(await screen.findByText(message)).toBeInTheDocument()
   })

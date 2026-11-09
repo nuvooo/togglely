@@ -6,7 +6,11 @@ import { resetSetupStatus } from '@/lib/setup'
 import { useAuthStore } from '@/store/authStore'
 
 const mocks = vi.hoisted(() => ({
-  status: { setupRequired: true, mailEnabled: false, setupTokenRequired: false },
+  status: {
+    setupRequired: true,
+    mailEnabled: false,
+    setupTokenRequired: false,
+  },
   post: vi.fn(),
   refreshWorkspace: vi.fn(() => Promise.resolve()),
   toastInfo: vi.fn(),
@@ -20,7 +24,7 @@ vi.mock('@/lib/axios', () => ({
 vi.mock('@/lib/workspace', () => ({ refreshWorkspace: mocks.refreshWorkspace }))
 vi.mock('sonner', () => ({ toast: { info: mocks.toastInfo } }))
 
-import Setup from './Setup'
+import Setup from './SetupPage'
 
 const renderPage = () =>
   render(
@@ -48,7 +52,11 @@ describe('Setup page', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en')
     resetSetupStatus()
-    mocks.status = { setupRequired: true, mailEnabled: false, setupTokenRequired: false }
+    mocks.status = {
+      setupRequired: true,
+      mailEnabled: false,
+      setupTokenRequired: false,
+    }
     mocks.post.mockReset()
     mocks.refreshWorkspace.mockClear()
     mocks.toastInfo.mockClear()
@@ -83,7 +91,10 @@ describe('Setup page', () => {
   it('creates the instance, logs in and opens the project picker', async () => {
     mocks.status.setupTokenRequired = true
     mocks.post.mockResolvedValueOnce({
-      data: { token: 'jwt', user: { id: 'u1', email: 'ada@example.com', name: 'Ada Lovelace' } },
+      data: {
+        token: 'jwt',
+        user: { id: 'u1', email: 'ada@example.com', name: 'Ada Lovelace' },
+      },
     })
     renderPage()
     await screen.findByLabelText(/setup token/i)
@@ -104,24 +115,34 @@ describe('Setup page', () => {
   })
 
   it('tells the user the instance is already set up before sending them to the login', async () => {
-    mocks.post.mockRejectedValueOnce({ isAxiosError: true, response: { status: 409, data: { message: 'x' } } })
+    mocks.post.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: { status: 409, data: { message: 'x' } },
+    })
     renderPage()
     await screen.findByLabelText(/^name$/i)
     await fillForm()
     fireEvent.click(screen.getByRole('button', { name: /set up/i }))
 
     expect(await screen.findByText('login page')).toBeInTheDocument()
-    expect(mocks.toastInfo).toHaveBeenCalledWith(i18n.t('setup.error-already-done'))
+    expect(mocks.toastInfo).toHaveBeenCalledWith(
+      i18n.t('setup.error-already-done')
+    )
     expect(useAuthStore.getState().token).toBeNull()
   })
 
   it('shows a clear error for a wrong setup token', async () => {
-    mocks.post.mockRejectedValueOnce({ isAxiosError: true, response: { status: 403, data: { message: 'x' } } })
+    mocks.post.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: { status: 403, data: { message: 'x' } },
+    })
     renderPage()
     await screen.findByLabelText(/^name$/i)
     await fillForm()
     fireEvent.click(screen.getByRole('button', { name: /set up/i }))
-    await waitFor(() => expect(screen.getByRole('alert')).toHaveTextContent(/setup token/i))
+    await waitFor(() =>
+      expect(screen.getByRole('alert')).toHaveTextContent(/setup token/i)
+    )
     expect(useAuthStore.getState().token).toBeNull()
   })
 })

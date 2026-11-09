@@ -22,10 +22,11 @@ import { fetchSetupStatus } from './lib/setup'
 
 const ApiKeys = lazy(() => import('./pages/ApiKeys'))
 const AuditLogs = lazy(() => import('./pages/AuditLogs'))
-const Dashboard = lazy(() => import('./pages/Dashboard'))
-const ForgotPassword = lazy(() => import('./pages/ForgotPassword'))
-const InviteAccept = lazy(() => import('./pages/InviteAccept'))
-const Login = lazy(() => import('./pages/Login'))
+const AccountPage = lazy(() => import('./pages/account/AccountPage'))
+const ForgotPassword = lazy(() => import('./pages/auth/ForgotPasswordPage'))
+const InviteAccept = lazy(() => import('./pages/auth/InviteAcceptPage'))
+const Login = lazy(() => import('./pages/auth/LoginPage'))
+const OverviewPage = lazy(() => import('./pages/overview/OverviewPage'))
 const CreateOrganization = lazy(() => import('./pages/organizations/CreateOrganization'))
 const OrganizationDetail = lazy(() => import('./pages/organizations/OrganizationDetail'))
 const OrganizationList = lazy(() => import('./pages/organizations/OrganizationList'))
@@ -41,14 +42,13 @@ const SdkTesterPage = lazy(() => import('./pages/projects/sdk/SdkTesterPage'))
 const ProjectSettingsPage = lazy(() => import('./pages/projects/settings/ProjectSettingsPage'))
 const Webhooks = lazy(() => import('./pages/projects/Webhooks'))
 const WebhookDetail = lazy(() => import('./pages/projects/WebhookDetail'))
-const ResendVerification = lazy(() => import('./pages/ResendVerification'))
-const ResetPassword = lazy(() => import('./pages/ResetPassword'))
+const ResendVerification = lazy(() => import('./pages/auth/ResendVerificationPage'))
+const ResetPassword = lazy(() => import('./pages/auth/ResetPasswordPage'))
 const ExperimentsList = lazy(() => import('./pages/experiments/ExperimentsList'))
 const CreateExperiment = lazy(() => import('./pages/experiments/CreateExperiment'))
 const ExperimentDetail = lazy(() => import('./pages/experiments/ExperimentDetail'))
-const Settings = lazy(() => import('./pages/Settings'))
-const Setup = lazy(() => import('./pages/Setup'))
-const VerifyEmail = lazy(() => import('./pages/VerifyEmail'))
+const Setup = lazy(() => import('./pages/auth/SetupPage'))
+const VerifyEmail = lazy(() => import('./pages/auth/VerifyEmailPage'))
 
 // Start loading the setup status in parallel with the first route chunk.
 fetchSetupStatus()
@@ -116,7 +116,7 @@ function App() {
         }
       >
         <Route index element={<Navigate to={ROUTES.overview} replace />} />
-        <Route path="overview" element={<Dashboard />} />
+        <Route path="overview" element={<OverviewPage />} />
         <Route path="projects" element={<ProjectPicker />} />
 
         {/* Project area */}
@@ -148,7 +148,7 @@ function App() {
           <Route path="settings" element={<OrganizationSettings />} />
         </Route>
 
-        <Route path="account" element={<Settings />} />
+        <Route path="account" element={<AccountPage />} />
 
         {/* Legacy URLs (bookmarks, emails) */}
         <Route path="dashboard" element={<Navigate to={ROUTES.overview} replace />} />

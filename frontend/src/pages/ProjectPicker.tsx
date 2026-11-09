@@ -2,17 +2,28 @@ import { ChevronRight, FolderKanban } from 'lucide-react'
 import { useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
+import { EmptyState } from '@/components/feedback/EmptyState'
+import { PageHeader } from '@/components/page/PageHeader'
 import { WorkspaceError } from '@/components/shell/WorkspaceError'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { projectPath, ROUTES } from '@/lib/routes'
 import { useWorkspace, type WorkspaceProject } from '@/lib/workspace'
 
-function ProjectGroup({ label, projects }: { label: string; projects: WorkspaceProject[] }) {
+function ProjectGroup({
+  label,
+  projects,
+}: {
+  label: string
+  projects: WorkspaceProject[]
+}) {
   const headingId = useId()
   return (
     <section aria-labelledby={headingId}>
-      <h2 id={headingId} className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground">
+      <h2
+        id={headingId}
+        className="mb-2 text-xs font-medium uppercase tracking-wider text-muted-foreground"
+      >
         {label}
       </h2>
       <ul className="divide-y overflow-hidden rounded-lg border bg-card">
@@ -25,8 +36,12 @@ function ProjectGroup({ label, projects }: { label: string; projects: WorkspaceP
               <span className="grid h-7 w-7 shrink-0 place-items-center rounded-md bg-secondary text-[10px] font-semibold text-secondary-foreground">
                 {p.name.slice(0, 2).toUpperCase()}
               </span>
-              <span className="min-w-0 flex-1 truncate font-medium">{p.name}</span>
-              <span className="hidden font-mono text-xs text-muted-foreground sm:inline">{p.key}</span>
+              <span className="min-w-0 flex-1 truncate font-medium">
+                {p.name}
+              </span>
+              <span className="hidden font-mono text-xs text-muted-foreground sm:inline">
+                {p.key}
+              </span>
               <ChevronRight className="h-4 w-4 text-muted-foreground" />
             </Link>
           </li>
@@ -43,15 +58,25 @@ export default function ProjectPicker() {
 
   const knownOrgIds = new Set(organizations.map((o) => o.id))
   const groups = organizations
-    .map((org) => ({ id: org.id, label: org.name, projects: projects.filter((p) => p.organizationId === org.id) }))
+    .map((org) => ({
+      id: org.id,
+      label: org.name,
+      projects: projects.filter((p) => p.organizationId === org.id),
+    }))
     .filter((g) => g.projects.length > 0)
   const orphans = projects.filter((p) => !knownOrgIds.has(p.organizationId))
-  if (orphans.length > 0) groups.push({ id: '__other', label: t('nav.other'), projects: orphans })
+  if (orphans.length > 0)
+    groups.push({ id: '__other', label: t('nav.other'), projects: orphans })
 
   let body: React.ReactNode
   if (isLoading) {
     body = (
-      <div className="space-y-2" aria-busy="true" aria-label={t('common.loading')}>
+      <div
+        role="status"
+        className="space-y-2"
+        aria-busy="true"
+        aria-label={t('common.loading')}
+      >
         <Skeleton className="h-4 w-32" />
         <Skeleton className="h-12 w-full" />
         <Skeleton className="h-12 w-full" />
@@ -62,14 +87,16 @@ export default function ProjectPicker() {
     body = <WorkspaceError className="rounded-lg border" />
   } else if (projects.length === 0) {
     body = (
-      <div className="flex flex-col items-center rounded-lg border border-dashed px-6 py-12 text-center">
-        <FolderKanban className="mb-3 h-8 w-8 text-muted-foreground" />
-        <p className="font-medium">{t('project-picker.empty')}</p>
-        <p className="mt-1 max-w-sm text-sm text-muted-foreground">{t('project-picker.empty-hint')}</p>
-        <Button asChild className="mt-5">
-          <Link to={ROUTES.orgs}>{t('project-picker.go-to-orgs')}</Link>
-        </Button>
-      </div>
+      <EmptyState
+        icon={<FolderKanban className="h-5 w-5" />}
+        title={t('project-picker.empty')}
+        description={t('project-picker.empty-hint')}
+        action={
+          <Button asChild>
+            <Link to={ROUTES.orgs}>{t('project-picker.go-to-orgs')}</Link>
+          </Button>
+        }
+      />
     )
   } else {
     body = (
@@ -83,10 +110,10 @@ export default function ProjectPicker() {
 
   return (
     <div className="mx-auto max-w-2xl space-y-6">
-      <div>
-        <h1 className="text-2xl font-semibold tracking-tight">{t('project-picker.title')}</h1>
-        <p className="mt-1 text-sm text-muted-foreground">{t('project-picker.description')}</p>
-      </div>
+      <PageHeader
+        title={t('project-picker.title')}
+        description={t('project-picker.description')}
+      />
       {body}
     </div>
   )

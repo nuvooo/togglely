@@ -6,7 +6,11 @@ import { resetSetupStatus } from '@/lib/setup'
 import { useAuthStore } from '@/store/authStore'
 
 const mocks = vi.hoisted(() => ({
-  status: { setupRequired: false, mailEnabled: false, setupTokenRequired: false },
+  status: {
+    setupRequired: false,
+    mailEnabled: false,
+    setupTokenRequired: false,
+  },
   post: vi.fn(),
 }))
 vi.mock('@/lib/axios', () => ({
@@ -16,7 +20,7 @@ vi.mock('@/lib/axios', () => ({
   },
 }))
 
-import Login from './Login'
+import Login from './LoginPage'
 
 function Where() {
   const { pathname } = useLocation()
@@ -34,8 +38,12 @@ const renderAt = (path: string) =>
   )
 
 async function signIn() {
-  fireEvent.change(screen.getByLabelText(/e-?mail/i), { target: { value: 'a@b.c' } })
-  fireEvent.change(screen.getByLabelText(/^password$/i), { target: { value: 'pw' } })
+  fireEvent.change(screen.getByLabelText(/e-?mail/i), {
+    target: { value: 'a@b.c' },
+  })
+  fireEvent.change(screen.getByLabelText(/^password$/i), {
+    target: { value: 'pw' },
+  })
   fireEvent.click(screen.getByRole('button', { name: /sign in/i }))
 }
 
@@ -43,9 +51,15 @@ describe('Login', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en')
     resetSetupStatus()
-    mocks.status = { setupRequired: false, mailEnabled: false, setupTokenRequired: false }
+    mocks.status = {
+      setupRequired: false,
+      mailEnabled: false,
+      setupTokenRequired: false,
+    }
     mocks.post.mockReset()
-    mocks.post.mockResolvedValue({ data: { token: 't', user: { id: 'u', email: 'a@b.c', name: 'A' } } })
+    mocks.post.mockResolvedValue({
+      data: { token: 't', user: { id: 'u', email: 'a@b.c', name: 'A' } },
+    })
     useAuthStore.setState({ token: null, user: null })
   })
 
@@ -69,6 +83,41 @@ describe('Login', () => {
 
   it('always offers "forgot password", also without a mail server', () => {
     renderAt('/login')
-    expect(screen.getByRole('link', { name: /forgot/i })).toHaveAttribute('href', '/forgot-password')
+    expect(screen.getByRole('link', { name: /forgot/i })).toHaveAttribute(
+      'href',
+      '/forgot-password'
+    )
+  })
+
+  it('has no dead links', () => {
+    const { container } = renderAt('/login')
+    expect(container.querySelector('a[href="#"]')).toBeNull()
+  })
+
+  it('shows the demo credentials only with ?demo=true', () => {
+    const { unmount } = renderAt('/login')
+    expect(screen.queryByText('demo@togglely.io')).toBeNull()
+    expect(screen.getByLabelText(/e-?mail/i)).toHaveValue('')
+    unmount()
+
+    renderAt('/login?demo=true')
+    expect(screen.getByText('demo@togglely.io')).toBeInTheDocument()
+    expect(screen.getByLabelText(/e-?mail/i)).toHaveValue('demo@togglely.io')
+  })
+
+  it('shows wrong credentials as an inline alert and stays on the page', async () => {
+    mocks.post.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: { status: 401, data: { message: 'x' } },
+    })
+    renderAt('/login')
+    await signIn()
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      /invalid credentials/i
+    )
+    expect(screen.queryByTestId('where')).toBeNull()
+    expect(
+      screen.getByRole('heading', { level: 1, name: /welcome back/i })
+    ).toBeInTheDocument()
   })
 })
