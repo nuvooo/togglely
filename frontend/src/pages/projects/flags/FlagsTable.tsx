@@ -9,7 +9,6 @@ import { Switch } from '@/components/ui/switch'
 import { flagPath } from '@/lib/routes'
 import { cn } from '@/lib/utils'
 import { BrandMatrix, type BrandMatrixActions } from './BrandMatrix'
-import { ExpandableTable } from './ExpandableTable'
 import { formatRelative } from './flagsFilter'
 import type { EditingValue, FeatureFlag, ProjectEnvironment } from './types'
 import { defaultRowKey } from './useProjectFlags'
@@ -196,36 +195,25 @@ export function FlagsTable({
   const open = (flag: FeatureFlag) => navigate(flagPath(projectId, flag.id))
   const label = t('flags-page.table-label')
 
-  if (multi) {
-    return (
-      <ExpandableTable
-        columns={columns}
-        rows={flags}
-        getRowId={(flag) => flag.id}
-        expanded={expanded}
-        detailId={detailId}
-        renderExpanded={(flag) => (
-          <BrandMatrix
-            flag={flag}
-            environments={environments}
-            onEdit={onEdit}
-            {...actions}
-          />
-        )}
-        onRowClick={open}
-        loading={loading}
-        loadingRows={4}
-        empty={empty}
-        label={label}
-      />
-    )
-  }
-
   return (
     <DataTable
       columns={columns}
       rows={flags}
       getRowId={(flag) => flag.id}
+      renderExpanded={
+        multi
+          ? (flag) => (
+              <BrandMatrix
+                flag={flag}
+                environments={environments}
+                onEdit={onEdit}
+                {...actions}
+              />
+            )
+          : undefined
+      }
+      isExpanded={(flag) => expanded.has(flag.id)}
+      getExpandedId={(flag) => detailId(flag.id)}
       onRowClick={open}
       loading={loading}
       loadingRows={4}

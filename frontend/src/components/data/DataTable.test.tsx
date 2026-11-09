@@ -146,4 +146,57 @@ describe('DataTable', () => {
     expect(cell).toHaveAttribute('colspan', '3')
     expect(screen.queryByRole('status')).toBeNull()
   })
+
+  it('renders a full-width expanded row under expanded rows only', () => {
+    render(
+      <DataTable
+        columns={columns}
+        rows={ITEMS}
+        getRowId={(r) => r.id}
+        isExpanded={(row) => row.id === 'b'}
+        renderExpanded={(row) => <p>Details {row.name}</p>}
+        getExpandedId={(row) => `detail-${row.id}`}
+      />
+    )
+    expect(screen.queryByText('Details Dark mode')).toBeNull()
+    const cell = screen.getByText('Details Banner text').closest('td')
+    expect(cell).toHaveAttribute('colspan', '3')
+    expect(cell).toHaveAttribute('id', 'detail-b')
+    const rows = screen.getAllByRole('row')
+    // header, a, b, b's detail row
+    expect(rows).toHaveLength(4)
+    expect(rows[3]).toContainElement(cell)
+  })
+
+  it('skips the expanded row when renderExpanded returns null', () => {
+    render(
+      <DataTable
+        columns={columns}
+        rows={ITEMS}
+        getRowId={(r) => r.id}
+        renderExpanded={(row) => (row.id === 'a' ? <p>Only a</p> : null)}
+      />
+    )
+    expect(screen.getAllByRole('row')).toHaveLength(4)
+    expect(screen.getByText('Only a').closest('td')).toHaveAttribute(
+      'id',
+      'a-expanded'
+    )
+  })
+
+  it('does not trigger onRowClick from clicks inside the expanded row', async () => {
+    const onRowClick = vi.fn()
+    render(
+      <DataTable
+        columns={columns}
+        rows={ITEMS}
+        getRowId={(r) => r.id}
+        onRowClick={onRowClick}
+        isExpanded={(row) => row.id === 'a'}
+        renderExpanded={() => <p>Matrix</p>}
+      />
+    )
+    await userEvent.click(screen.getByText('Matrix'))
+    expect(onRowClick).not.toHaveBeenCalled()
+  })
 })

@@ -1,4 +1,9 @@
-import type { KeyboardEvent, MouseEvent, ReactNode } from 'react'
+import {
+  Fragment,
+  type KeyboardEvent,
+  type MouseEvent,
+  type ReactNode,
+} from 'react'
 import { useTranslation } from 'react-i18next'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
@@ -39,6 +44,18 @@ export interface DataTableProps<T> {
   /** Accessible name of the table. */
   label?: string
   className?: string
+  /**
+   * Content of a full-width row rendered below the row (e.g. details).
+   * Returning `null` renders no extra row.
+   */
+  renderExpanded?: (row: T) => ReactNode | null
+  /** Whether the expanded row is shown (default: always, when `renderExpanded` is set). */
+  isExpanded?: (row: T) => boolean
+  /**
+   * DOM id of the expanded row's cell, for `aria-controls` on a toggle button.
+   * Default: `${getRowId(row)}-expanded`.
+   */
+  getExpandedId?: (row: T) => string
 }
 
 const HIDE_BELOW: Record<
@@ -69,7 +86,8 @@ function columnClass<T>(column: DataTableColumn<T>) {
 }
 
 /**
- * Dense app table: small uppercase header, 44 px rows, row hover, optional row click.
+ * Dense app table: small uppercase header, 44 px rows, row hover, optional row click
+ * and optional expandable rows (`renderExpanded` / `isExpanded`).
  * Scrolls horizontally on narrow screens; use `hideBelow` for secondary columns.
  */
 export function DataTable<T>({
@@ -84,6 +102,9 @@ export function DataTable<T>({
   stickyHeader = false,
   label,
   className,
+  renderExpanded,
+  isExpanded,
+  getExpandedId,
 }: DataTableProps<T>) {
   const { t } = useTranslation()
 
@@ -126,30 +147,53 @@ export function DataTable<T>({
       </tr>
     ) : null
   } else {
-    body = rows.map((row) => (
-      <tr
-        key={getRowId(row)}
-        tabIndex={onRowClick ? 0 : undefined}
-        onClick={onRowClick ? handleClick(row) : undefined}
-        onKeyDown={onRowClick ? handleKeyDown(row) : undefined}
-        data-clickable={onRowClick ? '' : undefined}
-        className={cn(
-          'h-11 border-b transition-colors last:border-0 hover:bg-accent/50',
-          onRowClick &&
-            'cursor-pointer focus-visible:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
-          typeof rowClassName === 'function' ? rowClassName(row) : rowClassName
-        )}
-      >
-        {columns.map((column) => (
-          <td
-            key={column.key}
-            className={cn('px-3 py-2 align-middle', columnClass(column))}
+    body = rows.map((row) => {
+      const id = getRowId(row)
+      const expanded =
+        renderExpanded && (isExpanded?.(row) ?? true)
+          ? renderExpanded(row)
+          : null
+      const open = expanded !== null && expanded !== undefined
+      return (
+        <Fragment key={id}>
+          <tr
+            tabIndex={onRowClick ? 0 : undefined}
+            onClick={onRowClick ? handleClick(row) : undefined}
+            onKeyDown={onRowClick ? handleKeyDown(row) : undefined}
+            data-clickable={onRowClick ? '' : undefined}
+            className={cn(
+              'h-11 border-b transition-colors hover:bg-accent/50',
+              open ? 'bg-accent/30' : 'last:border-0',
+              onRowClick &&
+                'cursor-pointer focus-visible:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+              typeof rowClassName === 'function'
+                ? rowClassName(row)
+                : rowClassName
+            )}
           >
-            {column.cell(row)}
-          </td>
-        ))}
-      </tr>
-    ))
+            {columns.map((column) => (
+              <td
+                key={column.key}
+                className={cn('px-3 py-2 align-middle', columnClass(column))}
+              >
+                {column.cell(row)}
+              </td>
+            ))}
+          </tr>
+          {open && (
+            <tr className="border-b last:border-0">
+              <td
+                id={getExpandedId ? getExpandedId(row) : `${id}-expanded`}
+                colSpan={columns.length}
+                className="bg-muted/20 px-3 py-3"
+              >
+                {expanded}
+              </td>
+            </tr>
+          )}
+        </Fragment>
+      )
+    })
   }
 
   return (
