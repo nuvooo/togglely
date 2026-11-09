@@ -1,6 +1,7 @@
 import {
   SDK_CORS_ALLOWED_HEADERS,
   SDK_CORS_ALLOWED_METHODS,
+  SDK_CORS_EXPOSED_HEADERS,
   SDK_ERROR_CODES,
 } from './sdk.constants'
 
@@ -98,6 +99,7 @@ export function setSdkCorsHeaders(
   res.setHeader('Access-Control-Allow-Origin', origin || '*')
   res.setHeader('Access-Control-Allow-Methods', SDK_CORS_ALLOWED_METHODS)
   res.setHeader('Access-Control-Allow-Headers', SDK_CORS_ALLOWED_HEADERS)
+  res.setHeader('Access-Control-Expose-Headers', SDK_CORS_EXPOSED_HEADERS)
   res.setHeader('Access-Control-Allow-Credentials', 'true')
   res.setHeader('Vary', 'Origin')
 }

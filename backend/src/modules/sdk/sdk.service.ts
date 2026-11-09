@@ -191,12 +191,27 @@ export class SdkService {
       `[SDK Service] evaluateFlag: ${flagKey} for ${projectKey}/${environmentKey}`
     )
 
-    const { project, environment } = await this.resolveSdkAccess(
+    const access = await this.resolveSdkAccess(
       projectKey,
       environmentKey,
       apiKey,
       origin
     )
+
+    return this.evaluateFlagForAccess(access, flagKey, brandKey, context)
+  }
+
+  /**
+   * Evaluate one flag for an already authenticated SDK request (see
+   * resolveSdkAccess).
+   */
+  async evaluateFlagForAccess(
+    access: SdkAccess,
+    flagKey: string,
+    brandKey?: string,
+    context: ToggleContext = {}
+  ) {
+    const { project, environment } = access
 
     if (!isValidIdentifier(flagKey)) {
       return { value: false, enabled: false, flagType: 'BOOLEAN' }
@@ -315,6 +330,23 @@ export class SdkService {
     }
 
     return response
+  }
+
+  /**
+   * Evaluate all flags for an already authenticated SDK request (see
+   * resolveSdkAccess).
+   */
+  async getAllFlagsForAccess(
+    access: SdkAccess,
+    brandKey?: string,
+    context: ToggleContext = {}
+  ): Promise<Record<string, any>> {
+    return this.evaluateAllFlagsForAccess(
+      access.project,
+      access.environment,
+      brandKey,
+      context
+    )
   }
 
   private async evaluateAllFlagsForAccess(
