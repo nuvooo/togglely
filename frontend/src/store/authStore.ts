@@ -7,7 +7,14 @@ export interface User {
   id: string
   email: string
   name: string
-  role: string
+  role?: string
+  emailVerified?: boolean
+}
+
+/** `{ token, user }` as returned by login, setup and invite registration. */
+export interface SessionResponse {
+  token: string
+  user: User
 }
 
 interface AuthState {
@@ -16,12 +23,8 @@ interface AuthState {
   isLoading: boolean
   error: string | null
   login: (email: string, password: string) => Promise<void>
-  register: (
-    firstName: string,
-    lastName: string,
-    email: string,
-    password: string
-  ) => Promise<void>
+  /** Stores a session returned by the API (login, setup, invite registration). */
+  setSession: (session: SessionResponse) => void
   logout: () => void
   setToken: (token: string | null) => void
   setUser: (user: User | null) => void
@@ -31,7 +34,7 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       token: null,
       user: null,
       isLoading: false,
@@ -41,9 +44,8 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true, error: null })
         try {
           const response = await api.post('/auth/login', { email, password })
-          const { token, user } = response.data
-          set({ token, user, isLoading: false })
-          localStorage.setItem('token', token)
+          get().setSession(response.data)
+          set({ isLoading: false })
         } catch (error: unknown) {
           set({
             error: getErrorMessage(error),
@@ -53,30 +55,9 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      register: async (
-        firstName: string,
-        lastName: string,
-        email: string,
-        password: string
-      ) => {
-        set({ isLoading: true, error: null })
-        try {
-          const response = await api.post('/auth/register', {
-            firstName,
-            lastName,
-            email,
-            password,
-          })
-          const { token, user } = response.data
-          set({ token, user, isLoading: false })
-          localStorage.setItem('token', token)
-        } catch (error: unknown) {
-          set({
-            error: getErrorMessage(error),
-            isLoading: false,
-          })
-          throw error
-        }
+      setSession: ({ token, user }) => {
+        set({ token, user, error: null })
+        localStorage.setItem('token', token)
       },
 
       logout: () => {

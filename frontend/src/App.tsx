@@ -10,9 +10,16 @@ import {
   ParamRedirect,
 } from './components/routing/LegacyRedirects'
 import { ProjectQueryBridge } from './components/routing/ProjectQueryBridge'
+import {
+  FullPageSpinner,
+  GuestOnly,
+  RequireMail,
+  RequireSetupDone,
+  SetupRoute,
+} from './components/routing/SetupGate'
 import AppShell from './components/shell/AppShell'
 import { ROUTES } from './lib/routes'
-import { useAuthStore } from './store/authStore'
+import { fetchSetupStatus } from './lib/setup'
 
 const ApiKeys = lazy(() => import('./pages/ApiKeys'))
 const AuditLogs = lazy(() => import('./pages/AuditLogs'))
@@ -30,7 +37,6 @@ const ProjectDetail = lazy(() => import('./pages/ProjectDetail'))
 const ProjectPicker = lazy(() => import('./pages/ProjectPicker'))
 const BrandFlags = lazy(() => import('./pages/projects/BrandFlags'))
 const ProjectSettings = lazy(() => import('./pages/projects/ProjectSettings'))
-const Register = lazy(() => import('./pages/Register'))
 const ResendVerification = lazy(() => import('./pages/ResendVerification'))
 const ResetPassword = lazy(() => import('./pages/ResetPassword'))
 const ExperimentsList = lazy(() => import('./pages/experiments/ExperimentsList'))
@@ -38,46 +44,79 @@ const CreateExperiment = lazy(() => import('./pages/experiments/CreateExperiment
 const ExperimentDetail = lazy(() => import('./pages/experiments/ExperimentDetail'))
 const SDKTester = lazy(() => import('./pages/SDKTester'))
 const Settings = lazy(() => import('./pages/Settings'))
+const Setup = lazy(() => import('./pages/Setup'))
 const VerifyEmail = lazy(() => import('./pages/VerifyEmail'))
 
-function App() {
-  const { token } = useAuthStore()
+// Start loading the setup status in parallel with the first route chunk.
+fetchSetupStatus()
 
+function App() {
   return (
     <ErrorBoundary>
-      <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" /></div>}>
+      <Suspense fallback={<FullPageSpinner />}>
       <Routes>
       {/* Public Routes. `/` itself is handled by the protected index route below:
-          logged-out users are sent to /login by ProtectedRoute. */}
+          logged-out users are sent to /login by ProtectedRoute. While the
+          instance is not set up, /login and / lead to /setup. */}
+      <Route
+        path="/setup"
+        element={
+          <SetupRoute>
+            <Setup />
+          </SetupRoute>
+        }
+      />
       <Route
         path="/login"
-        element={!token ? <Login /> : <Navigate to={ROUTES.overview} />}
+        element={
+          <RequireSetupDone>
+            <GuestOnly>
+              <Login />
+            </GuestOnly>
+          </RequireSetupDone>
+        }
       />
-      <Route
-        path="/register"
-        element={!token ? <Register /> : <Navigate to={ROUTES.overview} />}
-      />
+      {/* Registration is invite-only: new users join via /invite/:token */}
+      <Route path="/register" element={<Navigate to="/login" replace />} />
       <Route
         path="/forgot-password"
-        element={!token ? <ForgotPassword /> : <Navigate to={ROUTES.overview} />}
+        element={
+          <RequireMail>
+            <GuestOnly>
+              <ForgotPassword />
+            </GuestOnly>
+          </RequireMail>
+        }
       />
       <Route
         path="/reset-password"
-        element={!token ? <ResetPassword /> : <Navigate to={ROUTES.overview} />}
+        element={
+          <GuestOnly>
+            <ResetPassword />
+          </GuestOnly>
+        }
       />
       <Route path="/invite/:token" element={<InviteAccept />} />
       <Route path="/verify-email/:token" element={<VerifyEmail />} />
       <Route
         path="/resend-verification"
-        element={!token ? <ResendVerification /> : <Navigate to={ROUTES.overview} />}
+        element={
+          <RequireMail>
+            <GuestOnly>
+              <ResendVerification />
+            </GuestOnly>
+          </RequireMail>
+        }
       />
       {/* Protected Routes */}
       <Route
         path="/"
         element={
-          <ProtectedRoute>
-            <AppShell />
-          </ProtectedRoute>
+          <RequireSetupDone>
+            <ProtectedRoute>
+              <AppShell />
+            </ProtectedRoute>
+          </RequireSetupDone>
         }
       >
         <Route index element={<Navigate to={ROUTES.overview} replace />} />

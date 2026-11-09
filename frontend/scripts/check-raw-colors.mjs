@@ -14,6 +14,11 @@ const RAW = new RegExp(
 function* files(dir) {
   // Folders that do not exist yet (e.g. not migrated so far) are skipped.
   if (!existsSync(dir)) return
+  // Single migrated files (e.g. pages) can be listed directly.
+  if (statSync(dir).isFile()) {
+    yield dir
+    return
+  }
   for (const name of readdirSync(dir)) {
     const path = join(dir, name)
     if (statSync(path).isDirectory()) yield* files(path)

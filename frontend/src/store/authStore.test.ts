@@ -102,6 +102,20 @@ describe('authStore', () => {
     expect(state.isLoading).toBe(false)
   })
 
+  it('stores a session from setup/invite registration like a login', () => {
+    useAuthStore.setState({ error: 'old' })
+    useAuthStore.getState().setSession({
+      token: 'setup-token',
+      user: { id: '2', email: 'owner@example.com', name: 'Owner' },
+    })
+
+    const state = useAuthStore.getState()
+    expect(state.token).toBe('setup-token')
+    expect(state.user?.email).toBe('owner@example.com')
+    expect(state.error).toBeNull()
+    expect(localStorage.getItem('token')).toBe('setup-token')
+  })
+
   it('should set error on login failure', async () => {
     const { default: api } = await import('@/lib/axios')
     const error = new Error('Invalid credentials')
