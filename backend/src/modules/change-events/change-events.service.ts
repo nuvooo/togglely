@@ -20,6 +20,8 @@ interface PendingChanges {
   environmentKey?: string
   /** dedupe key → change, in insertion order */
   changes: Map<string, FlagChange>
+  /** More distinct changes arrived than MAX_EVENT_CHANGES */
+  truncated: boolean
   /** Last version seen at record time (fallback if the re-read fails) */
   version: number
   timer: ReturnType<typeof setTimeout>
@@ -135,6 +137,7 @@ export class ChangeEventsService implements OnModuleDestroy {
         projectId: input.projectId,
         environmentId,
         changes: new Map(),
+        truncated: false,
         version,
         timer,
       }
@@ -146,12 +149,16 @@ export class ChangeEventsService implements OnModuleDestroy {
 
     for (const change of input.changes) {
       const dedupeKey = `${change.flagKey ?? ''}\u0000${change.action}`
-      if (!entry.changes.has(dedupeKey)) {
-        entry.changes.set(dedupeKey, {
-          ...(change.flagKey !== undefined && { flagKey: change.flagKey }),
-          action: change.action,
-        })
+      if (entry.changes.has(dedupeKey)) continue
+      // Bounded memory: beyond the limit only remember that there was more
+      if (entry.changes.size >= MAX_EVENT_CHANGES) {
+        entry.truncated = true
+        break
       }
+      entry.changes.set(dedupeKey, {
+        ...(change.flagKey !== undefined && { flagKey: change.flagKey }),
+        action: change.action,
+      })
     }
   }
 
@@ -193,8 +200,8 @@ export class ChangeEventsService implements OnModuleDestroy {
         environmentId: entry.environmentId,
         environmentKey: environment?.key ?? entry.environmentKey ?? '',
         version: Math.max(version, entry.version),
-        changes: changes.slice(0, MAX_EVENT_CHANGES),
-        ...(changes.length > MAX_EVENT_CHANGES && { truncated: true }),
+        changes,
+        ...(entry.truncated && { truncated: true }),
         createdAt: new Date().toISOString(),
       }
       await this.bus.publish(event)

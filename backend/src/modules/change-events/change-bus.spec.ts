@@ -5,6 +5,7 @@ import {
   InMemoryChangeBus,
   RedisChangeBus,
   RedisLike,
+  ResilientChangeBus,
 } from './change-bus'
 import { FlagsChangedEvent } from './change-events.types'
 
@@ -181,6 +182,10 @@ describe('RedisChangeBus', () => {
 })
 
 describe('createChangeBus', () => {
+  afterEach(() => {
+    jest.useRealTimers()
+  })
+
   it('uses the in-memory bus without REDIS_URL', async () => {
     const factory = jest.fn()
     const bus = await createChangeBus({}, silentLogger, factory)
@@ -190,17 +195,20 @@ describe('createChangeBus', () => {
 
   it('uses Redis when REDIS_URL is set', async () => {
     const factory = jest.fn(() => new FakeRedis())
-    const bus = await createChangeBus(
+    const bus = (await createChangeBus(
       { REDIS_URL: 'redis://localhost:6379' },
       silentLogger,
       factory
-    )
-    expect(bus).toBeInstanceOf(RedisChangeBus)
+    )) as ResilientChangeBus
+    expect(bus).toBeInstanceOf(ResilientChangeBus)
+    expect(bus.mode).toBe('redis')
     expect(factory).toHaveBeenCalledTimes(2)
     expect(factory).toHaveBeenCalledWith('redis://localhost:6379')
+    await bus.close()
   })
 
   it('falls back to in-memory with a warning when Redis is unreachable', async () => {
+    jest.useFakeTimers()
     const clients: FakeRedis[] = []
     const factory = jest.fn(() => {
       const client = new FakeRedis()
@@ -209,14 +217,112 @@ describe('createChangeBus', () => {
       return client
     })
 
-    const bus = await createChangeBus(
+    const bus = (await createChangeBus(
       { REDIS_URL: 'redis://nowhere:6379' },
       silentLogger,
       factory
-    )
+    )) as ResilientChangeBus
 
-    expect(bus).toBeInstanceOf(InMemoryChangeBus)
+    expect(bus.mode).toBe('memory')
     expect(silentLogger.warn).toHaveBeenCalled()
     for (const client of clients) expect(client.disconnect).toHaveBeenCalled()
+
+    // Still delivers locally
+    const handler = jest.fn()
+    bus.subscribe(handler)
+    await bus.publish(event())
+    expect(handler).toHaveBeenCalledWith(event())
+    await bus.close()
+  })
+})
+
+describe('ResilientChangeBus', () => {
+  beforeEach(() => jest.useFakeTimers())
+  afterEach(() => jest.useRealTimers())
+
+  async function settle() {
+    for (let i = 0; i < 20; i++) await Promise.resolve()
+  }
+
+  function failingFactory(state: { up: boolean }) {
+    return jest.fn(() => {
+      const client = new FakeRedis()
+      if (!state.up) client.connectError = new Error('ECONNREFUSED')
+      return client
+    })
+  }
+
+  it('keeps retrying with exponential backoff up to 60 s and switches to Redis once connected', async () => {
+    const state = { up: false }
+    const factory = failingFactory(state)
+    const logger = { warn: jest.fn(), error: jest.fn(), log: jest.fn() }
+    const bus = new ResilientChangeBus('redis://r', logger, factory)
+    await bus.start()
+    const handler = jest.fn()
+    bus.subscribe(handler)
+    expect(factory).toHaveBeenCalledTimes(2)
+
+    const attempts = () => factory.mock.calls.length / 2
+    const delays = [1000, 2000, 4000, 8000, 16000, 32000, 60000, 60000]
+    for (const delay of delays) {
+      const before = attempts()
+      jest.advanceTimersByTime(delay - 1)
+      await settle()
+      expect(attempts()).toBe(before)
+      jest.advanceTimersByTime(1)
+      await settle()
+      expect(attempts()).toBe(before + 1)
+    }
+    expect(bus.mode).toBe('memory')
+
+    state.up = true
+    jest.advanceTimersByTime(60000)
+    await settle()
+
+    expect(bus.mode).toBe('redis')
+    expect(
+      logger.log.mock.calls.filter(([m]) => /using Redis/.test(m))
+    ).toHaveLength(1)
+
+    // Subscribers registered before the switch receive Redis events
+    await bus.publish(event({ version: 42 }))
+    expect(handler).toHaveBeenCalledWith(event({ version: 42 }))
+
+    // No more attempts after connecting
+    const after = attempts()
+    jest.advanceTimersByTime(600_000)
+    await settle()
+    expect(attempts()).toBe(after)
+    await bus.close()
+  })
+
+  it('throttles repeated warnings to one per minute', async () => {
+    const factory = failingFactory({ up: false })
+    const logger = { warn: jest.fn(), error: jest.fn(), log: jest.fn() }
+    const bus = new ResilientChangeBus('redis://r', logger, factory)
+    await bus.start()
+    expect(logger.warn).toHaveBeenCalledTimes(1)
+
+    // Retries at 1, 3, 7, 15, 31 s: all within the first minute
+    for (const delay of [1000, 2000, 4000, 8000, 16000]) {
+      jest.advanceTimersByTime(delay)
+      await settle()
+    }
+    expect(logger.warn).toHaveBeenCalledTimes(1)
+
+    jest.advanceTimersByTime(32000) // attempt at 63 s
+    await settle()
+    expect(logger.warn).toHaveBeenCalledTimes(2)
+    await bus.close()
+  })
+
+  it('stops retrying when closed', async () => {
+    const factory = failingFactory({ up: false })
+    const bus = new ResilientChangeBus('redis://r', silentLogger, factory)
+    await bus.start()
+    await bus.close()
+    jest.advanceTimersByTime(600_000)
+    await settle()
+    expect(factory).toHaveBeenCalledTimes(2)
   })
 })

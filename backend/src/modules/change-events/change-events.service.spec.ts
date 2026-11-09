@@ -167,6 +167,83 @@ describe('ChangeEventsService', () => {
     expect(events[0].truncated).toBe(true)
   })
 
+  it('stops collecting changes beyond the limit (bounded memory)', async () => {
+    const changes = Array.from({ length: 5000 }, (_, i) => ({
+      flagKey: `f${i}`,
+      action: 'updated' as const,
+    }))
+    await service.recordChange({
+      organizationId: 'org',
+      projectId: P,
+      environmentIds: [E1],
+      changes,
+    })
+    await service.recordChange({
+      organizationId: 'org',
+      projectId: P,
+      environmentIds: [E1],
+      changes: [{ flagKey: 'late', action: 'deleted' }],
+    })
+
+    const pending = [...(service as any).pending.values()][0]
+    expect(pending.changes.size).toBe(MAX_EVENT_CHANGES)
+    expect(pending.truncated).toBe(true)
+
+    jest.advanceTimersByTime(CHANGE_DEBOUNCE_MS)
+    await settle()
+    expect(events[0].changes).toHaveLength(MAX_EVENT_CHANGES)
+    expect(events[0].truncated).toBe(true)
+  })
+
+  it('does not mark exactly MAX_EVENT_CHANGES changes as truncated', async () => {
+    const changes = Array.from({ length: MAX_EVENT_CHANGES }, (_, i) => ({
+      flagKey: `f${i}`,
+      action: 'updated' as const,
+    }))
+    await service.recordChange({
+      organizationId: 'org',
+      projectId: P,
+      environmentIds: [E1],
+      changes: [...changes, ...changes],
+    })
+    jest.advanceTimersByTime(CHANGE_DEBOUNCE_MS)
+    await settle()
+    expect(events[0].changes).toHaveLength(MAX_EVENT_CHANGES)
+    expect(events[0].truncated).toBeUndefined()
+  })
+
+  it('retries the upsert once when two first upserts race (P2002)', async () => {
+    const race = Object.assign(new Error('Unique constraint failed'), {
+      code: 'P2002',
+    })
+    prisma.configVersion.upsert
+      .mockRejectedValueOnce(race)
+      .mockResolvedValueOnce({ version: 2 })
+
+    await service.recordChange({
+      organizationId: 'org',
+      projectId: P,
+      environmentIds: [E1],
+      changes: [{ flagKey: 'a', action: 'toggled' }],
+    })
+
+    expect(prisma.configVersion.upsert).toHaveBeenCalledTimes(2)
+    expect((service as any).logger.error).not.toHaveBeenCalled()
+    expect([...(service as any).pending.values()][0].version).toBe(2)
+  })
+
+  it('does not retry other upsert errors', async () => {
+    prisma.configVersion.upsert.mockRejectedValueOnce(new Error('db down'))
+    await service.recordChange({
+      organizationId: 'org',
+      projectId: P,
+      environmentIds: [E1],
+      changes: [{ flagKey: 'a', action: 'toggled' }],
+    })
+    expect(prisma.configVersion.upsert).toHaveBeenCalledTimes(1)
+    expect((service as any).logger.error).toHaveBeenCalled()
+  })
+
   it('never throws when the database fails', async () => {
     prisma.configVersion.upsert.mockRejectedValue(new Error('db down'))
     prisma.environment.findMany.mockRejectedValue(new Error('db down'))
