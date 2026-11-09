@@ -17,6 +17,7 @@ import { getDefaultFlagValue } from '../sdk/sdk.helpers'
 import { CreateProjectDto } from './dto/create-project.dto'
 import { ImportFlagDto, ImportFlagsOptionsDto } from './dto/import-flags.dto'
 import { UpdateProjectDto } from './dto/update-project.dto'
+import { latestFlagUpdate } from '../flags/flag-timestamps'
 
 @Injectable()
 export class ProjectsService {
@@ -176,6 +177,8 @@ export class ProjectsService {
         name: f.name,
         key: f.key,
         flagType: f.flagType,
+        createdAt: f.createdAt,
+        updatedAt: latestFlagUpdate(f),
         environments: envs.map((env) => ({
           id: env.id,
           environmentId: env.environmentId,

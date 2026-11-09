@@ -467,6 +467,53 @@ describe('ProjectsService', () => {
 })
 
 describe('ProjectsService.getFlagsWithBrands (brand inheritance)', () => {
+  it('returns createdAt and the latest updatedAt (including brand rows)', async () => {
+    const { service, prisma } = createService()
+    prisma.project.findUnique.mockResolvedValue({
+      ...mockProject,
+      type: 'MULTI',
+      environments: [{ id: 'env-1', name: 'Development', key: 'development' }],
+    })
+    prisma.featureFlag.findMany.mockResolvedValue([
+      {
+        id: 'flag-1',
+        name: 'Color',
+        key: 'color',
+        flagType: 'STRING',
+        createdAt: new Date('2024-01-01T00:00:00Z'),
+        updatedAt: new Date('2024-01-02T00:00:00Z'),
+        flagEnvironments: [
+          {
+            id: 'fe-default',
+            environmentId: 'env-1',
+            brandId: null,
+            enabled: true,
+            defaultValue: 'blue',
+            updatedAt: new Date('2024-01-03T00:00:00Z'),
+            environment: { name: 'Development' },
+          },
+          {
+            id: 'fe-b1',
+            environmentId: 'env-1',
+            brandId: 'brand-1',
+            enabled: true,
+            defaultValue: 'red',
+            updatedAt: new Date('2024-04-01T00:00:00Z'),
+            environment: { name: 'Development' },
+          },
+        ],
+      },
+    ])
+    prisma.brand.findMany.mockResolvedValue([
+      { id: 'brand-1', name: 'Alpha', key: 'alpha' },
+    ])
+
+    const result = await service.getFlagsWithBrands('proj-1')
+
+    expect(result.flags[0].createdAt).toEqual(new Date('2024-01-01T00:00:00Z'))
+    expect(result.flags[0].updatedAt).toEqual(new Date('2024-04-01T00:00:00Z'))
+  })
+
   it('marks brands without own row as inherited with the default values and creates nothing', async () => {
     const { service, prisma } = createService()
     prisma.project.findUnique.mockResolvedValue({

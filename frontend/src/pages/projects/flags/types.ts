@@ -52,8 +52,10 @@ export interface FeatureFlag {
   description: string | null
   flagType: FlagType
   environments: FlagEnvironment[]
-  createdAt: string
-  updatedAt: string
+  /** Missing on older API versions; the table shows "–". */
+  createdAt?: string
+  /** Last change of the flag or any of its values. */
+  updatedAt?: string
 }
 
 /** Target of the value editor: the environment default or one brand. */

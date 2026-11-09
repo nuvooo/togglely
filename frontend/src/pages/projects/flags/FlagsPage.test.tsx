@@ -200,6 +200,39 @@ describe('FlagsPage (single)', () => {
     expect(within(checkout).getByText('2 hours ago')).toBeInTheDocument()
   })
 
+  it('falls back to createdAt and shows "–" without any timestamp', async () => {
+    // Shape of GET /feature-flags/project/:id: ISO strings, possibly missing
+    state.environments = [{ id: 'dev', name: 'Development', key: 'development' }]
+    state.flags = [
+      {
+        id: 'f1',
+        name: 'Created only',
+        key: 'created-only',
+        description: null,
+        flagType: 'BOOLEAN',
+        projectId: PROJECT_ID,
+        environments: [env('dev', 'Development', false, 'false')],
+        createdAt: new Date(Date.now() - 3 * 86400 * 1000).toISOString(),
+      },
+      {
+        id: 'f2',
+        name: 'No dates',
+        key: 'no-dates',
+        description: null,
+        flagType: 'BOOLEAN',
+        projectId: PROJECT_ID,
+        environments: [env('dev', 'Development', false, 'false')],
+      },
+    ]
+    renderPage()
+    await screen.findByText('Created only')
+
+    const [created, none] = bodyRows()
+    expect(within(created).getByText('3 days ago')).toBeInTheDocument()
+    const cells = within(none).getAllByRole('cell')
+    expect(cells[cells.length - 2]).toHaveTextContent('–')
+  })
+
   it('derives the columns from the flags without project environments', async () => {
     state.environments = undefined
     renderPage()

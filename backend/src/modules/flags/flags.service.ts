@@ -19,6 +19,7 @@ import {
 import { getDefaultFlagValue } from '../sdk/sdk.helpers'
 import { CreateFlagDto } from './dto/create-flag.dto'
 import { UpdateFlagValueDto } from './dto/update-flag-value.dto'
+import { latestFlagUpdate } from './flag-timestamps'
 
 @Injectable()
 export class FlagsService {
@@ -160,6 +161,8 @@ export class FlagsService {
       description: f.description,
       flagType: f.flagType,
       projectId: f.projectId,
+      createdAt: f.createdAt,
+      updatedAt: latestFlagUpdate(f),
       environments: sortByEnvironmentPosition(
         f.flagEnvironments.filter((fe) => !fe.brandId), // non-brand only
         project.environments

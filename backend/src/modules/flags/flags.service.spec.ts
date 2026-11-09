@@ -401,6 +401,33 @@ describe('FlagsService (environment order)', () => {
     ])
   })
 
+  it('findByProject returns createdAt and the latest updatedAt of flag and its values', async () => {
+    const { service, prisma } = createService()
+    prisma.project.findUnique.mockResolvedValue(mockProject)
+    prisma.featureFlag.findMany.mockResolvedValue([
+      {
+        ...mockFlag,
+        createdAt: new Date('2024-01-01T00:00:00Z'),
+        updatedAt: new Date('2024-02-01T00:00:00Z'),
+        flagEnvironments: [
+          {
+            ...fe('env-1', 'Production'),
+            updatedAt: new Date('2024-03-05T00:00:00Z'),
+          },
+          {
+            ...fe('env-2', 'Staging'),
+            updatedAt: new Date('2024-01-10T00:00:00Z'),
+          },
+        ],
+      },
+    ])
+
+    const result = await service.findByProject('proj-1')
+
+    expect(result[0].createdAt).toEqual(new Date('2024-01-01T00:00:00Z'))
+    expect(result[0].updatedAt).toEqual(new Date('2024-03-05T00:00:00Z'))
+  })
+
   it('create returns the new flag environments in persisted order', async () => {
     const { service, prisma, txMock } = createService()
     prisma.project.findUnique.mockResolvedValue({

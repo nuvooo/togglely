@@ -158,7 +158,7 @@ export function FlagsTable({
       cell: (flag) => {
         const date = flag.updatedAt ?? flag.createdAt
         const relative = formatRelative(date, i18n.language)
-        if (!relative) return '–'
+        if (!date || !relative) return '–'
         return (
           <time
             dateTime={date}
