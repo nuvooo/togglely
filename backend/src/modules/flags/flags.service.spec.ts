@@ -75,8 +75,12 @@ function createService() {
     create: jest.fn().mockResolvedValue(undefined),
   } as any
 
-  const service = new FlagsService(prisma, auditLogs)
-  return { service, prisma, auditLogs, txMock }
+  const changes = {
+    recordChange: jest.fn().mockResolvedValue(undefined),
+  } as any
+
+  const service = new FlagsService(prisma, auditLogs, changes)
+  return { service, prisma, auditLogs, txMock, changes }
 }
 
 describe('FlagsService', () => {
@@ -431,5 +435,213 @@ describe('FlagsService (environment order)', () => {
     const result = await service.getEnvironments('flag-1')
 
     expect(result.map((e) => e.id)).toEqual(['env-2', 'env-1'])
+  })
+})
+
+describe('FlagsService change events', () => {
+  const flagChange = (action: string) => [{ flagKey: 'my-flag', action }]
+
+  it('create records a created change for all environments', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.project.findUnique.mockResolvedValue(mockProject)
+    prisma.organizationMember.findFirst.mockResolvedValue({ role: 'ADMIN' })
+    prisma.featureFlag.findFirst.mockResolvedValue(null)
+
+    await service.create('proj-1', 'user-1', {
+      name: 'My Flag',
+      key: 'my-flag',
+      type: 'BOOLEAN',
+    })
+
+    expect(changes.recordChange).toHaveBeenCalledWith({
+      organizationId: 'org-1',
+      projectId: 'proj-1',
+      environmentIds: 'all',
+      changes: flagChange('created'),
+    })
+  })
+
+  it('create records nothing when the transaction fails', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.project.findUnique.mockResolvedValue(mockProject)
+    prisma.organizationMember.findFirst.mockResolvedValue({ role: 'ADMIN' })
+    prisma.featureFlag.findFirst.mockResolvedValue(null)
+    prisma.$transaction.mockRejectedValue(new Error('db down'))
+
+    await expect(
+      service.create('proj-1', 'user-1', {
+        name: 'My Flag',
+        key: 'my-flag',
+        type: 'BOOLEAN',
+      })
+    ).rejects.toThrow('db down')
+    expect(changes.recordChange).not.toHaveBeenCalled()
+  })
+
+  it('update records an updated change for all environments', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.featureFlag.update = jest.fn().mockResolvedValue(mockFlag)
+
+    await service.update('flag-1', { name: 'Renamed' })
+
+    expect(changes.recordChange).toHaveBeenCalledWith({
+      organizationId: 'org-1',
+      projectId: 'proj-1',
+      environmentIds: 'all',
+      changes: flagChange('updated'),
+    })
+  })
+
+  it('update records nothing when the write fails', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.featureFlag.update = jest.fn().mockRejectedValue(new Error('x'))
+
+    await expect(service.update('flag-1', { name: 'R' })).rejects.toThrow()
+    expect(changes.recordChange).not.toHaveBeenCalled()
+  })
+
+  it('delete records a deleted change for all environments', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+
+    await service.delete('flag-1', 'user-1')
+
+    expect(changes.recordChange).toHaveBeenCalledWith({
+      organizationId: 'org-1',
+      projectId: 'proj-1',
+      environmentIds: 'all',
+      changes: flagChange('deleted'),
+    })
+  })
+
+  it('delete records nothing when the transaction fails', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+    prisma.$transaction.mockRejectedValue(new Error('x'))
+
+    await expect(service.delete('flag-1', 'user-1')).rejects.toThrow()
+    expect(changes.recordChange).not.toHaveBeenCalled()
+  })
+
+  it('toggle records a toggled change for that environment', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+    prisma.flagEnvironment.findFirst.mockResolvedValue({ id: 'fe-1' })
+
+    await service.toggle('flag-1', 'env-1', true)
+
+    expect(changes.recordChange).toHaveBeenCalledWith({
+      organizationId: 'org-1',
+      projectId: 'proj-1',
+      environmentIds: ['env-1'],
+      changes: flagChange('toggled'),
+    })
+  })
+
+  it('toggle records a change when it creates the default row', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+    prisma.flagEnvironment.findFirst.mockResolvedValue(null)
+    prisma.flagEnvironment.create.mockResolvedValue({ id: 'fe-new' })
+
+    await service.toggle('flag-1', 'env-1')
+
+    expect(changes.recordChange).toHaveBeenCalledTimes(1)
+  })
+
+  it('toggle records nothing when the write fails', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+    prisma.flagEnvironment.findFirst.mockResolvedValue({ id: 'fe-1' })
+    prisma.flagEnvironment.update.mockRejectedValue(new Error('x'))
+
+    await expect(service.toggle('flag-1', 'env-1', true)).rejects.toThrow()
+    expect(changes.recordChange).not.toHaveBeenCalled()
+  })
+
+  it('toggle records nothing for an unknown flag', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.featureFlag.findUnique.mockResolvedValue(null)
+
+    await expect(service.toggle('missing', 'env-1')).rejects.toBeInstanceOf(
+      NotFoundException
+    )
+    expect(changes.recordChange).not.toHaveBeenCalled()
+  })
+
+  it('updateValue records an updated change for that environment (brand override too)', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+    prisma.flagEnvironment.findFirst.mockResolvedValue(null)
+    prisma.flagEnvironment.create.mockResolvedValue({ id: 'fe-brand' })
+
+    await service.updateValue('flag-1', 'env-2', {
+      value: 'true',
+      brandId: 'brand-1',
+    })
+
+    expect(changes.recordChange).toHaveBeenCalledWith({
+      organizationId: 'org-1',
+      projectId: 'proj-1',
+      environmentIds: ['env-2'],
+      changes: flagChange('updated'),
+    })
+  })
+
+  it('updateValue records a change when updating an existing row', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+    prisma.flagEnvironment.findFirst.mockResolvedValue({ id: 'fe-1' })
+    prisma.flagEnvironment.update.mockResolvedValue({ id: 'fe-1' })
+
+    await service.updateValue('flag-1', 'env-1', { enabled: true })
+
+    expect(changes.recordChange).toHaveBeenCalledWith(
+      expect.objectContaining({ environmentIds: ['env-1'] })
+    )
+  })
+
+  it('updateValue records nothing when the write fails', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+    prisma.flagEnvironment.findFirst.mockResolvedValue({ id: 'fe-1' })
+    prisma.flagEnvironment.update.mockRejectedValue(new Error('x'))
+
+    await expect(
+      service.updateValue('flag-1', 'env-1', { enabled: true })
+    ).rejects.toThrow()
+    expect(changes.recordChange).not.toHaveBeenCalled()
+  })
+
+  it('updateEnvironment records an updated change for the row environment', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+    prisma.flagEnvironment.findFirst.mockResolvedValueOnce({
+      id: 'fe-1',
+      flagId: 'flag-1',
+      environmentId: 'env-1',
+    })
+    prisma.flagEnvironment.update.mockResolvedValue({ id: 'fe-1' })
+
+    await service.updateEnvironment('flag-1', 'fe-1', { isEnabled: true })
+
+    expect(changes.recordChange).toHaveBeenCalledWith({
+      organizationId: 'org-1',
+      projectId: 'proj-1',
+      environmentIds: ['env-1'],
+      changes: flagChange('updated'),
+    })
+  })
+
+  it('updateEnvironment records nothing when the row is not found', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+    prisma.flagEnvironment.findFirst.mockResolvedValue(null)
+    prisma.flagEnvironment.findMany.mockResolvedValue([])
+
+    await expect(
+      service.updateEnvironment('flag-1', 'fe-x', { isEnabled: true })
+    ).rejects.toBeInstanceOf(NotFoundException)
+    expect(changes.recordChange).not.toHaveBeenCalled()
   })
 })

@@ -7,13 +7,14 @@ import { FlagType } from '@prisma/client'
 import { isObjectId } from '../../shared/access/access.service'
 import { PrismaService } from '../../shared/prisma.service'
 import { AuditLogsService } from '../audit-logs/audit-logs.service'
+import { ChangeEventsService } from '../change-events/change-events.service'
 import { isRegexPatternAllowed } from '../sdk/evaluation.service'
+import { getDefaultFlagValue } from '../sdk/sdk.helpers'
 import {
   CreateTargetingRuleDto,
   RuleConditionDto,
   UpdateTargetingRuleDto,
 } from './dto/targeting-rule.dto'
-import { getDefaultFlagValue } from '../sdk/sdk.helpers'
 
 const RULE_INCLUDE = {
   conditions: { orderBy: { createdAt: 'asc' as const } },
@@ -31,11 +32,17 @@ type RuleWithRelations = {
   createdAt: Date
   updatedAt: Date
   flagEnvironment: { environmentId: string; brandId: string | null }
-  conditions: { id: string; attribute: string; operator: string; value: string }[]
+  conditions: {
+    id: string
+    attribute: string
+    operator: string
+    value: string
+  }[]
 }
 
 interface FlagRef {
   id: string
+  key: string
   projectId: string
   organizationId: string
 }
@@ -49,7 +56,8 @@ interface FlagRef {
 export class TargetingRulesService {
   constructor(
     private readonly prisma: PrismaService,
-    private readonly auditLogs: AuditLogsService
+    private readonly auditLogs: AuditLogsService,
+    private readonly changes: ChangeEventsService
   ) {}
 
   async findAll(flagId: string, environmentId?: string) {
@@ -100,6 +108,7 @@ export class TargetingRulesService {
       },
       include: RULE_INCLUDE,
     })
+    this.recordRulesChanged(flag, rule.flagEnvironment.environmentId)
 
     await this.audit('targeting_rule.created', flag, rule.id, userId, {
       environmentId: dto.environmentId,
@@ -144,6 +153,8 @@ export class TargetingRulesService {
       })
     })
 
+    this.recordRulesChanged(flag, rule.flagEnvironment.environmentId)
+
     await this.audit('targeting_rule.updated', flag, ruleId, userId, dto, {
       serveValue: existing.serveValue,
       enabled: existing.enabled,
@@ -153,11 +164,12 @@ export class TargetingRulesService {
   }
 
   async delete(flag: FlagRef, ruleId: string, userId: string) {
-    await this.findRuleOfFlag(flag.id, ruleId)
+    const existing = await this.findRuleOfFlag(flag.id, ruleId)
     await this.prisma.$transaction([
       this.prisma.ruleCondition.deleteMany({ where: { ruleId } }),
       this.prisma.targetingRule.delete({ where: { id: ruleId } }),
     ])
+    this.recordRulesChanged(flag, existing.flagEnvironment.environmentId)
     await this.audit('targeting_rule.deleted', flag, ruleId, userId)
   }
 
@@ -166,6 +178,7 @@ export class TargetingRulesService {
     const rule = isObjectId(ruleId)
       ? await this.prisma.targetingRule.findFirst({
           where: { id: ruleId, flagEnvironment: { flagId } },
+          include: { flagEnvironment: { select: { environmentId: true } } },
         })
       : null
     if (!rule) throw new NotFoundException('Targeting rule not found')
@@ -278,6 +291,15 @@ export class TargetingRulesService {
       createdAt: rule.createdAt,
       updatedAt: rule.updatedAt,
     }
+  }
+
+  private recordRulesChanged(flag: FlagRef, environmentId: string) {
+    void this.changes.recordChange({
+      organizationId: flag.organizationId,
+      projectId: flag.projectId,
+      environmentIds: [environmentId],
+      changes: [{ flagKey: flag.key, action: 'rules_changed' }],
+    })
   }
 
   private audit(

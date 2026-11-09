@@ -46,7 +46,10 @@ function setup(role: string | null) {
   } as any
   const access = new AccessService(prisma)
   const auditLogs = { create: jest.fn().mockResolvedValue({}) } as any
-  const service = new EnvironmentsService(prisma, auditLogs)
+  const changes = {
+    recordChange: jest.fn().mockResolvedValue(undefined),
+  } as any
+  const service = new EnvironmentsService(prisma, auditLogs, changes)
   const controller = new EnvironmentsController(service, access)
   return { controller, prisma, auditLogs }
 }

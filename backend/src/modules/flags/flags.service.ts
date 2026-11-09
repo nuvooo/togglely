@@ -5,10 +5,12 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common'
+import { FlagType } from '@prisma/client'
 import { Flag } from '../../domain/flag.entity'
 import { PrismaService } from '../../shared/prisma.service'
 import { isPrismaUniqueConstraintError } from '../../shared/prisma-errors'
 import { AuditLogsService } from '../audit-logs/audit-logs.service'
+import { ChangeEventsService } from '../change-events/change-events.service'
 import {
   ENVIRONMENT_ORDER_BY,
   sortByEnvironmentOrder,
@@ -24,7 +26,8 @@ export class FlagsService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly auditLogs: AuditLogsService
+    private readonly auditLogs: AuditLogsService,
+    private readonly changes: ChangeEventsService
   ) {}
 
   async findAll(userId: string, projectId?: string, environmentId?: string) {
@@ -263,6 +266,13 @@ export class FlagsService {
       }
     )
 
+    void this.changes.recordChange({
+      organizationId: project.organizationId,
+      projectId,
+      environmentIds: 'all',
+      changes: [{ flagKey: created.key, action: 'created' }],
+    })
+
     await this.auditLogs.create({
       action: 'flag.created',
       entityType: 'FeatureFlag',
@@ -304,6 +314,13 @@ export class FlagsService {
       data,
     })
 
+    void this.changes.recordChange({
+      organizationId: updated.organizationId,
+      projectId: updated.projectId,
+      environmentIds: 'all',
+      changes: [{ flagKey: updated.key, action: 'updated' }],
+    })
+
     return {
       id: updated.id,
       key: updated.key,
@@ -338,9 +355,35 @@ export class FlagsService {
       updateData.defaultValue = String(newEnabled)
     }
 
-    if (globalEnv) {
+    const result = await this.writeToggle(
+      flag,
+      environmentId,
+      globalEnv?.id ?? null,
+      updateData
+    )
+
+    void this.changes.recordChange({
+      organizationId: flag.organizationId,
+      projectId: flag.projectId,
+      environmentIds: [environmentId],
+      changes: [{ flagKey: flag.key, action: 'toggled' }],
+    })
+
+    return result
+  }
+
+  private async writeToggle(
+    flag: { id: string; flagType: FlagType },
+    environmentId: string,
+    globalEnvId: string | null,
+    updateData: { enabled: boolean; defaultValue?: string }
+  ) {
+    const flagId = flag.id
+    const newEnabled = updateData.enabled
+
+    if (globalEnvId) {
       await this.prisma.flagEnvironment.update({
-        where: { id: globalEnv.id },
+        where: { id: globalEnvId },
         data: updateData,
       })
       return { flagId, environmentId, enabled: newEnabled }
@@ -460,10 +503,17 @@ export class FlagsService {
         }
       }
 
-      return this.prisma.flagEnvironment.update({
+      const updated = await this.prisma.flagEnvironment.update({
         where: { id: existing.id },
         data: updateData,
       })
+      void this.changes.recordChange({
+        organizationId: flag.organizationId,
+        projectId: flag.projectId,
+        environmentIds: [existing.environmentId],
+        changes: [{ flagKey: flag.key, action: 'updated' }],
+      })
+      return updated
     }
 
     this.logger.warn(
@@ -504,14 +554,24 @@ export class FlagsService {
       }
     }
 
+    const recordValueChange = () =>
+      void this.changes.recordChange({
+        organizationId: flag.organizationId,
+        projectId: flag.projectId,
+        environmentIds: [environmentId],
+        changes: [{ flagKey: flag.key, action: 'updated' }],
+      })
+
     if (existing) {
-      return this.prisma.flagEnvironment.update({
+      const updated = await this.prisma.flagEnvironment.update({
         where: { id: existing.id },
         data: {
           enabled: enabled,
           defaultValue: defaultValue,
         },
       })
+      recordValueChange()
+      return updated
     }
 
     // A new brand row is an override: fields not given are taken from the
@@ -522,7 +582,7 @@ export class FlagsService {
         })
       : null
 
-    return this.prisma.flagEnvironment.create({
+    const created = await this.prisma.flagEnvironment.create({
       data: {
         flagId,
         environmentId,
@@ -534,6 +594,8 @@ export class FlagsService {
           getDefaultFlagValue(flag.flagType),
       },
     })
+    recordValueChange()
+    return created
   }
 
   async delete(flagId: string, userId?: string) {
@@ -545,6 +607,13 @@ export class FlagsService {
     await this.prisma.$transaction(async (tx) => {
       await tx.flagEnvironment.deleteMany({ where: { flagId } })
       await tx.featureFlag.delete({ where: { id: flagId } })
+    })
+
+    void this.changes.recordChange({
+      organizationId: flag.organizationId,
+      projectId: flag.projectId,
+      environmentIds: 'all',
+      changes: [{ flagKey: flag.key, action: 'deleted' }],
     })
 
     if (userId) {

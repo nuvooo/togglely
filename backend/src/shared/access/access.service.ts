@@ -91,7 +91,12 @@ export class AccessService {
     const flag = isObjectId(flagId)
       ? await this.prisma.featureFlag.findUnique({
           where: { id: flagId },
-          select: { id: true, projectId: true, organizationId: true },
+          select: {
+            id: true,
+            key: true,
+            projectId: true,
+            organizationId: true,
+          },
         })
       : null
     if (!flag) throw new NotFoundException('Feature flag not found')

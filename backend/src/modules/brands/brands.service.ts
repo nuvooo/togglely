@@ -2,6 +2,8 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { PrismaService } from '../../shared/prisma.service'
 import { isPrismaUniqueConstraintError } from '../../shared/prisma-errors'
 import { AuditLogsService } from '../audit-logs/audit-logs.service'
+import { ChangeEventsService } from '../change-events/change-events.service'
+import { ChangeAction } from '../change-events/change-events.types'
 import { ENVIRONMENT_ORDER_BY } from '../environments/environment-order'
 import { getDefaultFlagValue } from '../sdk/sdk.helpers'
 
@@ -16,7 +18,8 @@ export class BrandsService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly auditLogs: AuditLogsService
+    private readonly auditLogs: AuditLogsService,
+    private readonly changes: ChangeEventsService
   ) {}
 
   async findByProject(projectId: string) {
@@ -96,7 +99,7 @@ export class BrandsService {
     projectId: string,
     data: { name: string; key: string; description?: string }
   ) {
-    return this.prisma.brand.create({
+    const brand = await this.prisma.brand.create({
       data: {
         name: data.name,
         key: data.key,
@@ -104,6 +107,8 @@ export class BrandsService {
         projectId,
       },
     })
+    await this.recordBrandChanged(projectId)
+    return brand
   }
 
   async update(brandId: string, data: { name?: string; description?: string }) {
@@ -113,16 +118,19 @@ export class BrandsService {
     if (data.description !== undefined) {
       updateData.description = data.description
     }
-    return this.prisma.brand.update({
+    const brand = await this.prisma.brand.update({
       where: { id: brandId },
       data: updateData,
     })
+    await this.recordBrandChanged(brand.projectId)
+    return brand
   }
 
   async delete(brandId: string) {
     // Delete all flag environments for this brand first (cascading delete for MongoDB)
     await this.prisma.flagEnvironment.deleteMany({ where: { brandId } })
-    await this.prisma.brand.delete({ where: { id: brandId } })
+    const brand = await this.prisma.brand.delete({ where: { id: brandId } })
+    await this.recordBrandChanged(brand.projectId)
   }
 
   /**
@@ -191,6 +199,8 @@ export class BrandsService {
       }
     }
 
+    this.recordFlagChanged(flag, environmentId, 'toggled')
+
     if (userId) {
       await this.auditLogs.create({
         action: 'flag.brand_toggled',
@@ -246,6 +256,7 @@ export class BrandsService {
       }
       await tx.flagEnvironment.delete({ where: { id: existing.id } })
     })
+    this.recordFlagChanged(flag, environmentId, 'updated')
 
     if (userId) {
       await this.auditLogs.create({
@@ -266,5 +277,42 @@ export class BrandsService {
     }
 
     return { brandId, flagId, environmentId, inherited: true, deleted: true }
+  }
+
+  private recordFlagChanged(
+    flag: { key: string; projectId: string; organizationId: string },
+    environmentId: string,
+    action: ChangeAction
+  ) {
+    void this.changes.recordChange({
+      organizationId: flag.organizationId,
+      projectId: flag.projectId,
+      environmentIds: [environmentId],
+      changes: [{ flagKey: flag.key, action }],
+    })
+  }
+
+  /**
+   * Brands are evaluated in every environment. Brand has no organizationId,
+   * so it is looked up here; failures never fail the brand mutation.
+   */
+  private async recordBrandChanged(projectId: string) {
+    try {
+      const project = await this.prisma.project.findUnique({
+        where: { id: projectId },
+        select: { organizationId: true },
+      })
+      if (!project) return
+      void this.changes.recordChange({
+        organizationId: project.organizationId,
+        projectId,
+        environmentIds: 'all',
+        changes: [{ action: 'brand_changed' }],
+      })
+    } catch (error) {
+      this.logger.error(
+        `Failed to record brand change for project ${projectId}: ${String(error)}`
+      )
+    }
   }
 }

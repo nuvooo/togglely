@@ -14,12 +14,19 @@ function createService() {
     flagEnvironment: {
       deleteMany: jest.fn(),
     },
+    configVersion: {
+      deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
+    },
     $transaction: jest.fn(async (ops: any[]) => Promise.all(ops)),
   } as any
   const auditLogs = { create: jest.fn().mockResolvedValue({}) } as any
 
-  const service = new EnvironmentsService(prisma, auditLogs)
-  return { service, prisma, auditLogs }
+  const changes = {
+    recordChange: jest.fn().mockResolvedValue(undefined),
+  } as any
+
+  const service = new EnvironmentsService(prisma, auditLogs, changes)
+  return { service, prisma, auditLogs, changes }
 }
 
 const ORDER = [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
@@ -252,5 +259,108 @@ describe('EnvironmentsService', () => {
         service.reorder('proj-1', 'org-1', 'user-1', ['env-a'])
       ).resolves.toEqual([{ id: 'env-a', sortOrder: 0 }])
     })
+  })
+})
+
+describe('EnvironmentsService change events', () => {
+  const env = {
+    id: 'env-1',
+    key: 'staging',
+    name: 'Staging',
+    projectId: 'proj-1',
+    organizationId: 'org-1',
+  }
+  const changed = {
+    organizationId: 'org-1',
+    projectId: 'proj-1',
+    environmentIds: ['env-1'],
+    changes: [{ action: 'environment_changed' }],
+  }
+
+  it('create records environment_changed for the new environment', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.environment.create.mockResolvedValue(env)
+
+    await service.create('proj-1', 'org-1', { name: 'Staging', key: 'staging' })
+
+    expect(changes.recordChange).toHaveBeenCalledWith(changed)
+  })
+
+  it('create records nothing when the write fails', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.environment.create.mockRejectedValue(new Error('duplicate'))
+
+    await expect(
+      service.create('proj-1', 'org-1', { name: 'Staging', key: 'staging' })
+    ).rejects.toThrow()
+    expect(changes.recordChange).not.toHaveBeenCalled()
+  })
+
+  it('update records environment_changed for that environment', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.environment.update.mockResolvedValue(env)
+
+    await service.update('env-1', { name: 'Staging' })
+
+    expect(changes.recordChange).toHaveBeenCalledWith(changed)
+  })
+
+  it('update records nothing when the write fails', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.environment.update.mockRejectedValue(new Error('x'))
+
+    await expect(service.update('env-1', { name: 'S' })).rejects.toThrow()
+    expect(changes.recordChange).not.toHaveBeenCalled()
+  })
+
+  it('delete records environment_changed with the key fallback, then removes the config version', async () => {
+    const { service, prisma, changes } = createService()
+    const order: string[] = []
+    prisma.environment.delete.mockResolvedValue(env)
+    changes.recordChange.mockImplementation(async () => {
+      order.push('record')
+    })
+    prisma.configVersion.deleteMany.mockImplementation(async () => {
+      order.push('cleanup')
+      return { count: 1 }
+    })
+
+    await service.delete('env-1')
+
+    expect(changes.recordChange).toHaveBeenCalledWith({
+      ...changed,
+      environmentKeys: { 'env-1': 'staging' },
+    })
+    expect(prisma.configVersion.deleteMany).toHaveBeenCalledWith({
+      where: { projectId: 'proj-1', environmentId: 'env-1' },
+    })
+    // The version increment must not recreate the removed document
+    expect(order).toEqual(['record', 'cleanup'])
+  })
+
+  it('delete succeeds even when the config version cleanup fails', async () => {
+    const { service, prisma } = createService()
+    prisma.environment.delete.mockResolvedValue(env)
+    prisma.configVersion.deleteMany.mockRejectedValue(new Error('db down'))
+
+    await expect(service.delete('env-1')).resolves.toBeUndefined()
+  })
+
+  it('delete records nothing when the write fails', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.environment.delete.mockRejectedValue(new Error('x'))
+
+    await expect(service.delete('env-1')).rejects.toThrow()
+    expect(changes.recordChange).not.toHaveBeenCalled()
+    expect(prisma.configVersion.deleteMany).not.toHaveBeenCalled()
+  })
+
+  it('reorder records nothing (order does not change SDK results)', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.environment.findMany.mockResolvedValue([{ id: 'env-1' }])
+
+    await service.reorder('proj-1', 'org-1', 'user-1', ['env-1'])
+
+    expect(changes.recordChange).not.toHaveBeenCalled()
   })
 })

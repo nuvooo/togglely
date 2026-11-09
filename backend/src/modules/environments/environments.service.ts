@@ -1,6 +1,7 @@
 import { BadRequestException, Injectable, Logger } from '@nestjs/common'
 import { PrismaService } from '../../shared/prisma.service'
 import { AuditLogsService } from '../audit-logs/audit-logs.service'
+import { ChangeEventsService } from '../change-events/change-events.service'
 import { ENVIRONMENT_ORDER_BY } from './environment-order'
 
 @Injectable()
@@ -9,7 +10,8 @@ export class EnvironmentsService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly auditLogs: AuditLogsService
+    private readonly auditLogs: AuditLogsService,
+    private readonly changes: ChangeEventsService
   ) {}
 
   async findByProject(projectId: string) {
@@ -34,7 +36,7 @@ export class EnvironmentsService {
       orderBy: { sortOrder: 'desc' },
       select: { sortOrder: true },
     })
-    return this.prisma.environment.create({
+    const environment = await this.prisma.environment.create({
       data: {
         name: data.name,
         key: data.key,
@@ -43,15 +45,29 @@ export class EnvironmentsService {
         sortOrder: last ? last.sortOrder + 1 : 0,
       },
     })
+    void this.changes.recordChange({
+      organizationId,
+      projectId,
+      environmentIds: [environment.id],
+      changes: [{ action: 'environment_changed' }],
+    })
+    return environment
   }
 
   async update(envId: string, data: { name?: string }) {
     const updateData: { name?: string } = {}
     if (data.name !== undefined) updateData.name = data.name
-    return this.prisma.environment.update({
+    const environment = await this.prisma.environment.update({
       where: { id: envId },
       data: updateData,
     })
+    void this.changes.recordChange({
+      organizationId: environment.organizationId,
+      projectId: environment.projectId,
+      environmentIds: [environment.id],
+      changes: [{ action: 'environment_changed' }],
+    })
+    return environment
   }
 
   async delete(envId: string) {
@@ -59,7 +75,32 @@ export class EnvironmentsService {
     await this.prisma.flagEnvironment.deleteMany({
       where: { environmentId: envId },
     })
-    await this.prisma.environment.delete({ where: { id: envId } })
+    const environment = await this.prisma.environment.delete({
+      where: { id: envId },
+    })
+
+    // Awaited (never throws): the version increment must happen before the
+    // config version document is removed, or it would be recreated.
+    await this.changes.recordChange({
+      organizationId: environment.organizationId,
+      projectId: environment.projectId,
+      environmentIds: [environment.id],
+      changes: [{ action: 'environment_changed' }],
+      environmentKeys: { [environment.id]: environment.key },
+    })
+    try {
+      await this.prisma.configVersion.deleteMany({
+        where: {
+          projectId: environment.projectId,
+          environmentId: environment.id,
+        },
+      })
+    } catch (error) {
+      // The environment is gone; a leftover version document is harmless.
+      this.logger.warn(
+        `Config version cleanup for environment ${envId} failed: ${String(error)}`
+      )
+    }
   }
 
   /**

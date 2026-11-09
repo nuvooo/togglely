@@ -75,7 +75,10 @@ function setup(
   prisma.$transaction.mockImplementation((cb: any) => cb(prisma))
   const auditLogs = { create: jest.fn() } as any
   const access = new AccessService(prisma)
-  const service = new BrandsService(prisma, auditLogs)
+  const changes = {
+    recordChange: jest.fn().mockResolvedValue(undefined),
+  } as any
+  const service = new BrandsService(prisma, auditLogs, changes)
   const controller = new BrandsController(service, access)
   return { controller, prisma, auditLogs }
 }
