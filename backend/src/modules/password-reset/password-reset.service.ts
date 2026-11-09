@@ -81,12 +81,19 @@ export class PasswordResetService {
     return { token, expiresAt }
   }
 
+  /** Matches an unexpired token of an active user. */
+  private tokenWhere(token: string) {
+    return {
+      resetToken: hashToken(token),
+      resetTokenExpiry: { gt: new Date() },
+      isActive: true,
+    }
+  }
+
   private findUserByToken(token: string) {
     return this.prisma.user.findFirst({
-      where: {
-        resetToken: hashToken(token),
-        resetTokenExpiry: { gt: new Date() },
-      },
+      where: this.tokenWhere(token),
+      select: { id: true },
     })
   }
 
@@ -102,9 +109,11 @@ export class PasswordResetService {
     }
 
     const passwordHash = await bcrypt.hash(newPassword, BCRYPT_ROUNDS)
-    // passwordChangedAt revokes all existing sessions of this user
-    await this.prisma.user.update({
-      where: { id: user.id },
+    // Consumes the token atomically: the update only matches while the token
+    // is still stored, so of two concurrent submits only one succeeds.
+    // passwordChangedAt revokes all existing sessions of this user.
+    const { count } = await this.prisma.user.updateMany({
+      where: { id: user.id, ...this.tokenWhere(token) },
       data: {
         password: passwordHash,
         resetToken: null,
@@ -112,5 +121,8 @@ export class PasswordResetService {
         passwordChangedAt: new Date(),
       },
     })
+    if (count !== 1) {
+      throw new NotFoundException('Invalid or expired token')
+    }
   }
 }

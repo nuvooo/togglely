@@ -21,6 +21,7 @@ function createService() {
       findUnique: jest.fn(),
       findFirst: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn(),
     },
   } as any
 
@@ -196,16 +197,37 @@ describe('PasswordResetService', () => {
     })
   })
 
-  describe('resetPassword', () => {
-    it('resets password for valid token', async () => {
+  describe('isTokenValid', () => {
+    it('only accepts unexpired tokens of active users', async () => {
       const { service, prisma } = createService()
-      prisma.user.findFirst.mockResolvedValue({
-        ...mockUser,
-        resetToken: 'valid-token',
-        resetTokenExpiry: new Date(Date.now() + 3600000),
+      prisma.user.findFirst.mockResolvedValue(mockUser)
+
+      await expect(service.isTokenValid('tok')).resolves.toBe(true)
+
+      expect(prisma.user.findFirst).toHaveBeenCalledWith({
+        where: {
+          resetToken: hashToken('tok'),
+          resetTokenExpiry: { gt: expect.any(Date) },
+          isActive: true,
+        },
+        select: { id: true },
       })
+    })
+
+    it('rejects tokens of deactivated users', async () => {
+      const { service, prisma } = createService()
+      prisma.user.findFirst.mockResolvedValue(null)
+
+      await expect(service.isTokenValid('tok')).resolves.toBe(false)
+    })
+  })
+
+  describe('resetPassword', () => {
+    it('consumes the token atomically and sets the password', async () => {
+      const { service, prisma } = createService()
+      prisma.user.findFirst.mockResolvedValue(mockUser)
       mockBcrypt.hash.mockResolvedValue('new-hashed-password' as never)
-      prisma.user.update.mockResolvedValue({})
+      prisma.user.updateMany.mockResolvedValue({ count: 1 })
 
       await service.resetPassword('valid-token', 'newPassword123')
 
@@ -213,10 +235,17 @@ describe('PasswordResetService', () => {
         where: {
           resetToken: hashToken('valid-token'),
           resetTokenExpiry: { gt: expect.any(Date) },
+          isActive: true,
         },
+        select: { id: true },
       })
-      expect(prisma.user.update).toHaveBeenCalledWith({
-        where: { id: 'user-1' },
+      expect(prisma.user.updateMany).toHaveBeenCalledWith({
+        where: {
+          id: 'user-1',
+          resetToken: hashToken('valid-token'),
+          resetTokenExpiry: { gt: expect.any(Date) },
+          isActive: true,
+        },
         data: {
           password: 'new-hashed-password',
           resetToken: null,
@@ -225,6 +254,7 @@ describe('PasswordResetService', () => {
           passwordChangedAt: expect.any(Date),
         },
       })
+      expect(prisma.user.update).not.toHaveBeenCalled()
     })
 
     it('throws for invalid or expired token', async () => {
@@ -234,6 +264,45 @@ describe('PasswordResetService', () => {
       await expect(
         service.resetPassword('invalid-token', 'newPassword123')
       ).rejects.toBeInstanceOf(NotFoundException)
+      expect(prisma.user.updateMany).not.toHaveBeenCalled()
+    })
+
+    it('throws when the token was consumed meanwhile', async () => {
+      const { service, prisma } = createService()
+      prisma.user.findFirst.mockResolvedValue(mockUser)
+      mockBcrypt.hash.mockResolvedValue('h' as never)
+      prisma.user.updateMany.mockResolvedValue({ count: 0 })
+
+      await expect(
+        service.resetPassword('valid-token', 'newPassword123')
+      ).rejects.toBeInstanceOf(NotFoundException)
+    })
+
+    it('lets only one of two concurrent submits succeed', async () => {
+      const { service, prisma } = createService()
+      // Simulates the database: the guarded update matches only while the hash is stored
+      let storedHash: string | null = hashToken('valid-token')
+      prisma.user.findFirst.mockImplementation(async ({ where }: any) =>
+        where.resetToken === storedHash ? mockUser : null
+      )
+      prisma.user.updateMany.mockImplementation(async ({ where }: any) => {
+        if (where.resetToken !== storedHash) return { count: 0 }
+        storedHash = null
+        return { count: 1 }
+      })
+      mockBcrypt.hash.mockResolvedValue('h' as never)
+
+      const results = await Promise.allSettled([
+        service.resetPassword('valid-token', 'FirstPass1'),
+        service.resetPassword('valid-token', 'SecondPass1'),
+      ])
+
+      expect(results.filter((r) => r.status === 'fulfilled')).toHaveLength(1)
+      const rejected = results.filter(
+        (r): r is PromiseRejectedResult => r.status === 'rejected'
+      )
+      expect(rejected).toHaveLength(1)
+      expect(rejected[0].reason).toBeInstanceOf(NotFoundException)
     })
   })
 })
