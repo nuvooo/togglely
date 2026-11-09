@@ -1,4 +1,4 @@
-const PROJECT_SECTIONS = ['flags', 'experiments', 'environments', 'brands', 'sdk', 'settings'] as const
+const PROJECT_SECTIONS = ['flags', 'experiments', 'environments', 'brands', 'sdk', 'webhooks', 'settings'] as const
 const ORG_SECTIONS = ['projects', 'members', 'api-keys', 'audit-log', 'settings'] as const
 
 export type ProjectSection = (typeof PROJECT_SECTIONS)[number]
@@ -31,6 +31,9 @@ export const flagPath = (projectId: string, flagId: string) => `${projectPath(pr
 
 export const experimentPath = (projectId: string, experimentId: string) =>
   `${projectPath(projectId, 'experiments')}/${experimentId}`
+
+export const webhookPath = (projectId: string, webhookId: string) =>
+  `${projectPath(projectId, 'webhooks')}/${webhookId}`
 
 export const brandPath = (projectId: string, brandId: string) => `${projectPath(projectId, 'brands')}/${brandId}`
 

@@ -37,6 +37,8 @@ const ProjectDetail = lazy(() => import('./pages/ProjectDetail'))
 const ProjectPicker = lazy(() => import('./pages/ProjectPicker'))
 const BrandFlags = lazy(() => import('./pages/projects/BrandFlags'))
 const ProjectSettings = lazy(() => import('./pages/projects/ProjectSettings'))
+const Webhooks = lazy(() => import('./pages/projects/Webhooks'))
+const WebhookDetail = lazy(() => import('./pages/projects/WebhookDetail'))
 const ResendVerification = lazy(() => import('./pages/ResendVerification'))
 const ResetPassword = lazy(() => import('./pages/ResetPassword'))
 const ExperimentsList = lazy(() => import('./pages/experiments/ExperimentsList'))
@@ -128,6 +130,8 @@ function App() {
           <Route path="brands" element={<ProjectSettings />} />
           <Route path="brands/:brandId" element={<BrandFlags />} />
           <Route path="sdk" element={<SDKTester />} />
+          <Route path="webhooks" element={<Webhooks />} />
+          <Route path="webhooks/:webhookId" element={<WebhookDetail />} />
           <Route path="settings" element={<ProjectSettings />} />
         </Route>
 

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { brandPath, experimentPath, flagPath, getArea, orgPath, projectPath, ROUTES } from './routes'
+import { brandPath, experimentPath, flagPath, getArea, orgPath, projectPath, ROUTES, webhookPath } from './routes'
 
 describe('routes', () => {
   it('builds project and org paths', () => {
@@ -13,6 +13,7 @@ describe('routes', () => {
     expect(flagPath('p1', 'f1')).toBe('/projects/p1/flags/f1')
     expect(experimentPath('p1', 'e1')).toBe('/projects/p1/experiments/e1')
     expect(brandPath('p1', 'b1')).toBe('/projects/p1/brands/b1')
+    expect(webhookPath('p1', 'w1')).toBe('/projects/p1/webhooks/w1')
   })
 
   it('exposes static routes', () => {
@@ -31,6 +32,7 @@ describe('routes', () => {
     ['/projects/', { area: 'project-picker' }],
     ['/projects/p1/flags/f1', { area: 'project', id: 'p1', section: 'flags' }],
     ['/projects/p1', { area: 'project', id: 'p1', section: 'flags' }],
+    ['/projects/p1/webhooks/w1', { area: 'project', id: 'p1', section: 'webhooks' }],
     ['/orgs/o1/members', { area: 'org', id: 'o1', section: 'members' }],
     ['/orgs/o1', { area: 'org', id: 'o1', section: 'projects' }],
     ['/orgs/new', { area: 'org' }],
