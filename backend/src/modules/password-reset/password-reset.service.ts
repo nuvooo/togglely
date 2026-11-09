@@ -38,7 +38,13 @@ export class PasswordResetService {
     this.logger.debug(`Password reset requested for user ${user.id}`)
 
     try {
-      await this.mailService.sendPasswordResetEmail(email, token)
+      const sent = await this.mailService.sendPasswordResetEmail(email, token)
+      if (!sent) {
+        // The client still gets the generic response (no account leak)
+        this.logger.warn(
+          `Password reset for user ${user.id} not emailed: SMTP is not configured`
+        )
+      }
     } catch (error) {
       this.logger.error(
         `Failed to send password reset email for user ${user.id}`

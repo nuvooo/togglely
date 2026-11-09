@@ -398,8 +398,9 @@ export class AuthController {
       where: { email: body.email },
     })
 
-    // Same response whether or not the account exists (no user enumeration)
-    if (user && !user.emailVerified) {
+    // Same response whether or not the account exists (no user enumeration).
+    // Without SMTP there is nothing to send, so the token is left untouched.
+    if (user && !user.emailVerified && this.mailService.isEnabled()) {
       const token = randomBytes(32).toString('hex')
       await this.prisma.user.update({
         where: { id: user.id },

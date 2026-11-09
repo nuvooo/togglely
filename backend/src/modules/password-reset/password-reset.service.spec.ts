@@ -25,7 +25,7 @@ function createService() {
   } as any
 
   const mailService = {
-    sendPasswordResetEmail: jest.fn().mockResolvedValue(undefined),
+    sendPasswordResetEmail: jest.fn().mockResolvedValue(true),
   } as any
 
   const config = {
@@ -100,6 +100,24 @@ describe('PasswordResetService', () => {
       await service.requestReset('test@example.com')
 
       expect(prisma.user.update).toHaveBeenCalled()
+    })
+
+    it('stays generic and logs a warning when SMTP is not configured', async () => {
+      const { service, prisma, mailService } = createService()
+      prisma.user.findUnique.mockResolvedValue(mockUser)
+      prisma.user.update.mockResolvedValue({})
+      mailService.sendPasswordResetEmail.mockResolvedValue(false)
+      const warn = jest
+        .spyOn((service as any).logger, 'warn')
+        .mockImplementation(() => undefined)
+
+      await expect(
+        service.requestReset('test@example.com')
+      ).resolves.toBeUndefined()
+
+      expect(warn).toHaveBeenCalledWith(
+        expect.stringContaining('SMTP is not configured')
+      )
     })
   })
 
