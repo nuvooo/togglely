@@ -12,21 +12,32 @@ import { Link, useParams } from 'react-router-dom'
 import api from '@/lib/api'
 import { projectPath, ROUTES } from '@/lib/routes'
 import {
+  type BrandColumn,
+  type BrandMatrixRow,
   buildSdkSnippet,
-  fetchSdkFlags,
+  DEFAULT_COLUMN,
+  fetchBrandMatrix,
   type SdkContext,
-  type SdkFlagResult,
 } from '@/lib/sdk-tester'
 
 interface Project {
   id: string
   name: string
   key: string
+  type: 'SINGLE' | 'MULTI'
   environments: { id: string; name: string; key: string }[]
 }
 
-interface TestResult extends SdkFlagResult {
-  flagKey: string
+interface Brand {
+  id: string
+  key: string
+  name: string
+}
+
+interface Matrix {
+  columns: BrandColumn[]
+  rows: BrandMatrixRow[]
+  errors: Record<string, string>
 }
 
 export default function SDKTester() {
@@ -36,19 +47,20 @@ export default function SDKTester() {
   const [selectedProject, setSelectedProject] = useState<string>(projectId ?? '')
   const [selectedEnvironment, setSelectedEnvironment] = useState<string>('')
   const [apiKey, setApiKey] = useState<string>('')
-  // Flag shown in the generated code (defaults to the first tested flag)
+  // Flag/brand shown in the generated code (defaults: first flag, no brand)
   const [snippetFlagKey, setSnippetFlagKey] = useState<string>('')
+  const [snippetBrandKey, setSnippetBrandKey] = useState<string | null>(null)
+  const [brands, setBrands] = useState<Brand[]>([])
 
   // Context attributes
   const [contextAttrs, setContextAttrs] = useState<
     { key: string; value: string }[]
   >([
     { key: 'userId', value: '' },
-    { key: 'tenantId', value: '' },
   ])
 
   const [isLoading, setIsLoading] = useState(false)
-  const [testResults, setTestResults] = useState<TestResult[]>([])
+  const [matrix, setMatrix] = useState<Matrix | null>(null)
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
@@ -60,8 +72,9 @@ export default function SDKTester() {
   useEffect(() => {
     setSelectedProject(projectId ?? '')
     setSelectedEnvironment('')
-    setTestResults([])
+    setMatrix(null)
     setSnippetFlagKey('')
+    setSnippetBrandKey(null)
     setError(null)
   }, [projectId])
 
@@ -82,6 +95,27 @@ export default function SDKTester() {
 
   const selectedProjectData = projects.find((p) => p.id === selectedProject)
   const environments = selectedProjectData?.environments || []
+  const isMultiBrand = selectedProjectData?.type === 'MULTI'
+
+  // Multi-brand projects are evaluated once per brand
+  useEffect(() => {
+    setBrands([])
+    setMatrix(null)
+    setSnippetBrandKey(null)
+    if (!selectedProjectData || selectedProjectData.type !== 'MULTI') return
+    let cancelled = false
+    api
+      .get(`/brands/project/${selectedProjectData.id}`)
+      .then((res) => {
+        if (!cancelled) setBrands(res.data.brands ?? [])
+      })
+      .catch(() => {
+        if (!cancelled) setError('Failed to load brands of this project')
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [selectedProjectData])
 
   // Preselect the first environment so a test can run right away
   useEffect(() => {
@@ -111,7 +145,7 @@ export default function SDKTester() {
   const buildContext = (): SdkContext => {
     const context: SdkContext = {}
     contextAttrs.forEach(({ key, value }) => {
-      if (key.trim()) {
+      if (key.trim() && value !== '' && key !== 'brandKey' && key !== 'tenantId') {
         // Try to parse as number or boolean
         if (value === 'true') context[key] = true
         else if (value === 'false') context[key] = false
@@ -125,8 +159,8 @@ export default function SDKTester() {
 
   const environmentKey =
     environments.find((e) => e.id === selectedEnvironment)?.key || 'development'
-  const snippetFlag =
-    testResults.find((r) => r.flagKey === snippetFlagKey) ?? testResults[0] ?? null
+  const snippetRow =
+    matrix?.rows.find((r) => r.flagKey === snippetFlagKey) ?? matrix?.rows[0] ?? null
 
   const generateCode = () =>
     buildSdkSnippet({
@@ -137,7 +171,8 @@ export default function SDKTester() {
       // Vite proxies /sdk to the backend.
       baseUrl: window.location.origin,
       context: buildContext(),
-      flag: snippetFlag ? { key: snippetFlag.flagKey, flagType: snippetFlag.flagType } : null,
+      brandKey: snippetBrandKey ?? undefined,
+      flag: snippetRow ? { key: snippetRow.flagKey, flagType: snippetRow.flagType } : null,
     })
 
   const runTest = async () => {
@@ -152,21 +187,24 @@ export default function SDKTester() {
 
     setIsLoading(true)
     setError(null)
-    setTestResults([])
+    setMatrix(null)
 
     try {
-      const flags = await fetchSdkFlags({
+      const result = await fetchBrandMatrix({
         projectKey: selectedProjectData.key,
         environmentKey,
         apiKey: apiKey.trim(),
         context: buildContext(),
+        brands: isMultiBrand ? brands : [],
       })
-      const results = Object.entries(flags).map(([flagKey, result]) => ({
-        flagKey,
-        ...result,
-      }))
-      setTestResults(results)
-      if (results.length === 0) setError('This project has no flags in this environment yet')
+      const failed = Object.values(result.errors)
+      if (result.rows.length === 0 && failed.length > 0) {
+        // Every request failed (e.g. wrong API key): show the reason
+        setError(failed[0])
+      } else {
+        setMatrix(result)
+        if (result.rows.length === 0) setError('This project has no flags in this environment yet')
+      }
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Failed to run test')
     } finally {
@@ -289,8 +327,10 @@ export default function SDKTester() {
               </button>
             </div>
             <p className="text-xs text-muted-foreground mb-3">
-              These attributes are used for targeting rules (e.g., userId,
-              tenantId, plan, country)
+              These attributes are used for targeting rules (e.g. userId,
+              plan, country).
+              {isMultiBrand &&
+                ` This project has ${brands.length} brand(s); every brand is tested separately.`}
             </p>
 
             <div className="space-y-3">
@@ -367,49 +407,85 @@ export default function SDKTester() {
             </pre>
           </div>
 
-          {/* Test Results */}
-          {testResults.length > 0 && (
+          {/* Test Results: one column per brand (multi-brand) or Default */}
+          {matrix && matrix.rows.length > 0 && (
             <div className="bg-card shadow rounded-lg border border-border">
               <div className="px-4 py-3 border-b border-border">
-                <h3 className="text-sm font-medium text-foreground">
-                  Test Results
-                </h3>
+                <h3 className="text-sm font-medium text-foreground">Test Results</h3>
+                <p className="text-xs text-muted-foreground">
+                  Click a value to use that flag{isMultiBrand ? ' and brand' : ''} in the generated code.
+                </p>
               </div>
-              <div className="divide-y divide-border">
-                {testResults.map((result) => (
-                  <button
-                    type="button"
-                    key={result.flagKey}
-                    onClick={() => setSnippetFlagKey(result.flagKey)}
-                    title="Use in generated code"
-                    className={clsx(
-                      'w-full px-4 py-3 flex items-center justify-between text-left hover:bg-accent',
-                      snippetFlag?.flagKey === result.flagKey && 'bg-accent'
-                    )}
-                  >
-                    <span className="flex items-center gap-2">
-                      <code className="text-sm font-medium">{result.flagKey}</code>
-                      <span className="text-[10px] uppercase text-muted-foreground">
-                        {result.flagType}
-                      </span>
-                    </span>
-                    <div className="flex items-center space-x-4">
-                      <span
-                        className={clsx(
-                          'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
-                          result.enabled
-                            ? 'bg-success/15 text-success'
-                            : 'bg-muted text-muted-foreground'
-                        )}
-                      >
-                        {result.enabled ? 'Enabled' : 'Disabled'}
-                      </span>
-                      <code className="text-xs text-muted-foreground bg-muted px-2 py-1 rounded">
-                        {JSON.stringify(result.value)}
-                      </code>
-                    </div>
-                  </button>
-                ))}
+              <div className="overflow-x-auto">
+                <table className="w-full text-sm">
+                  <thead>
+                    <tr className="border-b border-border text-left text-xs uppercase tracking-wide text-muted-foreground">
+                      <th className="px-4 py-2 font-medium">Flag</th>
+                      {matrix.columns.map((column) => (
+                        <th key={column.key ?? DEFAULT_COLUMN} className="px-4 py-2 font-medium">
+                          {column.label}
+                          {column.key && (
+                            <div className="font-mono normal-case text-[10px]">{column.key}</div>
+                          )}
+                        </th>
+                      ))}
+                    </tr>
+                  </thead>
+                  <tbody className="divide-y divide-border">
+                    {matrix.rows.map((row) => (
+                      <tr key={row.flagKey}>
+                        <td className="px-4 py-2 align-top">
+                          <code className="font-medium">{row.flagKey}</code>
+                          <div className="text-[10px] uppercase text-muted-foreground">
+                            {row.flagType}
+                          </div>
+                        </td>
+                        {matrix.columns.map((column) => {
+                          const columnKey = column.key ?? DEFAULT_COLUMN
+                          const cell = row.cells[columnKey]
+                          const columnError = matrix.errors[columnKey]
+                          const selected =
+                            snippetRow?.flagKey === row.flagKey && snippetBrandKey === column.key
+                          return (
+                            <td key={columnKey} className="px-2 py-1.5 align-top">
+                              {cell ? (
+                                <button
+                                  type="button"
+                                  onClick={() => {
+                                    setSnippetFlagKey(row.flagKey)
+                                    setSnippetBrandKey(column.key)
+                                  }}
+                                  className={clsx(
+                                    'flex w-full flex-col items-start gap-1 rounded-md px-2 py-1 text-left hover:bg-accent',
+                                    selected && 'bg-accent'
+                                  )}
+                                >
+                                  <span
+                                    className={clsx(
+                                      'inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium',
+                                      cell.enabled
+                                        ? 'bg-success/15 text-success'
+                                        : 'bg-muted text-muted-foreground'
+                                    )}
+                                  >
+                                    {cell.enabled ? 'Enabled' : 'Disabled'}
+                                  </span>
+                                  <code className="text-xs text-muted-foreground">
+                                    {JSON.stringify(cell.value)}
+                                  </code>
+                                </button>
+                              ) : (
+                                <span className="px-2 text-xs text-destructive">
+                                  {columnError ?? '—'}
+                                </span>
+                              )}
+                            </td>
+                          )
+                        })}
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
               </div>
             </div>
           )}

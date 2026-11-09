@@ -183,7 +183,8 @@ async function bootstrap() {
     '/sdk/flags/:projectKey/:environmentKey/:flagKey',
     async (req, res) => {
       const { projectKey, environmentKey, flagKey } = req.params
-      const effectiveBrandKey = extractEffectiveBrandKey(req.query)
+      const context = parseSdkContext(req.query)
+      const effectiveBrandKey = extractEffectiveBrandKey(req.query, context)
       const apiKey = extractSdkApiKey(req)
       const origin = extractSdkOrigin(req)
 
@@ -213,7 +214,7 @@ async function bootstrap() {
           apiKey,
           effectiveBrandKey as string,
           origin,
-          parseSdkContext(req.query)
+          context
         )
 
         logger.debug(`[SDK] Success: ${flagKey} =`, result)
@@ -231,7 +232,8 @@ async function bootstrap() {
     '/sdk/flags/:projectKey/:environmentKey',
     async (req, res) => {
       const { projectKey, environmentKey } = req.params
-      const effectiveBrandKey = extractEffectiveBrandKey(req.query)
+      const context = parseSdkContext(req.query)
+      const effectiveBrandKey = extractEffectiveBrandKey(req.query, context)
       const apiKey = extractSdkApiKey(req)
       const origin = extractSdkOrigin(req)
 
@@ -258,7 +260,7 @@ async function bootstrap() {
           apiKey,
           effectiveBrandKey as string,
           origin,
-          parseSdkContext(req.query)
+          context
         )
 
         logger.debug(

@@ -55,6 +55,21 @@ describe('sdk-http.utils', () => {
         })
       ).toBe('tenant-a')
     })
+
+    it('falls back to brandKey/tenantId inside the context', () => {
+      expect(extractEffectiveBrandKey({}, { brandKey: 'brand-b' })).toBe('brand-b')
+      expect(extractEffectiveBrandKey({}, { tenantId: 'tenant-b' })).toBe('tenant-b')
+    })
+
+    it('prefers explicit query parameters over the context', () => {
+      expect(
+        extractEffectiveBrandKey({ brandKey: 'brand-a' }, { brandKey: 'brand-b' })
+      ).toBe('brand-a')
+    })
+
+    it('ignores non-string context values', () => {
+      expect(extractEffectiveBrandKey({}, { brandKey: 42 })).toBeUndefined()
+    })
   })
 
   describe('extractSdkOrigin', () => {
