@@ -1,3 +1,4 @@
+import { runWithActor } from '../../shared/actor-context'
 import { AuditLogsService } from './audit-logs.service'
 
 function setup(orgIds: string[] = []) {
@@ -122,6 +123,33 @@ describe('AuditLogsService', () => {
     expect(data.newValues.defaultValue).toMatch(/…\[truncated\]$/)
     expect(data.newValues.nested.v).toMatch(/…\[truncated\]$/)
     expect(data.oldValues).toEqual({ defaultValue: 'short' })
+  })
+
+  describe('create actor attribution', () => {
+    const entry = {
+      action: 'flag.created',
+      entityType: 'FeatureFlag',
+      entityId: 'f1',
+      userId: 'u1',
+      organizationId: 'o1',
+    }
+
+    it('stores apiKeyId/apiKeyName when called inside an actor context', async () => {
+      const { prisma, service } = setup()
+      await runWithActor({ apiKeyId: 'k1', apiKeyName: 'Claude' }, () =>
+        service.create(entry)
+      )
+      expect(prisma.auditLog.create.mock.calls[0][0].data).toMatchObject({
+        apiKeyId: 'k1',
+        apiKeyName: 'Claude',
+      })
+    })
+
+    it('stores no api key fields outside an actor context', async () => {
+      const { prisma, service } = setup()
+      await service.create(entry)
+      expect(prisma.auditLog.create.mock.calls[0][0].data.apiKeyId).toBeUndefined()
+    })
   })
 
   describe('findOrganizationPage', () => {
