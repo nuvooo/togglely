@@ -4,9 +4,17 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
+import { FeatureFlag } from '@prisma/client'
 import { Project } from '../../domain/project.entity'
 import { PrismaService } from '../../shared/prisma.service'
 import { isPrismaUniqueConstraintError } from '../../shared/prisma-errors'
+import { ChangeEventsService } from '../change-events/change-events.service'
+import { deleteProjectChangeData } from '../change-events/project-cleanup'
+import {
+  ENVIRONMENT_ORDER_BY,
+  sortByEnvironmentPosition,
+} from '../environments/environment-order'
+import { latestFlagUpdate } from '../flags/flag-timestamps'
 import { getDefaultFlagValue } from '../sdk/sdk.helpers'
 import { CreateProjectDto } from './dto/create-project.dto'
 import { ImportFlagDto, ImportFlagsOptionsDto } from './dto/import-flags.dto'
@@ -14,14 +22,21 @@ import { UpdateProjectDto } from './dto/update-project.dto'
 
 @Injectable()
 export class ProjectsService {
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(
+    private readonly prisma: PrismaService,
+    private readonly changes: ChangeEventsService
+  ) {}
 
   async findAll(userId: string) {
     const memberships = await this.prisma.organizationMember.findMany({
       where: { userId },
       include: {
         organization: {
-          include: { projects: { include: { environments: true } } },
+          include: {
+            projects: {
+              include: { environments: { orderBy: ENVIRONMENT_ORDER_BY } },
+            },
+          },
         },
       },
     })
@@ -58,7 +73,7 @@ export class ProjectsService {
   async findOne(projectId: string) {
     const p = await this.prisma.project.findUnique({
       where: { id: projectId },
-      include: { environments: true },
+      include: { environments: { orderBy: ENVIRONMENT_ORDER_BY } },
     })
 
     if (!p) throw new NotFoundException('Project not found')
@@ -86,6 +101,7 @@ export class ProjectsService {
   async getEnvironments(projectId: string) {
     const envs = await this.prisma.environment.findMany({
       where: { projectId },
+      orderBy: ENVIRONMENT_ORDER_BY,
     })
     return envs
   }
@@ -94,7 +110,7 @@ export class ProjectsService {
     // Get project with environments
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      include: { environments: true },
+      include: { environments: { orderBy: ENVIRONMENT_ORDER_BY } },
     })
 
     if (!project) throw new NotFoundException('Project not found')
@@ -152,13 +168,18 @@ export class ProjectsService {
     })
 
     const result = flagsWithEnvs.map((f) => {
-      const envs = f.flagEnvironments.filter((fe) => !fe.brandId)
+      const envs = sortByEnvironmentPosition(
+        f.flagEnvironments.filter((fe) => !fe.brandId),
+        project.environments
+      )
 
       return {
         id: f.id,
         name: f.name,
         key: f.key,
         flagType: f.flagType,
+        createdAt: f.createdAt,
+        updatedAt: latestFlagUpdate(f),
         environments: envs.map((env) => ({
           id: env.id,
           environmentId: env.environmentId,
@@ -170,13 +191,19 @@ export class ProjectsService {
               (fe) =>
                 fe.environmentId === env.environmentId && fe.brandId === b.id
             )
-            // Always return brand, using default env values if no override exists
+            // Without an own row the brand inherits the default live; its
+            // effective values are the default's. Never created on read.
+            const effectiveValue = brandEnv?.defaultValue ?? env.defaultValue
             return {
               brandId: b.id,
               brandName: b.name,
+              brandKey: b.key,
               enabled: brandEnv?.enabled ?? env.enabled,
-              value: brandEnv?.defaultValue ?? env.defaultValue,
+              defaultValue: effectiveValue,
+              value: effectiveValue,
+              inherited: !brandEnv,
               isOverride: !!brandEnv,
+              isBrandSpecific: !!brandEnv,
             }
           }),
         })),
@@ -237,8 +264,18 @@ export class ProjectsService {
         organizationId: project.organizationId,
         environments: {
           create: [
-            { name: 'Development', key: 'development', organizationId: orgId },
-            { name: 'Production', key: 'production', organizationId: orgId },
+            {
+              name: 'Development',
+              key: 'development',
+              organizationId: orgId,
+              sortOrder: 0,
+            },
+            {
+              name: 'Production',
+              key: 'production',
+              organizationId: orgId,
+              sortOrder: 1,
+            },
           ],
         },
       },
@@ -276,7 +313,7 @@ export class ProjectsService {
     const updated = await this.prisma.project.update({
       where: { id: projectId },
       data,
-      include: { environments: true },
+      include: { environments: { orderBy: ENVIRONMENT_ORDER_BY } },
     })
 
     return {
@@ -296,7 +333,7 @@ export class ProjectsService {
   async findByOrganization(orgId: string) {
     const projects = await this.prisma.project.findMany({
       where: { organizationId: orgId },
-      include: { environments: true },
+      include: { environments: { orderBy: ENVIRONMENT_ORDER_BY } },
     })
 
     // Get counts for each project
@@ -387,7 +424,10 @@ export class ProjectsService {
       // 7. Delete audit logs
       await tx.auditLog.deleteMany({ where: { projectId } })
 
-      // 8. Finally delete the project
+      // 8. Delete config versions, webhooks and webhook deliveries
+      await deleteProjectChangeData(tx, projectId)
+
+      // 9. Finally delete the project
       await tx.project.delete({ where: { id: projectId } })
     })
   }
@@ -396,7 +436,7 @@ export class ProjectsService {
   async exportFlags(projectId: string) {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      include: { environments: true },
+      include: { environments: { orderBy: ENVIRONMENT_ORDER_BY } },
     })
 
     if (!project) throw new NotFoundException('Project not found')
@@ -425,13 +465,14 @@ export class ProjectsService {
         name: f.name,
         description: f.description,
         flagType: f.flagType,
-        environments: f.flagEnvironments
-          .filter((fe) => !fe.brandId)
-          .map((fe) => ({
-            environmentKey: fe.environment.key,
-            enabled: fe.enabled,
-            defaultValue: fe.defaultValue,
-          })),
+        environments: sortByEnvironmentPosition(
+          f.flagEnvironments.filter((fe) => !fe.brandId),
+          project.environments
+        ).map((fe) => ({
+          environmentKey: fe.environment.key,
+          enabled: fe.enabled,
+          defaultValue: fe.defaultValue,
+        })),
       })),
     }
 
@@ -446,7 +487,7 @@ export class ProjectsService {
   ) {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      include: { environments: true },
+      include: { environments: { orderBy: ENVIRONMENT_ORDER_BY } },
     })
 
     if (!project) throw new NotFoundException('Project not found')
@@ -465,6 +506,9 @@ export class ProjectsService {
     }
 
     const results = { imported: 0, skipped: 0, errors: [] as string[] }
+    // Keys of flags that were written (even if a later step for that flag
+    // failed): they may change SDK results.
+    const writtenKeys: string[] = []
 
     for (const flagData of flags) {
       try {
@@ -479,7 +523,7 @@ export class ProjectsService {
         }
 
         // Create or update flag
-        let flag
+        let flag: FeatureFlag
         if (existingFlag && options.overwrite) {
           flag = await this.prisma.featureFlag.update({
             where: { id: existingFlag.id },
@@ -506,6 +550,7 @@ export class ProjectsService {
           results.skipped++
           continue
         }
+        writtenKeys.push(flagData.key.toLowerCase())
 
         // Create/update flag environments
         for (const envData of flagData.environments || []) {
@@ -549,6 +594,18 @@ export class ProjectsService {
           `Failed to import flag '${flagData.key}': ${error.message}`
         )
       }
+    }
+
+    if (writtenKeys.length > 0) {
+      void this.changes.recordChange({
+        organizationId: project.organizationId,
+        projectId,
+        environmentIds: 'all',
+        changes: writtenKeys.map((flagKey) => ({
+          flagKey,
+          action: 'imported' as const,
+        })),
+      })
     }
 
     return results

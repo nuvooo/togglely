@@ -9,109 +9,146 @@ import {
   LegacyFlagRedirect,
   ParamRedirect,
 } from './components/routing/LegacyRedirects'
-import { ProjectQueryBridge } from './components/routing/ProjectQueryBridge'
+import {
+  FullPageSpinner,
+  GuestOnly,
+  RequireMail,
+  RequireSetupDone,
+  SetupRoute,
+} from './components/routing/SetupGate'
 import AppShell from './components/shell/AppShell'
 import { ROUTES } from './lib/routes'
-import { useAuthStore } from './store/authStore'
+import { fetchSetupStatus } from './lib/setup'
 
-const ApiKeys = lazy(() => import('./pages/ApiKeys'))
-const AuditLogs = lazy(() => import('./pages/AuditLogs'))
-const Dashboard = lazy(() => import('./pages/Dashboard'))
-const FeatureFlagDetail = lazy(() => import('./pages/FeatureFlagDetail'))
-const ForgotPassword = lazy(() => import('./pages/ForgotPassword'))
-const InviteAccept = lazy(() => import('./pages/InviteAccept'))
-const Login = lazy(() => import('./pages/Login'))
-const CreateOrganization = lazy(() => import('./pages/organizations/CreateOrganization'))
-const OrganizationDetail = lazy(() => import('./pages/organizations/OrganizationDetail'))
-const OrganizationList = lazy(() => import('./pages/organizations/OrganizationList'))
-const OrganizationMembers = lazy(() => import('./pages/organizations/OrganizationMembers'))
-const OrganizationSettings = lazy(() => import('./pages/organizations/OrganizationSettings'))
-const ProjectDetail = lazy(() => import('./pages/ProjectDetail'))
+const AccountPage = lazy(() => import('./pages/account/AccountPage'))
+const ForgotPassword = lazy(() => import('./pages/auth/ForgotPasswordPage'))
+const InviteAccept = lazy(() => import('./pages/auth/InviteAcceptPage'))
+const Login = lazy(() => import('./pages/auth/LoginPage'))
+const OverviewPage = lazy(() => import('./pages/overview/OverviewPage'))
+const ApiKeysPage = lazy(() => import('./pages/orgs/api-keys/ApiKeysPage'))
+const AuditLogPage = lazy(() => import('./pages/orgs/audit-log/AuditLogPage'))
+const CreateOrgPage = lazy(() => import('./pages/orgs/new/CreateOrgPage'))
+const OrgListPage = lazy(() => import('./pages/orgs/list/OrgListPage'))
+const OrgMembersPage = lazy(() => import('./pages/orgs/members/OrgMembersPage'))
+const OrgProjectsPage = lazy(() => import('./pages/orgs/projects/OrgProjectsPage'))
+const OrgSettingsPage = lazy(() => import('./pages/orgs/settings/OrgSettingsPage'))
 const ProjectPicker = lazy(() => import('./pages/ProjectPicker'))
-const BrandFlags = lazy(() => import('./pages/projects/BrandFlags'))
-const ProjectSettings = lazy(() => import('./pages/projects/ProjectSettings'))
-const Register = lazy(() => import('./pages/Register'))
-const ResendVerification = lazy(() => import('./pages/ResendVerification'))
-const ResetPassword = lazy(() => import('./pages/ResetPassword'))
+const FlagsPage = lazy(() => import('./pages/projects/flags/FlagsPage'))
+const FlagDetailPage = lazy(() => import('./pages/projects/flags/detail/FlagDetailPage'))
+const EnvironmentsPage = lazy(() => import('./pages/projects/environments/EnvironmentsPage'))
+const BrandsPage = lazy(() => import('./pages/projects/brands/BrandsPage'))
+const BrandDetailPage = lazy(() => import('./pages/projects/brands/BrandDetailPage'))
+const SdkTesterPage = lazy(() => import('./pages/projects/sdk/SdkTesterPage'))
+const ProjectSettingsPage = lazy(() => import('./pages/projects/settings/ProjectSettingsPage'))
+const Webhooks = lazy(() => import('./pages/projects/Webhooks'))
+const WebhookDetail = lazy(() => import('./pages/projects/WebhookDetail'))
+const ResendVerification = lazy(() => import('./pages/auth/ResendVerificationPage'))
+const ResetPassword = lazy(() => import('./pages/auth/ResetPasswordPage'))
 const ExperimentsList = lazy(() => import('./pages/experiments/ExperimentsList'))
 const CreateExperiment = lazy(() => import('./pages/experiments/CreateExperiment'))
 const ExperimentDetail = lazy(() => import('./pages/experiments/ExperimentDetail'))
-const SDKTester = lazy(() => import('./pages/SDKTester'))
-const Settings = lazy(() => import('./pages/Settings'))
-const VerifyEmail = lazy(() => import('./pages/VerifyEmail'))
+const Setup = lazy(() => import('./pages/auth/SetupPage'))
+const VerifyEmail = lazy(() => import('./pages/auth/VerifyEmailPage'))
+
+// Start loading the setup status in parallel with the first route chunk.
+fetchSetupStatus()
 
 function App() {
-  const { token } = useAuthStore()
-
   return (
     <ErrorBoundary>
-      <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" /></div>}>
+      <Suspense fallback={<FullPageSpinner />}>
       <Routes>
       {/* Public Routes. `/` itself is handled by the protected index route below:
-          logged-out users are sent to /login by ProtectedRoute. */}
+          logged-out users are sent to /login by ProtectedRoute. While the
+          instance is not set up, /login and / lead to /setup. */}
+      <Route
+        path="/setup"
+        element={
+          <SetupRoute>
+            <Setup />
+          </SetupRoute>
+        }
+      />
       <Route
         path="/login"
-        element={!token ? <Login /> : <Navigate to={ROUTES.overview} />}
+        element={
+          <RequireSetupDone>
+            <GuestOnly>
+              <Login />
+            </GuestOnly>
+          </RequireSetupDone>
+        }
       />
-      <Route
-        path="/register"
-        element={!token ? <Register /> : <Navigate to={ROUTES.overview} />}
-      />
+      {/* Registration is invite-only: new users join via /invite/:token */}
+      <Route path="/register" element={<Navigate to="/login" replace />} />
       <Route
         path="/forgot-password"
-        element={!token ? <ForgotPassword /> : <Navigate to={ROUTES.overview} />}
+        element={
+          <GuestOnly>
+            <ForgotPassword />
+          </GuestOnly>
+        }
       />
-      <Route
-        path="/reset-password"
-        element={!token ? <ResetPassword /> : <Navigate to={ROUTES.overview} />}
-      />
+      {/* Reset links come from mails, owners or the CLI: always reachable,
+          also while logged in (the reset ends that session). */}
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/invite/:token" element={<InviteAccept />} />
       <Route path="/verify-email/:token" element={<VerifyEmail />} />
       <Route
         path="/resend-verification"
-        element={!token ? <ResendVerification /> : <Navigate to={ROUTES.overview} />}
+        element={
+          <RequireMail>
+            <GuestOnly>
+              <ResendVerification />
+            </GuestOnly>
+          </RequireMail>
+        }
       />
       {/* Protected Routes */}
       <Route
         path="/"
         element={
-          <ProtectedRoute>
-            <AppShell />
-          </ProtectedRoute>
+          <RequireSetupDone>
+            <ProtectedRoute>
+              <AppShell />
+            </ProtectedRoute>
+          </RequireSetupDone>
         }
       >
         <Route index element={<Navigate to={ROUTES.overview} replace />} />
-        <Route path="overview" element={<Dashboard />} />
+        <Route path="overview" element={<OverviewPage />} />
         <Route path="projects" element={<ProjectPicker />} />
 
         {/* Project area */}
         <Route path="projects/:projectId">
           <Route index element={<ParamRedirect to="/projects/:projectId/flags" />} />
-          <Route path="flags" element={<ProjectDetail />} />
-          <Route path="flags/:flagId" element={<FeatureFlagDetail />} />
-          <Route path="experiments" element={<ProjectQueryBridge><ExperimentsList /></ProjectQueryBridge>} />
-          <Route path="experiments/new" element={<ProjectQueryBridge><CreateExperiment /></ProjectQueryBridge>} />
+          <Route path="flags" element={<FlagsPage />} />
+          <Route path="flags/:flagId" element={<FlagDetailPage />} />
+          <Route path="experiments" element={<ExperimentsList />} />
+          <Route path="experiments/new" element={<CreateExperiment />} />
           <Route path="experiments/:id" element={<ExperimentDetail />} />
-          <Route path="environments" element={<ProjectSettings />} />
-          <Route path="brands" element={<ProjectSettings />} />
-          <Route path="brands/:brandId" element={<BrandFlags />} />
-          <Route path="sdk" element={<SDKTester />} />
-          <Route path="settings" element={<ProjectSettings />} />
+          <Route path="environments" element={<EnvironmentsPage />} />
+          <Route path="brands" element={<BrandsPage />} />
+          <Route path="brands/:brandId" element={<BrandDetailPage />} />
+          <Route path="sdk" element={<SdkTesterPage />} />
+          <Route path="webhooks" element={<Webhooks />} />
+          <Route path="webhooks/:webhookId" element={<WebhookDetail />} />
+          <Route path="settings" element={<ProjectSettingsPage />} />
         </Route>
 
         {/* Organization area */}
-        <Route path="orgs" element={<OrganizationList />} />
-        <Route path="orgs/new" element={<CreateOrganization />} />
+        <Route path="orgs" element={<OrgListPage />} />
+        <Route path="orgs/new" element={<CreateOrgPage />} />
         <Route path="orgs/:orgId">
           <Route index element={<ParamRedirect to="/orgs/:orgId/projects" />} />
-          <Route path="projects" element={<OrganizationDetail />} />
-          <Route path="members" element={<OrganizationMembers />} />
-          <Route path="api-keys" element={<ApiKeys />} />
-          <Route path="audit-log" element={<AuditLogs />} />
-          <Route path="settings" element={<OrganizationSettings />} />
+          <Route path="projects" element={<OrgProjectsPage />} />
+          <Route path="members" element={<OrgMembersPage />} />
+          <Route path="api-keys" element={<ApiKeysPage />} />
+          <Route path="audit-log" element={<AuditLogPage />} />
+          <Route path="settings" element={<OrgSettingsPage />} />
         </Route>
 
-        <Route path="account" element={<Settings />} />
+        <Route path="account" element={<AccountPage />} />
 
         {/* Legacy URLs (bookmarks, emails) */}
         <Route path="dashboard" element={<Navigate to={ROUTES.overview} replace />} />

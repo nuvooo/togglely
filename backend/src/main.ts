@@ -6,16 +6,15 @@ import helmet from 'helmet'
 import morgan from 'morgan'
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston'
 import { AppModule } from './app.module'
-import { SDK_ERROR_CODES } from './modules/sdk/sdk.constants'
-import { SdkService } from './modules/sdk/sdk.service'
+import { ChangeEventsService } from './modules/change-events/change-events.service'
 import {
-  extractEffectiveBrandKey,
-  extractSdkApiKey,
-  extractSdkOrigin,
-  mapSdkError,
-  parseSdkContext,
-  setSdkCorsHeaders,
-} from './modules/sdk/sdk-http.utils'
+  SDK_CORS_ALLOWED_HEADERS,
+  SDK_CORS_EXPOSED_HEADERS,
+} from './modules/sdk/sdk.constants'
+import { SdkService } from './modules/sdk/sdk.service'
+import { handleSdkFlagsRequest } from './modules/sdk/sdk-etag'
+import { SdkStreamHub } from './modules/sdk/sdk-stream'
+import { setSdkCorsHeaders } from './modules/sdk/sdk-http.utils'
 import { GlobalExceptionFilter } from './shared/filters/global-exception.filter'
 import { MetricsService } from './shared/metrics/metrics.service'
 import {
@@ -32,6 +31,9 @@ async function bootstrap() {
   assertSecureConfig()
 
   const app = await NestFactory.create(AppModule)
+  // SIGTERM/SIGINT: onModuleDestroy hooks run before the HTTP server closes
+  // (SDK streams are ended, pending change events flushed)
+  app.enableShutdownHooks()
   app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER))
   const logger = new Logger('Bootstrap')
   const isProduction = process.env.NODE_ENV === 'production'
@@ -108,7 +110,10 @@ async function bootstrap() {
     origin: true,
     credentials: false,
     methods: ['GET', 'POST', 'OPTIONS'],
-    allowedHeaders: corsHeaders,
+    // Includes If-None-Match / Last-Event-ID for conditional requests and
+    // stream resumption
+    allowedHeaders: SDK_CORS_ALLOWED_HEADERS.split(', '),
+    exposedHeaders: SDK_CORS_EXPOSED_HEADERS.split(', '),
   })
   app.use((req: any, res: any, next: any) =>
     isSdkPath(req.path) ? sdkCors(req, res, next) : apiCors(req, res, next)
@@ -128,6 +133,9 @@ async function bootstrap() {
   // Register standalone routes BEFORE global prefix
   const httpAdapter = app.getHttpAdapter()
   const sdkService = app.get(SdkService)
+  const changeEvents = app.get(ChangeEventsService)
+  const sdkFlagsDeps = { sdkService, changeEvents, logger }
+  const sdkStreamHub = app.get(SdkStreamHub)
 
   // Health endpoint
   httpAdapter.get('/health', (req, res) => {
@@ -178,99 +186,29 @@ async function bootstrap() {
     })
   )
 
+  // Live change stream (Server-Sent Events). Registered after the rate
+  // limiter: opening a stream counts as one request; concurrent streams are
+  // limited per API key and per IP by the hub.
+  httpAdapter.options('/sdk/stream/:projectKey/:environmentKey', (req, res) => {
+    setSdkCorsHeaders(res, req.headers['origin'] as string | undefined)
+    res.status(200).send()
+  })
+  httpAdapter.get('/sdk/stream/:projectKey/:environmentKey', (req, res) =>
+    sdkStreamHub.handle(req, res)
+  )
+
   // Get single flag - MUST be registered BEFORE the list endpoint!
+  // Both answer conditional requests: ETag = config version + request shape,
+  // If-None-Match → 304 after the key/origin check, before evaluation.
   httpAdapter.get(
     '/sdk/flags/:projectKey/:environmentKey/:flagKey',
-    async (req, res) => {
-      const { projectKey, environmentKey, flagKey } = req.params
-      const effectiveBrandKey = extractEffectiveBrandKey(req.query)
-      const apiKey = extractSdkApiKey(req)
-      const origin = extractSdkOrigin(req)
-
-      // Always set CORS headers first
-      setSdkCorsHeaders(res, origin)
-
-      logger.debug(
-        `[SDK] Request: /sdk/flags/${projectKey}/${environmentKey}/${flagKey}`
-      )
-      logger.debug(
-        `[SDK] API Key present: ${!!apiKey}, Origin: ${origin || 'none'}`
-      )
-
-      try {
-        if (!apiKey) {
-          logger.debug('[SDK] ERROR: No API key provided')
-          return res.status(401).json({
-            error: 'API key required',
-            code: SDK_ERROR_CODES.missingApiKey,
-          })
-        }
-
-        const result = await sdkService.evaluateFlag(
-          projectKey,
-          environmentKey,
-          flagKey,
-          apiKey,
-          effectiveBrandKey as string,
-          origin,
-          parseSdkContext(req.query)
-        )
-
-        logger.debug(`[SDK] Success: ${flagKey} =`, result)
-        res.json(result)
-      } catch (error: any) {
-        logger.error(`[SDK] Error for ${flagKey}:`, error.message)
-        const response = mapSdkError(error)
-        res.status(response.status).json(response.body)
-      }
-    }
+    (req, res) =>
+      handleSdkFlagsRequest(sdkFlagsDeps, req, res, req.params.flagKey)
   )
 
   // Get all flags for project/environment
-  httpAdapter.get(
-    '/sdk/flags/:projectKey/:environmentKey',
-    async (req, res) => {
-      const { projectKey, environmentKey } = req.params
-      const effectiveBrandKey = extractEffectiveBrandKey(req.query)
-      const apiKey = extractSdkApiKey(req)
-      const origin = extractSdkOrigin(req)
-
-      // Always set CORS headers first
-      setSdkCorsHeaders(res, origin)
-
-      logger.debug(`[SDK] Request: /sdk/flags/${projectKey}/${environmentKey}`)
-      logger.debug(
-        `[SDK] API Key present: ${!!apiKey}, Origin: ${origin || 'none'}`
-      )
-
-      try {
-        if (!apiKey) {
-          logger.debug('[SDK] ERROR: No API key provided')
-          return res.status(401).json({
-            error: 'API key required',
-            code: SDK_ERROR_CODES.missingApiKey,
-          })
-        }
-
-        const results = await sdkService.getAllFlags(
-          projectKey,
-          environmentKey,
-          apiKey,
-          effectiveBrandKey as string,
-          origin,
-          parseSdkContext(req.query)
-        )
-
-        logger.debug(
-          `[SDK] Success: ${Object.keys(results).length} flags returned`
-        )
-        res.json(results)
-      } catch (error: any) {
-        logger.error(`[SDK] Error:`, error.message)
-        const response = mapSdkError(error)
-        res.status(response.status).json(response.body)
-      }
-    }
+  httpAdapter.get('/sdk/flags/:projectKey/:environmentKey', (req, res) =>
+    handleSdkFlagsRequest(sdkFlagsDeps, req, res)
   )
 
   // Set global prefix BEFORE creating Swagger document so paths are correct

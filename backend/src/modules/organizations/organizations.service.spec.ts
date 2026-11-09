@@ -39,6 +39,7 @@ function createService() {
     },
     user: {
       findUnique: jest.fn(),
+      findFirst: jest.fn().mockResolvedValue(null),
     },
     project: {
       findMany: jest.fn(),
@@ -65,6 +66,16 @@ function createService() {
     },
     apiKey: {
       deleteMany: jest.fn(),
+    },
+    configVersion: {
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
+    webhook: {
+      findMany: jest.fn().mockResolvedValue([]),
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+    },
+    webhookDelivery: {
+      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
   } as any
 
@@ -229,6 +240,33 @@ describe('OrganizationsService', () => {
         where: { id: 'org-1' },
       })
       expect(prisma.organizationMember.deleteMany).toHaveBeenCalled()
+    })
+
+    it('removes config versions, webhooks and deliveries of every project', async () => {
+      const { service, prisma } = createService()
+      prisma.project.findMany.mockResolvedValue([
+        { id: 'proj-1' },
+        { id: 'proj-2' },
+      ])
+      prisma.featureFlag.findMany.mockResolvedValue([])
+      prisma.environment.findMany.mockResolvedValue([])
+      prisma.webhook.findMany.mockImplementation(({ where }: any) =>
+        Promise.resolve(where.projectId === 'proj-1' ? [{ id: 'wh-1' }] : [])
+      )
+
+      await service.delete('org-1')
+
+      for (const projectId of ['proj-1', 'proj-2']) {
+        expect(prisma.configVersion.deleteMany).toHaveBeenCalledWith({
+          where: { projectId },
+        })
+        expect(prisma.webhook.deleteMany).toHaveBeenCalledWith({
+          where: { projectId },
+        })
+      }
+      expect(prisma.webhookDelivery.deleteMany).toHaveBeenCalledWith({
+        where: { webhookId: { in: ['wh-1'] } },
+      })
     })
 
     it('handles organization with no projects', async () => {

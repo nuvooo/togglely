@@ -5,6 +5,8 @@ import {
   type OnModuleInit,
 } from '@nestjs/common'
 import { PrismaClient } from '@prisma/client'
+import { migrateBrandInheritance } from './brand-inherit.migration'
+import { migrateEnvironmentSortOrder } from './environment-sort-order.migration'
 
 @Injectable()
 export class PrismaService
@@ -16,6 +18,34 @@ export class PrismaService
   async onModuleInit() {
     await this.$connect()
     await this.normalizeLegacyDocuments()
+    await this.runBrandInheritanceMigration()
+    await this.runEnvironmentSortOrderMigration()
+  }
+
+  /** One-time, best-effort: never blocks boot. */
+  private async runEnvironmentSortOrderMigration() {
+    try {
+      const updated = await migrateEnvironmentSortOrder(this, this.logger)
+      if (updated === null) {
+        this.logger.debug('Environment sort order backfill already applied')
+      }
+    } catch (error) {
+      this.logger.warn(
+        `Environment sort order backfill skipped: ${String(error)}`
+      )
+    }
+  }
+
+  /** One-time, best-effort: never blocks boot. */
+  private async runBrandInheritanceMigration() {
+    try {
+      const deleted = await migrateBrandInheritance(this, this.logger)
+      if (deleted === null) {
+        this.logger.debug('Brand inheritance migration already applied')
+      }
+    } catch (error) {
+      this.logger.warn(`Brand inheritance migration skipped: ${String(error)}`)
+    }
   }
 
   /**
@@ -27,6 +57,19 @@ export class PrismaService
    */
   private async normalizeLegacyDocuments() {
     try {
+      // Environment.sortOrder was added later; Prisma cannot read a
+      // document where the required Int is missing. Must run before any read.
+      await this.$runCommandRaw({
+        update: 'environments',
+        updates: [
+          {
+            q: { sortOrder: { $exists: false } },
+            u: { $set: { sortOrder: 0 } },
+            multi: true,
+          },
+        ],
+      })
+
       const result = (await this.$runCommandRaw({
         update: 'flag_environments',
         updates: [
@@ -55,7 +98,9 @@ export class PrismaService
         ],
       })
     } catch (error) {
-      this.logger.warn(`Legacy document normalization skipped: ${String(error)}`)
+      this.logger.warn(
+        `Legacy document normalization skipped: ${String(error)}`
+      )
     }
   }
 

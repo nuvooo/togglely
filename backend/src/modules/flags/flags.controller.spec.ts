@@ -29,13 +29,11 @@ function setup(
         .mockResolvedValue({ id: PROJECT, organizationId: ORG }),
     },
     featureFlag: {
-      findUnique: jest
-        .fn()
-        .mockResolvedValue({
-          id: FLAG,
-          projectId: PROJECT,
-          organizationId: ORG,
-        }),
+      findUnique: jest.fn().mockResolvedValue({
+        id: FLAG,
+        projectId: PROJECT,
+        organizationId: ORG,
+      }),
     },
     organizationMember: {
       findFirst: jest
@@ -162,8 +160,8 @@ describe('FlagsController access control', () => {
     await controller.update(FLAG, { name: 'x' }, req)
     await controller.toggle(FLAG, { environmentId: ENV, enabled: true }, req)
     expect(flagsService.create).toHaveBeenCalledWith(PROJECT, USER, createDto)
-    expect(flagsService.update).toHaveBeenCalledWith(FLAG, { name: 'x' })
-    expect(flagsService.toggle).toHaveBeenCalledWith(FLAG, ENV, true)
+    expect(flagsService.update).toHaveBeenCalledWith(FLAG, { name: 'x' }, USER)
+    expect(flagsService.toggle).toHaveBeenCalledWith(FLAG, ENV, true, USER)
 
     await expect(controller.delete(FLAG, req)).rejects.toBeInstanceOf(
       ForbiddenException
@@ -242,10 +240,23 @@ describe('FlagsController access control', () => {
   it('updateValue accepts a brand of the same project', async () => {
     const { controller, flagsService, req } = setup('MEMBER')
     await controller.updateValue(FLAG, ENV, { value: 'x', brandId: BRAND }, req)
-    expect(flagsService.updateValue).toHaveBeenCalledWith(FLAG, ENV, {
-      value: 'x',
-      brandId: BRAND,
-    })
+    expect(flagsService.updateValue).toHaveBeenCalledWith(
+      FLAG,
+      ENV,
+      { value: 'x', brandId: BRAND },
+      USER
+    )
+  })
+
+  it('updateEnvironment passes the acting user for the audit log', async () => {
+    const { controller, flagsService, req } = setup('MEMBER')
+    await controller.updateEnvironment(FLAG, ENV, { isEnabled: true }, req)
+    expect(flagsService.updateEnvironment).toHaveBeenCalledWith(
+      FLAG,
+      ENV,
+      { isEnabled: true },
+      USER
+    )
   })
 
   it('updateEnvironment rejects a malformed envId', async () => {

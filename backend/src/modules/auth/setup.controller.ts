@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config'
 import { Throttle } from '@nestjs/throttler'
 import * as bcrypt from 'bcryptjs'
 import { PrismaService } from '../../shared/prisma.service'
+import { deleteProjectChangeData } from '../change-events/project-cleanup'
 
 /**
  * Demo reset endpoint. Creates a user with publicly known credentials, so it
@@ -57,6 +58,8 @@ export class SetupController {
           await this.prisma.brand.deleteMany({
             where: { projectId: project.id },
           })
+          // Config versions, webhooks and deliveries (no cascades in MongoDB)
+          await deleteProjectChangeData(this.prisma, project.id)
         }
 
         await this.prisma.project.deleteMany({
@@ -114,8 +117,18 @@ export class SetupController {
         organizationId: org.id,
         environments: {
           create: [
-            { name: 'Development', key: 'development', organizationId: org.id },
-            { name: 'Production', key: 'production', organizationId: org.id },
+            {
+              name: 'Development',
+              key: 'development',
+              organizationId: org.id,
+              sortOrder: 0,
+            },
+            {
+              name: 'Production',
+              key: 'production',
+              organizationId: org.id,
+              sortOrder: 1,
+            },
           ],
         },
       },

@@ -37,4 +37,11 @@ USER node
 
 EXPOSE 4000
 
-CMD ["node", "dist/main"]
+# Prisma CLI: no update checks / telemetry calls on start
+ENV CHECKPOINT_DISABLE=1
+
+# Sync the schema (collections and indexes, e.g. changed unique indexes)
+# before starting. No --accept-data-loss: a push that would lose data fails,
+# and so does the deploy, visibly. SKIP_DB_PUSH=true skips the sync.
+# Inline instead of a script file, so Windows checkouts (CRLF) cannot break it.
+CMD ["sh", "-c", "if [ \"$SKIP_DB_PUSH\" = \"true\" ]; then echo 'SKIP_DB_PUSH=true: skipping prisma db push'; else npx prisma db push --skip-generate || { echo 'prisma db push failed: database schema is not in sync, refusing to start' >&2; exit 1; }; fi; exec node dist/main"]

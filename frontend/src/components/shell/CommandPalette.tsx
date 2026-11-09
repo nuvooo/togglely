@@ -114,6 +114,7 @@ export function CommandPalette({ initialOpen = false }: { initialOpen?: boolean 
     }
     nav.push(
       { id: 'p-sdk', label: prefix + t('nav.sdk'), href: projectPath(projectId, 'sdk') },
+      { id: 'p-webhooks', label: prefix + t('nav.webhooks'), href: projectPath(projectId, 'webhooks') },
       { id: 'p-settings', label: prefix + t('nav.settings'), href: projectPath(projectId, 'settings') }
     )
   }

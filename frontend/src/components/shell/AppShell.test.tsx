@@ -54,6 +54,15 @@ describe('AppShell top bar and landmarks', () => {
     expect(screen.getByRole('button', { name: /^design$|^theme$/i })).toBeInTheDocument()
   })
 
+  it('lets the search trigger shrink so the avatar fits at 390 px', () => {
+    renderShell()
+    const search = screen.getByTestId('search-trigger')
+    expect(search).toHaveClass('min-w-0', 'flex-1')
+    expect(search).not.toHaveClass('w-full')
+    expect(search.querySelector('kbd')).toHaveClass('hidden', 'sm:inline-flex')
+    expect(screen.getByRole('button', { name: /account|konto/i })).toHaveClass('shrink-0')
+  })
+
   it('has a skip link that focuses the main content', () => {
     renderShell()
     const skip = screen.getByRole('link', { name: /zum inhalt springen|skip to content/i })

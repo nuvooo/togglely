@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common'
 import { Request, Response } from 'express'
+import { redactUrl } from '../security/http-security'
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -20,6 +21,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     let status = HttpStatus.INTERNAL_SERVER_ERROR
     let message = 'Internal server error'
     let error = 'Internal Server Error'
+    let code: string | undefined
 
     if (exception instanceof HttpException) {
       status = exception.getStatus()
@@ -37,6 +39,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           ? rawMessage.join(', ')
           : ((rawMessage as string) ?? message)
         error = (resp.error as string) ?? error
+        // Optional machine-readable code for the frontend
+        if (typeof resp.code === 'string') code = resp.code
       }
     } else if (this.isPrismaError(exception)) {
       const prismaResult = this.handlePrismaError(exception)
@@ -49,7 +53,8 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     // to clients; they are logged below.
     const internalMessage =
       exception instanceof Error ? exception.message : String(exception)
-    const logPath = request.path ?? request.url
+    // Paths can carry secrets (invite and verification tokens)
+    const logPath = redactUrl(request.originalUrl ?? request.url)
 
     if (status >= 500) {
       message = 'Internal server error'
@@ -67,6 +72,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       statusCode: status,
       message,
       error,
+      ...(code ? { code } : {}),
       timestamp: new Date().toISOString(),
       path: logPath,
     })

@@ -15,10 +15,14 @@ const mockFlag = {
   name: 'My Flag',
   flagType: 'BOOLEAN',
   projectId: 'proj-1',
+  organizationId: 'org-1',
 }
 
 function createService() {
   const prisma = {
+    project: {
+      findUnique: jest.fn().mockResolvedValue({ organizationId: 'org-1' }),
+    },
     brand: {
       findMany: jest.fn(),
       findUnique: jest.fn(),
@@ -39,11 +43,23 @@ function createService() {
       create: jest.fn(),
       update: jest.fn(),
       deleteMany: jest.fn(),
+      delete: jest.fn(),
     },
+    targetingRule: {
+      findMany: jest.fn().mockResolvedValue([]),
+      deleteMany: jest.fn(),
+    },
+    ruleCondition: { deleteMany: jest.fn() },
+    $transaction: jest.fn(),
   } as any
+  prisma.$transaction.mockImplementation((cb: any) => cb(prisma))
 
-  const service = new BrandsService(prisma)
-  return { service, prisma }
+  const auditLogs = { create: jest.fn() } as any
+  const changes = {
+    recordChange: jest.fn().mockResolvedValue(undefined),
+  } as any
+  const service = new BrandsService(prisma, auditLogs, changes)
+  return { service, prisma, auditLogs, changes }
 }
 
 describe('BrandsService', () => {
@@ -88,6 +104,10 @@ describe('BrandsService', () => {
       expect(result.flags[0].environments).toHaveLength(1)
       expect(result.flags[0].environments[0].enabled).toBe(true)
       expect(result.flags[0].environments[0].isBrandSpecific).toBe(false)
+      expect(prisma.environment.findMany).toHaveBeenCalledWith({
+        where: { projectId: mockBrand.projectId },
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+      })
     })
 
     it('throws when brand is not found', async () => {
@@ -288,7 +308,8 @@ describe('BrandsService', () => {
       const { service, prisma } = createService()
       prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
       prisma.flagEnvironment.findFirst
-        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null) // brand row
+        .mockResolvedValueOnce(null) // environment default
         .mockResolvedValueOnce({ id: 'fe-dup' })
       prisma.flagEnvironment.create.mockRejectedValue({ code: 'P2002' })
       prisma.flagEnvironment.update.mockResolvedValue({
@@ -309,5 +330,296 @@ describe('BrandsService', () => {
         data: { enabled: true },
       })
     })
+  })
+})
+
+describe('BrandsService inheritance', () => {
+  it('findFlagsForBrand marks inherited brands and returns the default', async () => {
+    const { service, prisma } = createService()
+    prisma.brand.findUnique.mockResolvedValue(mockBrand)
+    prisma.featureFlag.findMany.mockResolvedValue([
+      { ...mockFlag, flagType: 'STRING' },
+    ])
+    prisma.environment.findMany.mockResolvedValue([
+      { id: 'env-1', name: 'Dev' },
+      { id: 'env-2', name: 'Prod' },
+    ])
+    prisma.flagEnvironment.findMany.mockResolvedValue([
+      {
+        id: 'd1',
+        flagId: 'flag-1',
+        environmentId: 'env-1',
+        brandId: null,
+        enabled: true,
+        defaultValue: 'blue',
+      },
+      {
+        id: 'd2',
+        flagId: 'flag-1',
+        environmentId: 'env-2',
+        brandId: null,
+        enabled: true,
+        defaultValue: 'blue',
+      },
+      {
+        id: 'b2',
+        flagId: 'flag-1',
+        environmentId: 'env-2',
+        brandId: 'brand-1',
+        enabled: false,
+        defaultValue: 'red',
+      },
+    ])
+
+    const result = await service.findFlagsForBrand('brand-1')
+    const [dev, prod] = result.flags[0].environments
+
+    expect(dev).toEqual(
+      expect.objectContaining({
+        enabled: true,
+        defaultValue: 'blue',
+        inherited: true,
+        isBrandSpecific: false,
+        default: { enabled: true, defaultValue: 'blue' },
+      })
+    )
+    expect(prod).toEqual(
+      expect.objectContaining({
+        enabled: false,
+        defaultValue: 'red',
+        inherited: false,
+        isBrandSpecific: true,
+        default: { enabled: true, defaultValue: 'blue' },
+      })
+    )
+    expect(prisma.flagEnvironment.create).not.toHaveBeenCalled()
+  })
+
+  it('toggling an inheriting brand creates an override seeded from the default', async () => {
+    const { service, prisma, auditLogs } = createService()
+    prisma.featureFlag.findUnique.mockResolvedValue({
+      ...mockFlag,
+      flagType: 'STRING',
+      organizationId: 'org-1',
+    })
+    prisma.flagEnvironment.findFirst.mockImplementation(({ where }: any) =>
+      Promise.resolve(
+        where.brandId === null
+          ? { id: 'd1', enabled: true, defaultValue: 'blue' }
+          : null
+      )
+    )
+    prisma.flagEnvironment.create.mockImplementation(({ data }: any) =>
+      Promise.resolve({ id: 'b1', ...data })
+    )
+
+    await service.toggleFlag('brand-1', 'flag-1', 'env-1', undefined, 'user-1')
+
+    expect(prisma.flagEnvironment.create).toHaveBeenCalledWith({
+      data: {
+        flagId: 'flag-1',
+        environmentId: 'env-1',
+        brandId: 'brand-1',
+        enabled: false,
+        defaultValue: 'blue',
+      },
+    })
+    expect(auditLogs.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'flag.brand_toggled',
+        oldValues: { flagId: 'flag-1', flagKey: 'my-flag', inherited: true },
+        newValues: {
+          flagId: 'flag-1',
+          flagKey: 'my-flag',
+          brandId: 'brand-1',
+          environmentId: 'env-1',
+          enabled: false,
+        },
+      })
+    )
+  })
+
+  it('resetOverride logs the flag with the removed override', async () => {
+    const { service, prisma, auditLogs } = createService()
+    prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+    prisma.flagEnvironment.findFirst.mockResolvedValue({
+      id: 'fe-1',
+      enabled: true,
+      defaultValue: 'true',
+    })
+
+    await service.resetOverride('brand-1', 'flag-1', 'env-1', 'user-1')
+
+    expect(auditLogs.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'flag.brand_override_reset',
+        userId: 'user-1',
+        oldValues: {
+          flagId: 'flag-1',
+          flagKey: 'my-flag',
+          brandId: 'brand-1',
+          environmentId: 'env-1',
+          enabled: true,
+          defaultValue: 'true',
+        },
+        newValues: {
+          flagId: 'flag-1',
+          flagKey: 'my-flag',
+          brandId: 'brand-1',
+          environmentId: 'env-1',
+          inherited: true,
+        },
+      })
+    )
+  })
+})
+
+describe('BrandsService change events', () => {
+  const brandChanged = {
+    organizationId: 'org-1',
+    projectId: 'proj-1',
+    environmentIds: 'all',
+    changes: [{ action: 'brand_changed' }],
+  }
+
+  it('create records brand_changed for all environments', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.brand.create.mockResolvedValue(mockBrand)
+
+    await service.create('proj-1', { name: 'Brand A', key: 'brand-a' })
+
+    expect(prisma.project.findUnique).toHaveBeenCalledWith({
+      where: { id: 'proj-1' },
+      select: { organizationId: true },
+    })
+    expect(changes.recordChange).toHaveBeenCalledWith(brandChanged)
+  })
+
+  it('create records nothing when the write fails', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.brand.create.mockRejectedValue(new Error('duplicate'))
+
+    await expect(
+      service.create('proj-1', { name: 'Brand A', key: 'brand-a' })
+    ).rejects.toThrow()
+    expect(changes.recordChange).not.toHaveBeenCalled()
+  })
+
+  it('create still succeeds when the organization lookup fails', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.brand.create.mockResolvedValue(mockBrand)
+    prisma.project.findUnique.mockRejectedValue(new Error('db down'))
+
+    await expect(
+      service.create('proj-1', { name: 'Brand A', key: 'brand-a' })
+    ).resolves.toEqual(mockBrand)
+    expect(changes.recordChange).not.toHaveBeenCalled()
+  })
+
+  it('update records brand_changed for all environments', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.brand.update.mockResolvedValue(mockBrand)
+
+    await service.update('brand-1', { name: 'Renamed' })
+
+    expect(changes.recordChange).toHaveBeenCalledWith(brandChanged)
+  })
+
+  it('update records nothing when the write fails', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.brand.update.mockRejectedValue(new Error('x'))
+
+    await expect(service.update('brand-1', { name: 'R' })).rejects.toThrow()
+    expect(changes.recordChange).not.toHaveBeenCalled()
+  })
+
+  it('delete records brand_changed for all environments', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.flagEnvironment.deleteMany.mockResolvedValue({ count: 0 })
+    prisma.brand.delete.mockResolvedValue(mockBrand)
+
+    await service.delete('brand-1')
+
+    expect(changes.recordChange).toHaveBeenCalledWith(brandChanged)
+  })
+
+  it('delete records nothing when the write fails', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.flagEnvironment.deleteMany.mockResolvedValue({ count: 0 })
+    prisma.brand.delete.mockRejectedValue(new Error('x'))
+
+    await expect(service.delete('brand-1')).rejects.toThrow()
+    expect(changes.recordChange).not.toHaveBeenCalled()
+  })
+
+  it('toggleFlag records toggled for that environment', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+    prisma.flagEnvironment.findFirst.mockResolvedValue({
+      id: 'fe-1',
+      enabled: false,
+    })
+    prisma.flagEnvironment.update.mockResolvedValue({ id: 'fe-1' })
+
+    await service.toggleFlag('brand-1', 'flag-1', 'env-1', true)
+
+    expect(changes.recordChange).toHaveBeenCalledWith({
+      organizationId: 'org-1',
+      projectId: 'proj-1',
+      environmentIds: ['env-1'],
+      changes: [{ flagKey: 'my-flag', action: 'toggled' }],
+    })
+  })
+
+  it('toggleFlag records nothing when the write fails', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+    prisma.flagEnvironment.findFirst.mockResolvedValue({
+      id: 'fe-1',
+      enabled: false,
+    })
+    prisma.flagEnvironment.update.mockRejectedValue(new Error('x'))
+
+    await expect(
+      service.toggleFlag('brand-1', 'flag-1', 'env-1', true)
+    ).rejects.toThrow()
+    expect(changes.recordChange).not.toHaveBeenCalled()
+  })
+
+  it('resetOverride records updated for that environment', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+    prisma.flagEnvironment.findFirst.mockResolvedValue({ id: 'fe-1' })
+
+    await service.resetOverride('brand-1', 'flag-1', 'env-1')
+
+    expect(changes.recordChange).toHaveBeenCalledWith({
+      organizationId: 'org-1',
+      projectId: 'proj-1',
+      environmentIds: ['env-1'],
+      changes: [{ flagKey: 'my-flag', action: 'updated' }],
+    })
+  })
+
+  it('resetOverride records nothing when the brand already inherits', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+    prisma.flagEnvironment.findFirst.mockResolvedValue(null)
+
+    await service.resetOverride('brand-1', 'flag-1', 'env-1')
+
+    expect(changes.recordChange).not.toHaveBeenCalled()
+  })
+
+  it('resetOverride records nothing when the transaction fails', async () => {
+    const { service, prisma, changes } = createService()
+    prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+    prisma.flagEnvironment.findFirst.mockResolvedValue({ id: 'fe-1' })
+    prisma.$transaction.mockRejectedValue(new Error('x'))
+
+    await expect(
+      service.resetOverride('brand-1', 'flag-1', 'env-1')
+    ).rejects.toThrow()
+    expect(changes.recordChange).not.toHaveBeenCalled()
   })
 })

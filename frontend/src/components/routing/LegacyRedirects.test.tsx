@@ -22,7 +22,6 @@ import {
   LegacyFlagRedirect,
   ParamRedirect,
 } from './LegacyRedirects'
-import { ProjectQueryBridge } from './ProjectQueryBridge'
 
 function Where() {
   const { pathname, search, hash } = useLocation()
@@ -117,23 +116,5 @@ describe('legacy redirects', () => {
   it('falls back to the overview for unknown experiments', async () => {
     render(<LegacyExperimentRoutes url="/experiments/missing" />)
     await waitFor(() => expect(screen.getByTestId('where')).toHaveTextContent(/^\/overview$/))
-  })
-
-  it('adds projectId as query param for legacy pages', () => {
-    render(
-      <MemoryRouter initialEntries={['/projects/p1/experiments']}>
-        <Routes>
-          <Route
-            path="/projects/:projectId/experiments"
-            element={
-              <ProjectQueryBridge>
-                <Where />
-              </ProjectQueryBridge>
-            }
-          />
-        </Routes>
-      </MemoryRouter>
-    )
-    expect(screen.getByTestId('where')).toHaveTextContent('/projects/p1/experiments?projectId=p1')
   })
 })

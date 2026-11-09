@@ -64,6 +64,7 @@ describe('CommandPalette', () => {
 
     expect(screen.getByText(/log out|abmelden/i)).toBeInTheDocument()
     expect(screen.getByText(/Shop · (Experiments|Experimente)/)).toBeInTheDocument()
+    expect(screen.getByText('Shop · Webhooks')).toBeInTheDocument()
 
     const values = Array.from(document.querySelectorAll('[cmdk-item]')).map((el) =>
       el.getAttribute('data-value')

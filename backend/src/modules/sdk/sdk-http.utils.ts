@@ -1,6 +1,7 @@
 import {
   SDK_CORS_ALLOWED_HEADERS,
   SDK_CORS_ALLOWED_METHODS,
+  SDK_CORS_EXPOSED_HEADERS,
   SDK_ERROR_CODES,
 } from './sdk.constants'
 
@@ -25,15 +26,23 @@ export function extractSdkOrigin(req: SdkRequestLike): string | undefined {
   return getHeader(req.headers, 'origin')
 }
 
+/**
+ * Brand of an SDK request: `?brandKey=` / `?tenantId=` (sent by the SDK
+ * client) or, as a fallback, `brandKey` / `tenantId` in the parsed context.
+ */
 export function extractEffectiveBrandKey(
-  query: Record<string, unknown>
+  query: Record<string, unknown>,
+  context: Record<string, unknown> = {}
 ): string | undefined {
-  const brandKey =
-    typeof query.brandKey === 'string' ? query.brandKey : undefined
-  const tenantId =
-    typeof query.tenantId === 'string' ? query.tenantId : undefined
+  const pick = (source: Record<string, unknown>, key: string) =>
+    typeof source[key] === 'string' && source[key] ? (source[key] as string) : undefined
 
-  return brandKey || tenantId
+  return (
+    pick(query, 'brandKey') ||
+    pick(query, 'tenantId') ||
+    pick(context, 'brandKey') ||
+    pick(context, 'tenantId')
+  )
 }
 
 export const SDK_CONTEXT_MAX_LENGTH = 4096
@@ -90,6 +99,7 @@ export function setSdkCorsHeaders(
   res.setHeader('Access-Control-Allow-Origin', origin || '*')
   res.setHeader('Access-Control-Allow-Methods', SDK_CORS_ALLOWED_METHODS)
   res.setHeader('Access-Control-Allow-Headers', SDK_CORS_ALLOWED_HEADERS)
+  res.setHeader('Access-Control-Expose-Headers', SDK_CORS_EXPOSED_HEADERS)
   res.setHeader('Access-Control-Allow-Credentials', 'true')
   res.setHeader('Vary', 'Origin')
 }

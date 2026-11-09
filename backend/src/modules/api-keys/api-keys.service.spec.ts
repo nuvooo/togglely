@@ -81,6 +81,19 @@ describe('ApiKeysService', () => {
     const service = new ApiKeysService(prisma)
     const keys = await service.findByOrganization('o', 'MEMBER')
     expect(keys[0].key).toBe('tk_aaaa…beef')
+    expect(prisma.apiKey.findMany.mock.calls[0][0].where).toEqual({
+      organizationId: 'o',
+    })
+  })
+
+  it('lists the environment binding and never the creator user', async () => {
+    const prisma = {
+      apiKey: { findMany: jest.fn().mockResolvedValue([]) },
+    } as any
+    await new ApiKeysService(prisma).findByOrganization('o', 'ADMIN')
+    const select = prisma.apiKey.findMany.mock.calls[0][0].select
+    expect(select.environmentId).toBe(true)
+    expect(select.userId).toBeUndefined()
   })
 
   it('scopes deletes to the organization', async () => {

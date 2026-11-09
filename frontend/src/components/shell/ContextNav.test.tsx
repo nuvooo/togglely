@@ -33,6 +33,15 @@ describe('ContextNav', () => {
     expect(screen.getByText('Shop')).toBeInTheDocument()
   })
 
+  it('lists webhooks in the develop group between SDK tester and settings', () => {
+    renderAt('/projects/p1/webhooks/w1')
+    const webhooks = screen.getByRole('link', { name: 'Webhooks' })
+    expect(webhooks).toHaveAttribute('href', '/projects/p1/webhooks')
+    expect(webhooks).toHaveAttribute('aria-current', 'page')
+    const hrefs = screen.getAllByRole('link').map((a) => a.getAttribute('href'))
+    expect(hrefs.slice(-3)).toEqual(['/projects/p1/sdk', '/projects/p1/webhooks', '/projects/p1/settings'])
+  })
+
   it('hides brands for SINGLE projects', () => {
     renderAt('/projects/p2/flags')
     expect(screen.queryByRole('link', { name: /brands/i })).toBeNull()

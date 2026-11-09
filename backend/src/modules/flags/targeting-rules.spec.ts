@@ -62,7 +62,12 @@ function setup(
         Promise.resolve(
           select?.flagType
             ? { flagType: opts.flagType ?? 'BOOLEAN' }
-            : { id: FLAG, projectId: PROJECT, organizationId: ORG }
+            : {
+                id: FLAG,
+                key: 'my-flag',
+                projectId: PROJECT,
+                organizationId: ORG,
+              }
         )
       ),
     },
@@ -74,9 +79,13 @@ function setup(
         ),
     },
     environment: {
-      findFirst: jest.fn().mockImplementation(({ where }: any) =>
-        Promise.resolve(where.projectId === envProject ? { id: where.id } : null)
-      ),
+      findFirst: jest
+        .fn()
+        .mockImplementation(({ where }: any) =>
+          Promise.resolve(
+            where.projectId === envProject ? { id: where.id } : null
+          )
+        ),
     },
     flagEnvironment: {
       findFirst: jest.fn().mockResolvedValue({ id: FLAG_ENV }),
@@ -104,17 +113,28 @@ function setup(
       deleteMany: jest.fn().mockResolvedValue({}),
       createMany: jest.fn().mockResolvedValue({}),
     },
-    $transaction: jest.fn().mockImplementation((arg: any) =>
-      typeof arg === 'function' ? arg(prisma) : Promise.all(arg)
-    ),
+    $transaction: jest
+      .fn()
+      .mockImplementation((arg: any) =>
+        typeof arg === 'function' ? arg(prisma) : Promise.all(arg)
+      ),
   }
   const auditLogs = { create: jest.fn().mockResolvedValue({}) } as any
-  const service = new TargetingRulesService(prisma, auditLogs)
+  const changes = {
+    recordChange: jest.fn().mockResolvedValue(undefined),
+  } as any
+  const service = new TargetingRulesService(prisma, auditLogs, changes)
   const controller = new TargetingRulesController(
     service,
     new AccessService(prisma)
   )
-  return { controller, prisma, auditLogs, req: { user: { userId: USER } } }
+  return {
+    controller,
+    prisma,
+    auditLogs,
+    changes,
+    req: { user: { userId: USER } },
+  }
 }
 
 const createDto = (
@@ -149,9 +169,19 @@ describe('TargetingRulesController access', () => {
   })
 
   it.each([
-    ['create', (c: TargetingRulesController, r: any) => c.create(FLAG, createDto(), r)],
-    ['update', (c: TargetingRulesController, r: any) => c.update(FLAG, RULE, { enabled: false }, r)],
-    ['delete', (c: TargetingRulesController, r: any) => c.delete(FLAG, RULE, r)],
+    [
+      'create',
+      (c: TargetingRulesController, r: any) => c.create(FLAG, createDto(), r),
+    ],
+    [
+      'update',
+      (c: TargetingRulesController, r: any) =>
+        c.update(FLAG, RULE, { enabled: false }, r),
+    ],
+    [
+      'delete',
+      (c: TargetingRulesController, r: any) => c.delete(FLAG, RULE, r),
+    ],
   ])('forbids VIEWERs to %s rules', async (_, call) => {
     const { controller, req, prisma } = setup('VIEWER')
     await expect(call(controller, req)).rejects.toBeInstanceOf(
@@ -207,7 +237,49 @@ describe('TargetingRulesService behaviour', () => {
       expect.objectContaining({
         action: 'targeting_rule.created',
         organizationId: ORG,
+        newValues: expect.objectContaining({
+          flagId: FLAG,
+          flagKey: 'my-flag',
+        }),
       })
+    )
+  })
+
+  it('writes no oldValues for a created rule', async () => {
+    const { controller, req, auditLogs } = setup('MEMBER')
+    await controller.create(FLAG, createDto(), req)
+    expect(auditLogs.create.mock.calls[0][0].oldValues).toBeUndefined()
+  })
+
+  it('a failing audit write does not fail the rule change', async () => {
+    const { controller, req, auditLogs } = setup('MEMBER')
+    auditLogs.create.mockRejectedValue(new Error('audit down'))
+    await expect(controller.create(FLAG, createDto(), req)).resolves.toEqual(
+      expect.objectContaining({ rule: expect.anything() })
+    )
+    await expect(controller.delete(FLAG, RULE, req)).resolves.not.toThrow()
+  })
+
+  it('names the flag in update and delete audit entries', async () => {
+    const { controller, req, auditLogs } = setup('MEMBER')
+    await controller.update(FLAG, RULE, { enabled: false }, req)
+    await controller.delete(FLAG, RULE, req)
+
+    const [updated, deleted] = auditLogs.create.mock.calls.map(
+      (call: any[]) => call[0]
+    )
+    expect(updated.action).toBe('targeting_rule.updated')
+    expect(updated.newValues).toEqual({
+      flagId: FLAG,
+      flagKey: 'my-flag',
+      enabled: false,
+    })
+    expect(updated.oldValues).toEqual(
+      expect.objectContaining({ flagId: FLAG, flagKey: 'my-flag' })
+    )
+    expect(deleted.action).toBe('targeting_rule.deleted')
+    expect(deleted.oldValues).toEqual(
+      expect.objectContaining({ flagId: FLAG, flagKey: 'my-flag' })
     )
   })
 
@@ -266,8 +338,68 @@ describe('TargetingRulesService behaviour', () => {
       where: { ruleId: RULE },
     })
     expect(prisma.ruleCondition.createMany).toHaveBeenCalledWith({
-      data: [{ ruleId: RULE, attribute: 'plan', operator: 'IN', value: 'pro,team' }],
+      data: [
+        { ruleId: RULE, attribute: 'plan', operator: 'IN', value: 'pro,team' },
+      ],
     })
+  })
+})
+
+describe('TargetingRulesService change events', () => {
+  const expected = {
+    organizationId: ORG,
+    projectId: PROJECT,
+    environmentIds: [ENV],
+    changes: [{ flagKey: 'my-flag', action: 'rules_changed' }],
+  }
+
+  it('create records rules_changed for the rule environment', async () => {
+    const { controller, req, changes } = setup('MEMBER')
+    await controller.create(FLAG, createDto(), req)
+    expect(changes.recordChange).toHaveBeenCalledWith(expected)
+  })
+
+  it('create records nothing when the write fails', async () => {
+    const { controller, req, prisma, changes } = setup('MEMBER')
+    prisma.targetingRule.create.mockRejectedValue(new Error('db down'))
+    await expect(controller.create(FLAG, createDto(), req)).rejects.toThrow()
+    expect(changes.recordChange).not.toHaveBeenCalled()
+  })
+
+  it('update records rules_changed for the rule environment', async () => {
+    const { controller, req, changes } = setup('MEMBER')
+    await controller.update(FLAG, RULE, { enabled: false }, req)
+    expect(changes.recordChange).toHaveBeenCalledWith(expected)
+  })
+
+  it('update records nothing when the write fails', async () => {
+    const { controller, req, prisma, changes } = setup('MEMBER')
+    prisma.targetingRule.update.mockRejectedValue(new Error('db down'))
+    await expect(
+      controller.update(FLAG, RULE, { enabled: false }, req)
+    ).rejects.toThrow()
+    expect(changes.recordChange).not.toHaveBeenCalled()
+  })
+
+  it('delete records rules_changed for the rule environment', async () => {
+    const { controller, req, changes } = setup('MEMBER')
+    await controller.delete(FLAG, RULE, req)
+    expect(changes.recordChange).toHaveBeenCalledWith(expected)
+  })
+
+  it('delete records nothing for a rule of another flag', async () => {
+    const { controller, req, changes } = setup('MEMBER', { ruleOfFlag: false })
+    await expect(controller.delete(FLAG, RULE, req)).rejects.toBeInstanceOf(
+      NotFoundException
+    )
+    expect(changes.recordChange).not.toHaveBeenCalled()
+  })
+
+  it('delete records nothing when the write fails', async () => {
+    const { controller, req, prisma, changes } = setup('MEMBER')
+    prisma.targetingRule.delete.mockRejectedValue(new Error('db down'))
+    await expect(controller.delete(FLAG, RULE, req)).rejects.toThrow()
+    expect(changes.recordChange).not.toHaveBeenCalled()
   })
 })
 
@@ -277,15 +409,36 @@ describe('Targeting rule DTO validation', () => {
     pipe.transform(value, { type: 'body', metatype })
 
   it('accepts a valid rule', async () => {
-    await expect(validate(CreateTargetingRuleDto, createDto())).resolves.toBeDefined()
+    await expect(
+      validate(CreateTargetingRuleDto, createDto())
+    ).resolves.toBeDefined()
   })
 
   it.each([
     ['no conditions', { conditions: [] }],
-    ['bad attribute name', { conditions: [{ attribute: '__proto__ x', operator: 'EQUALS', value: 'x' }] }],
-    ['unknown operator', { conditions: [{ attribute: 'a', operator: 'EVAL', value: 'x' }] }],
+    [
+      'bad attribute name',
+      {
+        conditions: [
+          { attribute: '__proto__ x', operator: 'EQUALS', value: 'x' },
+        ],
+      },
+    ],
+    [
+      'unknown operator',
+      { conditions: [{ attribute: 'a', operator: 'EVAL', value: 'x' }] },
+    ],
     ['operator object injection', { environmentId: { not: 'x' } }],
-    ['too many conditions', { conditions: Array.from({ length: 21 }, () => ({ attribute: 'a', operator: 'EQUALS', value: 'x' })) }],
+    [
+      'too many conditions',
+      {
+        conditions: Array.from({ length: 21 }, () => ({
+          attribute: 'a',
+          operator: 'EQUALS',
+          value: 'x',
+        })),
+      },
+    ],
   ])('rejects %s', async (_, overrides) => {
     await expect(
       validate(CreateTargetingRuleDto, { ...createDto(), ...overrides })

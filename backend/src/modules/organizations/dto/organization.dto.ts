@@ -8,6 +8,7 @@ import {
   Matches,
   MaxLength,
 } from 'class-validator'
+import { NormalizeEmail } from '../../../shared/validation/normalize-email'
 
 export class CreateOrganizationDto {
   @IsString()
@@ -38,6 +39,7 @@ export class UpdateOrganizationDto {
 }
 
 export class AddMemberDto {
+  @NormalizeEmail()
   @IsEmail()
   @MaxLength(254)
   email: string
@@ -48,9 +50,12 @@ export class AddMemberDto {
 }
 
 export class CreateInviteDto {
+  /** Optional: without an email the invite is an open link. */
+  @IsOptional()
+  @NormalizeEmail()
   @IsEmail()
   @MaxLength(254)
-  email: string
+  email?: string
 
   @IsOptional()
   @IsEnum(OrganizationRole)

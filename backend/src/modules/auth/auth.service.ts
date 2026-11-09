@@ -10,7 +10,9 @@ import * as bcrypt from 'bcryptjs'
 import { randomBytes } from 'crypto'
 import * as jwt from 'jsonwebtoken'
 import { PrismaService } from '../../shared/prisma.service'
+import { findUserByEmail } from '../../shared/users'
 import { BCRYPT_ROUNDS, hashToken } from '../../shared/utils'
+import { normalizeEmail } from '../../shared/validation/normalize-email'
 
 // Pre-computed hash used to equalize login timing for unknown emails,
 // so response times do not reveal which accounts exist.
@@ -27,7 +29,7 @@ export class AuthService {
   ) {}
 
   async login(email: string, password: string) {
-    const user = await this.prisma.user.findUnique({ where: { email } })
+    const user = await findUserByEmail(this.prisma, email)
     if (!user) {
       await bcrypt.compare(password, DUMMY_PASSWORD_HASH)
       this.logger.warn('Login failed: user not found')
@@ -79,7 +81,8 @@ export class AuthService {
     lastName?: string,
     emailVerified: boolean = false
   ) {
-    const existing = await this.prisma.user.findUnique({ where: { email } })
+    email = normalizeEmail(email)
+    const existing = await findUserByEmail(this.prisma, email)
     if (existing) throw new ConflictException('Email already exists')
 
     const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS)

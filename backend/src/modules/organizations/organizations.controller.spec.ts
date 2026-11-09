@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common'
 import { OrganizationRole } from '@prisma/client'
 import { AccessService } from '../../shared/access/access.service'
+import { OrganizationInvitesService } from './organization-invites.service'
 import { OrganizationsController } from './organizations.controller'
 import { OrganizationsService } from './organizations.service'
 
@@ -47,6 +48,7 @@ function setup(roles: Record<string, OrganizationRole>) {
           ? { id: OUTSIDER, email: 'new@example.com' }
           : null
       ),
+      findFirst: jest.fn().mockResolvedValue(null),
     },
     organizationMember: {
       findFirst: jest.fn(
@@ -68,27 +70,43 @@ function setup(roles: Record<string, OrganizationRole>) {
     },
     organizationInvite: {
       findFirst: jest.fn().mockResolvedValue(null),
-      create: jest.fn().mockResolvedValue({}),
-      deleteMany: jest.fn().mockResolvedValue({ count: 0 }),
+      findMany: jest.fn().mockResolvedValue([]),
+      create: jest.fn(async ({ data }: any) => ({ id: 'inv-1', ...data })),
+      updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
+    $transaction: jest.fn(async (fn: any) => fn(prisma)),
   } as any
 
-  const mail = { sendInviteEmail: jest.fn().mockResolvedValue(true) } as any
-  const config = { get: jest.fn() } as any
+  const mail = {
+    isEnabled: jest.fn().mockReturnValue(true),
+    sendInviteEmail: jest.fn().mockResolvedValue(true),
+  } as any
+  const config = {
+    get: jest.fn((key: string) =>
+      key === 'FRONTEND_URL' ? 'http://localhost:3000' : undefined
+    ),
+  } as any
+  const audit = { create: jest.fn().mockResolvedValue({}) } as any
   const access = new AccessService(prisma)
   const service = new OrganizationsService(prisma)
+  const invites = new OrganizationInvitesService(prisma, mail, config, audit)
+  const memberPasswordReset = {
+    createLink: jest.fn().mockResolvedValue({
+      resetUrl: 'http://localhost:3000/reset-password?token=t',
+      expiresAt: new Date(0),
+    }),
+  } as any
   const controller = new OrganizationsController(
     service,
-    prisma,
-    mail,
-    config,
-    access
+    access,
+    invites,
+    memberPasswordReset
   )
   const req = (userId: string) => ({ user: { userId } })
   const roleOf = (userId: string) =>
     members.find((m) => m.userId === userId)?.role
 
-  return { controller, prisma, mail, req, roleOf }
+  return { controller, prisma, mail, req, roleOf, memberPasswordReset }
 }
 
 const DEFAULT_ROLES: Record<string, OrganizationRole> = {
@@ -327,7 +345,7 @@ describe('OrganizationsController - access control', () => {
       ).rejects.toBeInstanceOf(ForbiddenException)
     })
 
-    it('creates an invite and returns the invite url but not the raw token', async () => {
+    it('creates an invite and returns the absolute invite url', async () => {
       const { controller, req, prisma, mail } = setup(DEFAULT_ROLES)
       const result = await controller.createInvite(
         ORG,
@@ -338,8 +356,36 @@ describe('OrganizationsController - access control', () => {
         'VIEWER'
       )
       expect(mail.sendInviteEmail).toHaveBeenCalled()
-      expect(result.inviteUrl).toMatch(/^\/invite\//)
+      expect(result.inviteUrl).toMatch(
+        /^http:\/\/localhost:3000\/invite\/[a-f0-9]{64}$/
+      )
+      expect(result.emailSent).toBe(true)
       expect((result as any).inviteToken).toBeUndefined()
+    })
+
+    it('lets an ADMIN create an unbound link invite', async () => {
+      const { controller, req, mail } = setup(DEFAULT_ROLES)
+      const result = await controller.createInvite(ORG, {}, req(ADMIN))
+      expect(result.invite.email).toBeNull()
+      expect(result.emailSent).toBe(false)
+      expect(mail.sendInviteEmail).not.toHaveBeenCalled()
+    })
+
+    it('requires ADMIN to list invites', async () => {
+      const { controller, req } = setup(DEFAULT_ROLES)
+      await expect(
+        controller.getInvites(ORG, req(MEMBER))
+      ).rejects.toBeInstanceOf(ForbiddenException)
+      await expect(controller.getInvites(ORG, req(ADMIN))).resolves.toEqual({
+        invites: [],
+      })
+    })
+
+    it('requires ADMIN to revoke invites', async () => {
+      const { controller, req } = setup(DEFAULT_ROLES)
+      await expect(
+        controller.cancelInvite(ORG, OUTSIDER, req(MEMBER))
+      ).rejects.toBeInstanceOf(ForbiddenException)
     })
 
     it('returns 404 when cancelling an unknown or invalid invite', async () => {
@@ -350,6 +396,33 @@ describe('OrganizationsController - access control', () => {
       await expect(
         controller.cancelInvite(ORG, OUTSIDER, req(ADMIN))
       ).rejects.toBeInstanceOf(NotFoundException)
+    })
+  })
+
+  describe('createPasswordResetLink', () => {
+    it('delegates to the member password reset service with the actor', async () => {
+      const { controller, req, memberPasswordReset } = setup(DEFAULT_ROLES)
+      const result = await controller.createPasswordResetLink(
+        ORG,
+        MEMBER,
+        req(OWNER)
+      )
+      expect(memberPasswordReset.createLink).toHaveBeenCalledWith(
+        ORG,
+        OWNER,
+        MEMBER
+      )
+      expect(result).toEqual({
+        resetUrl: 'http://localhost:3000/reset-password?token=t',
+        expiresAt: new Date(0),
+      })
+    })
+
+    it('is throttled to 10 requests per 15 minutes', () => {
+      const proto = OrganizationsController.prototype as any
+      const handler = proto.createPasswordResetLink
+      expect(Reflect.getMetadata('THROTTLER:LIMITdefault', handler)).toBe(10)
+      expect(Reflect.getMetadata('THROTTLER:TTLdefault', handler)).toBe(900000)
     })
   })
 })

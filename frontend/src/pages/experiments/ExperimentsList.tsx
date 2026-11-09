@@ -1,224 +1,254 @@
-import { useEffect, useState } from 'react'
-import { Link, useNavigate, useSearchParams } from 'react-router-dom'
-import { FlaskConical, Plus } from 'lucide-react'
+import { FlaskConical, Lock, Plus, SearchX } from 'lucide-react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import api from '@/lib/api'
+import { Link, useNavigate, useSearchParams } from 'react-router-dom'
+import { DataTable, type DataTableColumn } from '@/components/data/DataTable'
+import { EmptyState } from '@/components/feedback/EmptyState'
+import { ErrorState } from '@/components/feedback/ErrorState'
+import { RoleUnavailableNotice } from '@/components/feedback/RoleUnavailableNotice'
+import { PageHeader } from '@/components/page/PageHeader'
+import { PageToolbar } from '@/components/page/PageToolbar'
+import { Badge } from '@/components/ui/badge'
+import { Button } from '@/components/ui/button'
+import { getErrorStatus } from '@/lib/errors'
 import { experimentPath, projectPath } from '@/lib/routes'
+import { EXPERIMENT_STATUSES, type Experiment, type ExperimentStatus, experimentsApi } from './components/api'
+import { ExperimentActionsMenu } from './components/ExperimentActionsMenu'
+import { ExperimentStatusBadge } from './components/ExperimentStatusBadge'
+import { useExperimentPermissions, useExperimentProjectId } from './components/hooks'
+import { useExperimentCommands } from './components/useExperimentCommands'
 
-interface Project {
-  id: string
-  name: string
-  key: string
-}
+type LoadError = 'forbidden' | 'failed' | null
+type StatusFilter = 'all' | ExperimentStatus
 
-interface Experiment {
-  id: string
-  name: string
-  key: string
-  description: string | null
-  status: 'DRAFT' | 'RUNNING' | 'PAUSED' | 'COMPLETED' | 'ARCHIVED'
-  trafficPercent: number
-  startedAt: string | null
-  endedAt: string | null
-  createdAt: string
-  flag: { id: string; name: string; key: string }
-  environment: { id: string; name: string }
-  variants: { id: string; key: string; name: string; weight: number; isControl: boolean }[]
-  _count: { events: number }
-}
-
-const STATUS_COLORS: Record<string, string> = {
-  DRAFT: 'bg-muted text-muted-foreground',
-  RUNNING: 'bg-green-100 text-green-700 dark:bg-green-900/30 dark:text-green-400',
-  PAUSED: 'bg-yellow-100 text-yellow-700 dark:bg-yellow-900/30 dark:text-yellow-400',
-  COMPLETED: 'bg-blue-100 text-blue-700 dark:bg-blue-900/30 dark:text-blue-400',
-  ARCHIVED: 'bg-muted text-muted-foreground opacity-60',
+const parseStatus = (value: string | null): StatusFilter => {
+  const upper = (value ?? '').toUpperCase()
+  return (EXPERIMENT_STATUSES as readonly string[]).includes(upper) ? (upper as ExperimentStatus) : 'all'
 }
 
 export default function ExperimentsList() {
-  const { t } = useTranslation()
-  const [searchParams, setSearchParams] = useSearchParams()
+  const { t, i18n } = useTranslation()
   const navigate = useNavigate()
-  const projectId = searchParams.get('projectId') || ''
-  const [projects, setProjects] = useState<Project[]>([])
+  const projectId = useExperimentProjectId()
+  const { canEdit, canDelete, roleLoading, roleUnavailable } = useExperimentPermissions(projectId)
+  const [searchParams, setSearchParams] = useSearchParams()
+  const status = parseStatus(searchParams.get('status'))
+  const [query, setQuery] = useState('')
   const [experiments, setExperiments] = useState<Experiment[]>([])
-  const [statusFilter, setStatusFilter] = useState<string>('')
-  const [isLoading, setIsLoading] = useState(false)
+  const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<LoadError>(null)
 
-  // Load projects
-  useEffect(() => {
-    api.get('/projects')
-      .then((res) => {
-        const list = Array.isArray(res.data) ? res.data : res.data.projects || []
-        setProjects(list)
-        // Auto-select first project if none selected
-        if (!projectId && list.length > 0) {
-          setSearchParams({ projectId: list[0].id })
-        }
-      })
-      .catch(() => {})
-  }, [])
-
-  // Load experiments when project changes
-  useEffect(() => {
-    if (!projectId) return
+  const load = useCallback(async () => {
     setIsLoading(true)
-    const params: Record<string, string> = { projectId }
-    if (statusFilter) params.status = statusFilter
+    setLoadError(null)
+    try {
+      setExperiments(await experimentsApi.list(projectId))
+    } catch (err: unknown) {
+      setLoadError(getErrorStatus(err) === 403 ? 'forbidden' : 'failed')
+    } finally {
+      setIsLoading(false)
+    }
+  }, [projectId])
 
-    api.get('/experiments', { params })
-      .then((res) => setExperiments(res.data))
-      .catch(() => {})
-      .finally(() => setIsLoading(false))
-  }, [projectId, statusFilter])
+  useEffect(() => {
+    if (projectId) load()
+  }, [projectId, load])
+
+  const { request, busyId, dialog } = useExperimentCommands({
+    onUpdated: (updated) => setExperiments((list) => list.map((e) => (e.id === updated.id ? updated : e))),
+    onDeleted: (deleted) => setExperiments((list) => list.filter((e) => e.id !== deleted.id)),
+  })
+
+  const setStatus = (id: string) => {
+    const next = new URLSearchParams(searchParams)
+    if (id === 'all' || id === status) next.delete('status')
+    else next.set('status', id.toLowerCase())
+    setSearchParams(next, { replace: true })
+  }
+
+  const counts = useMemo(() => {
+    const result: Record<string, number> = { all: experiments.length }
+    for (const e of experiments) result[e.status] = (result[e.status] ?? 0) + 1
+    return result
+  }, [experiments])
+
+  const visible = useMemo(() => {
+    const q = query.trim().toLowerCase()
+    return experiments.filter(
+      (e) =>
+        (status === 'all' || e.status === status) &&
+        (!q ||
+          e.name.toLowerCase().includes(q) ||
+          e.key.toLowerCase().includes(q) ||
+          (e.flag?.name ?? '').toLowerCase().includes(q) ||
+          (e.flag?.key ?? '').toLowerCase().includes(q))
+    )
+  }, [experiments, status, query])
+
+  const formatDate = (value: string | null) =>
+    value ? new Date(value).toLocaleDateString(i18n.language, { dateStyle: 'medium' }) : '–'
+
+  const columns: DataTableColumn<Experiment>[] = [
+    {
+      key: 'name',
+      header: t('experiments-page.col.name'),
+      className: 'max-w-[16rem]',
+      cell: (e) => (
+        <>
+          <Link
+            to={experimentPath(projectId, e.id)}
+            className="block truncate font-medium text-foreground hover:underline"
+          >
+            {e.name}
+          </Link>
+          <p className="truncate font-mono text-xs text-muted-foreground">{e.key}</p>
+        </>
+      ),
+    },
+    {
+      key: 'flag',
+      header: t('experiments-page.col.flag'),
+      hideBelow: 'md',
+      className: 'max-w-[12rem]',
+      cell: (e) =>
+        e.flag ? (
+          <>
+            <span className="block truncate">{e.flag.name}</span>
+            <span className="block truncate font-mono text-xs text-muted-foreground">{e.flag.key}</span>
+          </>
+        ) : (
+          '–'
+        ),
+    },
+    {
+      key: 'environment',
+      header: t('experiments-page.col.environment'),
+      hideBelow: 'lg',
+      cell: (e) => (e.environment ? <Badge variant="outline">{e.environment.name}</Badge> : '–'),
+    },
+    {
+      key: 'status',
+      header: t('experiments-page.col.status'),
+      cell: (e) => <ExperimentStatusBadge status={e.status} />,
+    },
+    {
+      key: 'variants',
+      header: t('experiments-page.col.variants'),
+      align: 'right',
+      hideBelow: 'sm',
+      className: 'tabular-nums',
+      cell: (e) => e.variants?.length ?? 0,
+    },
+    {
+      key: 'started',
+      header: t('experiments-page.col.started'),
+      hideBelow: 'md',
+      className: 'whitespace-nowrap text-xs tabular-nums text-muted-foreground',
+      cell: (e) => formatDate(e.startedAt),
+    },
+  ]
+  if (!roleLoading) {
+    columns.push({
+      key: 'actions',
+      header: t('experiments-page.col.actions'),
+      srOnlyHeader: true,
+      width: '3rem',
+      align: 'right',
+      className: 'px-2',
+      cell: (e) => (
+        <ExperimentActionsMenu
+          experiment={e}
+          detailPath={experimentPath(projectId, e.id)}
+          canEdit={canEdit}
+          canDelete={canDelete}
+          busy={busyId === e.id}
+          onCommand={request}
+        />
+      ),
+    })
+  }
+
+  const createButton = canEdit ? (
+    <Button asChild>
+      <Link to={`${projectPath(projectId, 'experiments')}/new`}>
+        <Plus className="mr-2 h-4 w-4" />
+        {t('experiments-page.create')}
+      </Link>
+    </Button>
+  ) : undefined
+
+  const loading = isLoading || roleLoading
+  let content: React.ReactNode
+  if (loading) {
+    content = <DataTable columns={columns} rows={[]} getRowId={(e) => e.id} loading loadingRows={4} />
+  } else if (loadError === 'forbidden') {
+    content = (
+      <EmptyState
+        icon={<Lock className="h-5 w-5" />}
+        title={t('experiments-page.forbidden-title')}
+        description={t('experiments-page.forbidden-text')}
+      />
+    )
+  } else if (loadError) {
+    content = <ErrorState message={t('experiments-page.load-error')} onRetry={load} />
+  } else if (experiments.length === 0) {
+    content = (
+      <EmptyState
+        icon={<FlaskConical className="h-5 w-5" />}
+        title={t('experiments-page.empty-title')}
+        description={t('experiments-page.empty-text')}
+        action={
+          createButton ?? <p className="text-xs text-muted-foreground">{t('experiments-page.read-only')}</p>
+        }
+      />
+    )
+  } else {
+    content = (
+      <div className="space-y-3">
+        <PageToolbar
+          onSearch={setQuery}
+          searchPlaceholder={t('experiments-page.search')}
+          filters={(['all', ...EXPERIMENT_STATUSES] as StatusFilter[])
+            .filter((s) => s === 'all' || s === status || counts[s])
+            .map((s) => ({
+              id: s,
+              label: s === 'all' ? t('experiments-page.filter.all') : t(`experiments-page.status.${s.toLowerCase()}`),
+              count: counts[s] ?? 0,
+              active: s === status,
+            }))}
+          onFilterChange={setStatus}
+        />
+        <DataTable
+          columns={columns}
+          rows={visible}
+          getRowId={(e) => e.id}
+          onRowClick={(e) => navigate(experimentPath(projectId, e.id))}
+          // The name is a link: rows need no extra tab stop.
+          rowFocusable={false}
+          label={t('experiments-page.title')}
+          empty={
+            <EmptyState
+              bordered={false}
+              icon={<SearchX className="h-5 w-5" />}
+              title={t('experiments-page.no-match-title')}
+              description={t('experiments-page.no-match-text')}
+            />
+          }
+        />
+      </div>
+    )
+  }
 
   return (
-    <div className="space-y-6">
-      {/* Header */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-3">
-          <div className="w-10 h-10 bg-primary/10 rounded-lg flex items-center justify-center">
-            <FlaskConical className="h-5 w-5 text-primary" />
-          </div>
-          <div>
-            <h1 className="text-2xl font-bold">
-              {t('experiments.title', 'A/B Experiments')}
-            </h1>
-            <p className="text-sm text-muted-foreground">
-              {t('experiments.subtitle', 'Run experiments to optimize your product')}
-            </p>
-          </div>
-        </div>
-        {projectId && (
-          <Link
-            to={`${projectPath(projectId, 'experiments')}/new`}
-            className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors shadow-sm"
-          >
-            <Plus className="h-4 w-4" />
-            {t('experiments.create', 'New Experiment')}
-          </Link>
-        )}
-      </div>
-
-      {/* Project selector + Status filters */}
-      <div className="flex flex-wrap items-center gap-4">
-        <div className="flex items-center gap-2">
-          <label className="text-sm font-medium text-muted-foreground">
-            {t('experiments.project', 'Project')}:
-          </label>
-          <select
-            value={projectId}
-            onChange={(e) => navigate(projectPath(e.target.value, 'experiments'))}
-            className="rounded-lg border border-input bg-background px-3 py-1.5 text-sm"
-          >
-            {projects.length === 0 && <option value="">Loading...</option>}
-            {projects.map((p) => (
-              <option key={p.id} value={p.id}>{p.name}</option>
-            ))}
-          </select>
-        </div>
-
-        <div className="flex gap-1">
-          {['', 'DRAFT', 'RUNNING', 'PAUSED', 'COMPLETED'].map((status) => (
-            <button
-              key={status}
-              onClick={() => setStatusFilter(status)}
-              className={`rounded-lg px-3 py-1.5 text-xs font-medium transition-colors ${
-                statusFilter === status
-                  ? 'bg-primary text-primary-foreground'
-                  : 'bg-muted text-muted-foreground hover:bg-muted/80'
-              }`}
-            >
-              {status || t('experiments.allStatuses', 'All')}
-            </button>
-          ))}
-        </div>
-      </div>
-
-      {/* List */}
-      {isLoading ? (
-        <div className="flex justify-center py-12">
-          <div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" />
-        </div>
-      ) : experiments.length === 0 ? (
-        <div className="text-center py-16 rounded-lg border border-dashed border-border">
-          <FlaskConical className="mx-auto h-12 w-12 text-muted-foreground/50" />
-          <h3 className="mt-4 text-base font-semibold">
-            {t('experiments.empty', 'No experiments yet')}
-          </h3>
-          <p className="mt-1 text-sm text-muted-foreground">
-            {t('experiments.emptyDescription', 'Create your first A/B experiment to start testing.')}
-          </p>
-          {projectId && (
-            <Link
-              to={`${projectPath(projectId, 'experiments')}/new`}
-              className="mt-4 inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-primary-foreground hover:bg-primary/90 transition-colors"
-            >
-              <Plus className="h-4 w-4" />
-              {t('experiments.create', 'New Experiment')}
-            </Link>
-          )}
-        </div>
-      ) : (
-        <div className="overflow-hidden rounded-lg border border-border">
-          <table className="min-w-full divide-y divide-border">
-            <thead className="bg-muted/50">
-              <tr>
-                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  {t('experiments.name', 'Name')}
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  {t('experiments.status', 'Status')}
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  {t('experiments.flag', 'Flag')}
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  {t('experiments.variants', 'Variants')}
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  {t('experiments.traffic', 'Traffic')}
-                </th>
-                <th className="px-4 py-3 text-left text-xs font-medium text-muted-foreground uppercase tracking-wider">
-                  {t('experiments.events', 'Events')}
-                </th>
-              </tr>
-            </thead>
-            <tbody className="divide-y divide-border bg-background">
-              {experiments.map((exp) => (
-                <tr key={exp.id} className="hover:bg-muted/50 transition-colors">
-                  <td className="px-4 py-3">
-                    <Link
-                      to={experimentPath(projectId, exp.id)}
-                      className="text-sm font-medium text-primary hover:underline"
-                    >
-                      {exp.name}
-                    </Link>
-                    <p className="text-xs text-muted-foreground font-mono">{exp.key}</p>
-                  </td>
-                  <td className="px-4 py-3">
-                    <span className={`inline-flex items-center rounded-full px-2.5 py-0.5 text-xs font-medium ${STATUS_COLORS[exp.status]}`}>
-                      {exp.status}
-                    </span>
-                  </td>
-                  <td className="px-4 py-3 text-sm">
-                    {exp.flag.name}
-                  </td>
-                  <td className="px-4 py-3 text-sm">
-                    {exp.variants.length}
-                  </td>
-                  <td className="px-4 py-3 text-sm">
-                    {exp.trafficPercent}%
-                  </td>
-                  <td className="px-4 py-3 text-sm">
-                    {exp._count.events}
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
+    <div className="mx-auto max-w-6xl space-y-6">
+      <PageHeader
+        title={t('experiments-page.title')}
+        description={t('experiments-page.subtitle')}
+        actions={!loading && !loadError && experiments.length > 0 ? createButton : undefined}
+      />
+      <RoleUnavailableNotice show={roleUnavailable} />
+      {content}
+      {dialog}
     </div>
   )
 }

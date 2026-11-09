@@ -1,14 +1,36 @@
 import { Injectable, Logger } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
 import { MailerService } from '@nestjs-modules/mailer'
 import { escapeHtml } from './utils'
+
+/** True when an SMTP server is configured (SMTP_HOST set). */
+export function isMailEnabled(config: ConfigService): boolean {
+  return !!config.get<string>('SMTP_HOST')
+}
 
 @Injectable()
 export class MailService {
   private readonly logger = new Logger(MailService.name)
 
-  constructor(private readonly mailerService: MailerService) {}
+  constructor(
+    private readonly mailerService: MailerService,
+    private readonly config: ConfigService
+  ) {}
+
+  /** Mail is only sent when an SMTP server is configured. */
+  isEnabled(): boolean {
+    return isMailEnabled(this.config)
+  }
+
+  /** Returns false (and skips sending) when SMTP is not configured. */
+  private skipWithoutSmtp(kind: string): boolean {
+    if (this.isEnabled()) return false
+    this.logger.debug(`SMTP not configured, skipping ${kind} email`)
+    return true
+  }
 
   async sendVerificationEmail(email: string, token: string, baseUrl: string) {
+    if (this.skipWithoutSmtp('verification')) return false
     const verificationUrl = `${baseUrl}/verify-email/${token}`
 
     try {
@@ -49,6 +71,7 @@ export class MailService {
     organizationName: string,
     baseUrl: string
   ) {
+    if (this.skipWithoutSmtp('invite')) return false
     const inviteUrl = `${baseUrl}/invite/${token}`
     const safeOrganizationName = escapeHtml(organizationName)
 
@@ -86,6 +109,7 @@ export class MailService {
   }
 
   async sendPasswordResetEmail(email: string, token: string, baseUrl: string) {
+    if (this.skipWithoutSmtp('password reset')) return false
     const resetUrl = `${baseUrl}/reset-password?token=${token}`
 
     try {

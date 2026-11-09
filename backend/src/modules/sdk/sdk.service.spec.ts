@@ -587,4 +587,286 @@ describe('SdkService', () => {
       expect(result['my-flag'].enabled).toBe(false)
     })
   })
+
+  describe('brand inheritance', () => {
+    const multiProject = { ...mockProject, type: 'MULTI' }
+    const stringFlag = { ...mockFlag, flagType: 'STRING' }
+    const defaultRow = (enabled: boolean, defaultValue: string) => ({
+      id: 'fe-default',
+      flagId: 'flag-1',
+      environmentId: 'env-1',
+      brandId: null,
+      enabled,
+      defaultValue,
+      targetingRules: [],
+    })
+    const brandRow = (enabled: boolean, defaultValue: string) => ({
+      id: 'fe-brand',
+      flagId: 'flag-1',
+      environmentId: 'env-1',
+      brandId: 'brand-1',
+      enabled,
+      defaultValue,
+      targetingRules: [],
+    })
+
+    function setupBrand(prisma: any) {
+      mockValidAccess(prisma, multiProject)
+      prisma.brand.findFirst.mockResolvedValue({ id: 'brand-1', key: 'b' })
+    }
+
+    /** findFirst mock that answers per brandId like the real query. */
+    function rowsByBrand(prisma: any, rows: any[]) {
+      prisma.flagEnvironment.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(
+          rows.find((r) => r.brandId === (where.brandId ?? null)) ?? null
+        )
+      )
+    }
+
+    it('evaluateFlag: brand without row inherits the default and creates nothing', async () => {
+      const { service, prisma } = createService()
+      setupBrand(prisma)
+      prisma.featureFlag.findFirst.mockResolvedValue(stringFlag)
+      rowsByBrand(prisma, [defaultRow(true, 'blue')])
+
+      const result = await service.evaluateFlag(
+        'my-project',
+        'production',
+        'my-flag',
+        'k',
+        'b'
+      )
+
+      expect(result.enabled).toBe(true)
+      expect(result.value).toBe('blue')
+      expect(prisma.flagEnvironment.create).not.toHaveBeenCalled()
+    })
+
+    it('evaluateFlag: brand override wins over the default', async () => {
+      const { service, prisma } = createService()
+      setupBrand(prisma)
+      prisma.featureFlag.findFirst.mockResolvedValue(stringFlag)
+      rowsByBrand(prisma, [defaultRow(true, 'blue'), brandRow(true, 'red')])
+
+      const result = await service.evaluateFlag(
+        'my-project',
+        'production',
+        'my-flag',
+        'k',
+        'b'
+      )
+
+      expect(result.value).toBe('red')
+      expect(prisma.flagEnvironment.create).not.toHaveBeenCalled()
+    })
+
+    it('evaluateFlag: a default change is reflected live for inheriting brands', async () => {
+      const { service, prisma } = createService()
+      setupBrand(prisma)
+      prisma.featureFlag.findFirst.mockResolvedValue(mockFlag)
+      const rows = [defaultRow(false, 'false')]
+      rowsByBrand(prisma, rows)
+
+      const before = await service.evaluateFlag(
+        'my-project',
+        'production',
+        'my-flag',
+        'k',
+        'b'
+      )
+      rows[0] = defaultRow(true, 'true')
+      const after = await service.evaluateFlag(
+        'my-project',
+        'production',
+        'my-flag',
+        'k',
+        'b'
+      )
+
+      expect(before.enabled).toBe(false)
+      expect(after.enabled).toBe(true)
+      expect(prisma.flagEnvironment.create).not.toHaveBeenCalled()
+    })
+
+    it('evaluateFlag: creates only the default row when nothing exists', async () => {
+      const { service, prisma } = createService()
+      setupBrand(prisma)
+      prisma.featureFlag.findFirst.mockResolvedValue(mockFlag)
+      rowsByBrand(prisma, [])
+      prisma.flagEnvironment.create.mockResolvedValue(defaultRow(false, 'false'))
+
+      await service.evaluateFlag('my-project', 'production', 'my-flag', 'k', 'b')
+
+      expect(prisma.flagEnvironment.create).toHaveBeenCalledTimes(1)
+      expect(prisma.flagEnvironment.create.mock.calls[0][0].data.brandId).toBe(
+        null
+      )
+    })
+
+    it('getAllFlags: brand without row inherits the default and creates nothing', async () => {
+      const { service, prisma } = createService()
+      setupBrand(prisma)
+      prisma.featureFlag.findMany.mockResolvedValue([stringFlag])
+      prisma.flagEnvironment.findMany.mockResolvedValue([
+        defaultRow(true, 'blue'),
+      ])
+
+      const result = await service.getAllFlags(
+        'my-project',
+        'production',
+        'k',
+        'b'
+      )
+
+      expect(result['my-flag'].enabled).toBe(true)
+      expect(result['my-flag'].value).toBe('blue')
+      expect(prisma.flagEnvironment.create).not.toHaveBeenCalled()
+    })
+
+    it('getAllFlags: brand override wins and default changes do not leak into it', async () => {
+      const { service, prisma } = createService()
+      setupBrand(prisma)
+      prisma.featureFlag.findMany.mockResolvedValue([stringFlag])
+      prisma.flagEnvironment.findMany.mockResolvedValue([
+        defaultRow(true, 'blue'),
+        brandRow(false, 'red'),
+      ])
+
+      const result = await service.getAllFlags(
+        'my-project',
+        'production',
+        'k',
+        'b'
+      )
+
+      expect(result['my-flag'].enabled).toBe(false)
+      expect(result['my-flag'].value).toBe('red')
+      expect(prisma.flagEnvironment.create).not.toHaveBeenCalled()
+    })
+
+    it('getAllFlags: creates only the default row when nothing exists', async () => {
+      const { service, prisma } = createService()
+      setupBrand(prisma)
+      prisma.featureFlag.findMany.mockResolvedValue([mockFlag])
+      prisma.flagEnvironment.findMany.mockResolvedValue([])
+      prisma.flagEnvironment.create.mockResolvedValue(defaultRow(false, 'false'))
+
+      await service.getAllFlags('my-project', 'production', 'k', 'b')
+
+      expect(prisma.flagEnvironment.create).toHaveBeenCalledTimes(1)
+      expect(prisma.flagEnvironment.create.mock.calls[0][0].data.brandId).toBe(
+        null
+      )
+    })
+  })
+
+  describe('resolveSdkAccess key type', () => {
+    it('returns the API key type (used for stream limits)', async () => {
+      const { service, prisma } = createService()
+      mockValidAccess(prisma)
+      prisma.apiKey.findFirst.mockResolvedValue({ ...mockApiKey, type: 'CLIENT' })
+
+      const access = await service.resolveSdkAccess('my-project', 'production', 'k')
+
+      expect(access.apiKeyType).toBe('CLIENT')
+      expect(prisma.apiKey.findFirst.mock.calls[0][0].select).toMatchObject({
+        type: true,
+      })
+    })
+  })
+
+  describe('trackExposuresForAccess (304 path)', () => {
+    const access = {
+      organizationId: 'org-1',
+      apiKeyId: 'key-1',
+      apiKeyType: 'SERVER',
+      project: mockProject,
+      environment: mockEnvironment,
+    } as any
+    const experiment = {
+      id: 'exp-1',
+      key: 'exp',
+      flagId: 'flag-1',
+      trafficPercent: 100,
+      variants: [
+        { id: 'v1', key: 'a', value: 'A', weight: 50 },
+        { id: 'v2', key: 'b', value: 'B', weight: 50 },
+      ],
+    }
+
+    function setup() {
+      const ctx = createService()
+      ctx.prisma.experiment.findMany = jest.fn().mockResolvedValue([experiment])
+      ctx.prisma.flagEnvironment.findMany.mockResolvedValue([
+        { flagId: 'flag-1', brandId: null, enabled: true },
+      ])
+      return ctx
+    }
+
+    it('does nothing without a userId', async () => {
+      const { service, prisma } = setup()
+      await service.trackExposuresForAccess(access, undefined, {})
+      expect(prisma.experiment.findMany).not.toHaveBeenCalled()
+      expect(prisma.experimentEvent.create).not.toHaveBeenCalled()
+    })
+
+    it('records one exposure per running experiment with the same assignment as evaluation', async () => {
+      const { service, prisma, hashingService } = setup()
+      await service.trackExposuresForAccess(access, undefined, { userId: 'u1' })
+
+      expect(prisma.experiment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            environmentId: 'env-1',
+            status: 'RUNNING',
+          }),
+        })
+      )
+      const variant = hashingService.assignVariant('exp-1', 'u1', experiment.variants as any)
+      expect(prisma.experimentEvent.create).toHaveBeenCalledTimes(1)
+      expect(prisma.experimentEvent.create).toHaveBeenCalledWith({
+        data: {
+          experiment: { connect: { id: 'exp-1' } },
+          variant: { connect: { id: (variant as any).id } },
+          type: 'EXPOSURE',
+          userId: 'u1',
+        },
+      })
+    })
+
+    it('skips experiments whose flag is disabled in the environment', async () => {
+      const { service, prisma } = setup()
+      prisma.flagEnvironment.findMany.mockResolvedValue([
+        { flagId: 'flag-1', brandId: null, enabled: false },
+      ])
+      await service.trackExposuresForAccess(access, undefined, { userId: 'u1' })
+      expect(prisma.experimentEvent.create).not.toHaveBeenCalled()
+    })
+
+    it('skips users outside the traffic allocation', async () => {
+      const { service, prisma } = setup()
+      prisma.experiment.findMany.mockResolvedValue([{ ...experiment, trafficPercent: 0 }])
+      await service.trackExposuresForAccess(access, undefined, { userId: 'u1' })
+      expect(prisma.experimentEvent.create).not.toHaveBeenCalled()
+    })
+
+    it('limits tracking to the requested flag for single-flag requests', async () => {
+      const { service, prisma } = setup()
+      await service.trackExposuresForAccess(access, undefined, { userId: 'u1' }, 'my-flag')
+      expect(prisma.experiment.findMany.mock.calls[0][0].where).toMatchObject({
+        flag: { key: 'my-flag', projectId: 'proj-1' },
+      })
+    })
+
+    it('uses only the first running experiment per flag, like evaluation', async () => {
+      const { service, prisma } = setup()
+      prisma.experiment.findMany.mockResolvedValue([
+        experiment,
+        { ...experiment, id: 'exp-2', key: 'exp2' },
+      ])
+      await service.trackExposuresForAccess(access, undefined, { userId: 'u1' })
+      expect(prisma.experimentEvent.create).toHaveBeenCalledTimes(1)
+    })
+  })
 })

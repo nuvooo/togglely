@@ -19,9 +19,9 @@ import { Kbd } from '@/components/ui/kbd'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { getArea, ROUTES } from '@/lib/routes'
 import { useAuthStore } from '@/store/authStore'
-import { openCommandPalette } from './commandPaletteEvents'
 import { CommandPaletteLauncher } from './CommandPaletteLauncher'
 import { ContextNav } from './ContextNav'
+import { openCommandPalette } from './commandPaletteEvents'
 import { shortcutLabel } from './platform'
 import { Rail } from './Rail'
 import { useLogout } from './useLogout'
@@ -54,6 +54,7 @@ export default function AppShell() {
 
   return (
     <TooltipProvider delayDuration={300}>
+      {/* biome-ignore lint/a11y/useValidAnchor: skip link keeps a real fragment href; onClick only moves focus without rewriting the router URL hash */}
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[60] focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:shadow-md focus:ring-2 focus:ring-ring"
@@ -104,19 +105,23 @@ export default function AppShell() {
             <button
               type="button"
               onClick={openCommandPalette}
-              className="ml-auto flex h-8 w-full max-w-64 items-center gap-2 rounded-md border bg-muted/40 px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted"
+              // Shrinks first on narrow screens so the controls and the avatar stay visible (390 px)
+              data-testid="search-trigger"
+              className="ml-auto flex h-8 min-w-0 max-w-64 flex-1 items-center gap-2 rounded-md border bg-muted/40 px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted"
             >
-              <Search className="h-4 w-4" />
-              <span className="flex-1 text-left">{t('cmd.search')}…</span>
-              <Kbd>{shortcutLabel('k')}</Kbd>
+              <Search className="h-4 w-4 shrink-0" />
+              <span className="min-w-0 flex-1 truncate text-left">{t('cmd.search')}…</span>
+              <Kbd className="hidden sm:inline-flex">{shortcutLabel('k')}</Kbd>
             </button>
-            <LanguageSwitcher />
-            <ThemeToggle />
+            <div className="flex shrink-0 items-center gap-2">
+              <LanguageSwitcher />
+              <ThemeToggle />
+            </div>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
                   type="button"
-                  className="grid h-8 w-8 place-items-center rounded-full bg-secondary text-xs font-semibold text-secondary-foreground"
+                  className="grid h-8 w-8 shrink-0 place-items-center rounded-full bg-secondary text-xs font-semibold text-secondary-foreground"
                   aria-label={t('nav.account')}
                 >
                   {(user?.name || user?.email || '?').slice(0, 1).toUpperCase()}

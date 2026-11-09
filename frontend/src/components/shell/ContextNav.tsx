@@ -92,6 +92,7 @@ export function ContextNav({ onNavigate }: { onNavigate?: () => void } = {}) {
     }
     const develop: NavItem[] = [
       { key: 'sdk', label: t('nav.sdk'), href: projectPath(area.id, 'sdk') },
+      { key: 'webhooks', label: t('nav.webhooks'), href: projectPath(area.id, 'webhooks') },
       { key: 'settings', label: t('nav.settings'), href: projectPath(area.id, 'settings') },
     ]
     content = (

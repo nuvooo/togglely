@@ -12,13 +12,9 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common'
-import { ConfigService } from '@nestjs/config'
-import { OrganizationRole } from '@prisma/client'
-import { randomUUID } from 'crypto'
+import { Throttle } from '@nestjs/throttler'
 import { AccessService, isObjectId } from '../../shared/access/access.service'
 import { AuthGuard } from '../../shared/auth.guard'
-import { MailService } from '../../shared/mail.service'
-import { PrismaService } from '../../shared/prisma.service'
 import {
   AddMemberDto,
   CreateInviteDto,
@@ -26,26 +22,12 @@ import {
   UpdateMemberRoleDto,
   UpdateOrganizationDto,
 } from './dto/organization.dto'
+import { MemberPasswordResetService } from './member-password-reset.service'
+import { OrganizationInvitesService } from './organization-invites.service'
 import { OrganizationsService } from './organizations.service'
+import { assertCanGrantRole, PRIVILEGED_ROLES } from './roles'
 
-/** Roles that only an OWNER may grant, revoke or manage. */
-const PRIVILEGED_ROLES: ReadonlySet<OrganizationRole> =
-  new Set<OrganizationRole>(['OWNER', 'ADMIN'])
-
-/**
- * Throws unless `actorRole` may hand out `role` to someone else.
- * ADMINs may only grant MEMBER/VIEWER; only OWNERs may grant ADMIN/OWNER.
- */
-export function assertCanGrantRole(
-  actorRole: OrganizationRole,
-  role: OrganizationRole
-) {
-  if (PRIVILEGED_ROLES.has(role) && actorRole !== 'OWNER') {
-    throw new ForbiddenException(
-      'Only owners can grant the ADMIN or OWNER role'
-    )
-  }
-}
+export { assertCanGrantRole } from './roles'
 
 function assertObjectIdParam(id: string, label = 'Member') {
   if (!isObjectId(id)) throw new NotFoundException(`${label} not found`)
@@ -56,10 +38,9 @@ function assertObjectIdParam(id: string, label = 'Member') {
 export class OrganizationsController {
   constructor(
     private readonly orgsService: OrganizationsService,
-    private readonly prisma: PrismaService,
-    private readonly mailService: MailService,
-    private readonly config: ConfigService,
-    private readonly access: AccessService
+    private readonly access: AccessService,
+    private readonly invites: OrganizationInvitesService,
+    private readonly memberPasswordReset: MemberPasswordResetService
   ) {}
 
   @Get()
@@ -153,7 +134,21 @@ export class OrganizationsController {
     return { success: true }
   }
 
-  // Invites
+  /**
+   * OWNER-only: creates a password reset link for a member without sending
+   * mail (for servers without SMTP). The link is shown once to the owner.
+   */
+  @Post(':id/members/:userId/password-reset-link')
+  @Throttle({ default: { ttl: 900000, limit: 10 } })
+  async createPasswordResetLink(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @Req() req: any
+  ) {
+    return this.memberPasswordReset.createLink(id, req.user.userId, userId)
+  }
+
+  // Invites (ADMIN+). The plain invite link is only returned on creation.
   @Post(':id/invites')
   async createInvite(
     @Param('id') id: string,
@@ -161,91 +156,20 @@ export class OrganizationsController {
     @Req() req: any
   ) {
     const actor = await this.access.assertOrgRole(req.user.userId, id, 'ADMIN')
-    const role = body.role ?? 'MEMBER'
-    assertCanGrantRole(actor.role, role)
-
-    // Check if user already exists
-    const existingUser = await this.prisma.user.findUnique({
-      where: { email: body.email },
-    })
-
-    // Check if already a member
-    if (existingUser) {
-      const existingMember = await this.prisma.organizationMember.findFirst({
-        where: { organizationId: id, userId: existingUser.id },
-      })
-
-      if (existingMember) {
-        throw new ForbiddenException('User is already a member')
-      }
-    }
-
-    // Check for existing pending invite
-    const existingInvite = await this.prisma.organizationInvite.findFirst({
-      where: {
-        email: body.email,
-        organizationId: id,
-        acceptedAt: null,
-      },
-    })
-
-    if (existingInvite) {
-      throw new ForbiddenException(
-        'An invite is already pending for this email'
-      )
-    }
-
-    // Create invite token
-    const token = randomUUID()
-    const expiresAt = new Date()
-    expiresAt.setDate(expiresAt.getDate() + 7) // 7 days expiry
-
-    await this.prisma.organizationInvite.create({
-      data: {
-        email: body.email,
-        organizationId: id,
-        role,
-        token,
-        expiresAt,
-      },
-    })
-
-    // Get organization name
-    const organization = await this.prisma.organization.findUnique({
-      where: { id },
-      select: { name: true },
-    })
-
-    // Send invite email
-    const baseUrl = this.config.get('FRONTEND_URL') || 'https://togglely.de'
-    await this.mailService.sendInviteEmail(
-      body.email,
-      token,
-      organization?.name || 'Organization',
-      baseUrl
+    return this.invites.create(
+      id,
+      { userId: req.user.userId, role: actor.role },
+      body
     )
-
-    // The invite link is only returned to admins/owners (checked above) so
-    // they can share it manually if the email does not arrive.
-    return {
-      success: true,
-      inviteUrl: `/invite/${token}`,
-      message: 'Invite created and email sent.',
-    }
   }
 
   @Get(':id/invites')
   async getInvites(@Param('id') id: string, @Req() req: any) {
     await this.access.assertOrgRole(req.user.userId, id, 'ADMIN')
-
-    const invites = await this.prisma.organizationInvite.findMany({
-      where: { organizationId: id },
-      orderBy: { createdAt: 'desc' },
-    })
-
-    return { invites }
+    return { invites: await this.invites.list(id) }
   }
 
+  /** Revokes the invite (kept for the audit trail instead of deleting). */
   @Delete(':id/invites/:inviteId')
   async cancelInvite(
     @Param('id') id: string,
@@ -253,13 +177,7 @@ export class OrganizationsController {
     @Req() req: any
   ) {
     await this.access.assertOrgRole(req.user.userId, id, 'ADMIN')
-    assertObjectIdParam(inviteId, 'Invite')
-
-    const result = await this.prisma.organizationInvite.deleteMany({
-      where: { id: inviteId, organizationId: id },
-    })
-    if (result.count === 0) throw new NotFoundException('Invite not found')
-
+    await this.invites.revoke(id, inviteId, req.user.userId)
     return { success: true }
   }
 

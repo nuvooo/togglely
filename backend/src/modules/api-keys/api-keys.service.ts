@@ -13,6 +13,7 @@ const API_KEY_LIST_SELECT = {
   createdAt: true,
   expiresAt: true,
   lastUsedAt: true,
+  environmentId: true,
   organizationId: true,
   organization: { select: { id: true, name: true } },
 } as const

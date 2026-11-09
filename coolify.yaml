@@ -42,6 +42,26 @@ environment:
     description: "Bearer token for /metrics (disabled in production when unset)"
     isSecret: true
 
+  - name: SETUP_TOKEN
+    description: "Recommended for public deployments: the first-run setup (/setup) requires this token, so only you can claim the fresh instance (e.g. openssl rand -hex 32)"
+    isSecret: true
+
+  - name: SKIP_DB_PUSH
+    default: "false"
+    description: "Set to true to skip the schema/index sync (prisma db push) on backend start"
+
+  - name: WEBHOOK_ALLOW_PRIVATE
+    default: "false"
+    description: "Allow webhook URLs that point to private, loopback or link-local addresses (SSRF protection). Only for receivers in your own trusted network."
+
+  - name: WEBHOOK_ALLOW_INSECURE
+    default: "false"
+    description: "Allow plain http:// webhook URLs (default: https only)"
+
+  - name: WEBHOOK_WORKER_DISABLED
+    default: "false"
+    description: "Disable the webhook delivery worker on this instance"
+
   - name: CORS_ORIGINS
     description: "Comma-separated list of allowed CORS origins (e.g., https://app.togglely.de,https://www.mein-shop.de)"
     
@@ -122,6 +142,11 @@ services:
       - FRONTEND_URL=${FRONTEND_URL}
       - CORS_ORIGINS=${CORS_ORIGINS}
       - METRICS_TOKEN=${METRICS_TOKEN}
+      - SETUP_TOKEN=${SETUP_TOKEN}
+      - SKIP_DB_PUSH=${SKIP_DB_PUSH}
+      - WEBHOOK_ALLOW_PRIVATE=${WEBHOOK_ALLOW_PRIVATE}
+      - WEBHOOK_ALLOW_INSECURE=${WEBHOOK_ALLOW_INSECURE}
+      - WEBHOOK_WORKER_DISABLED=${WEBHOOK_WORKER_DISABLED}
     expose:
       - "4000"
     depends_on:

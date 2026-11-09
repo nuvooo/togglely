@@ -1,12 +1,14 @@
-import { Building2, Check, Shield, User, X } from 'lucide-react'
+import { Building2, Check, Loader2, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import api from '@/lib/axios'
-import { toast } from 'sonner'
+import { getErrorMessage } from '@/lib/errors'
+import { refreshWorkspace } from '@/lib/workspace'
 
 interface PendingInvite {
   id: string
-  token: string
   organizationId: string
   organizationName: string
   role: 'OWNER' | 'ADMIN' | 'MEMBER' | 'VIEWER'
@@ -14,115 +16,83 @@ interface PendingInvite {
   expiresAt: string
 }
 
+/**
+ * Invites addressed to the user's verified email. They are accepted by id
+ * (`/auth/pending-invites/:id/accept`): new invites only store a token hash,
+ * so the list carries no usable link token.
+ */
 export default function PendingInvitesBanner() {
+  const { t, i18n } = useTranslation()
   const [invites, setInvites] = useState<PendingInvite[]>([])
   const [acceptingId, setAcceptingId] = useState<string | null>(null)
   const [dismissed, setDismissed] = useState(false)
 
   useEffect(() => {
-    fetchPendingInvites()
-  }, [])
-
-  const fetchPendingInvites = async () => {
-    try {
-      const response = await api.get('/auth/pending-invites')
-      setInvites(response.data.invites || [])
-    } catch (error) {
-      console.error('Failed to fetch pending invites:', error)
+    let active = true
+    api
+      .get('/auth/pending-invites')
+      .then((res) => active && setInvites(res.data.invites ?? []))
+      .catch(() => {})
+    return () => {
+      active = false
     }
-  }
+  }, [])
 
   const handleAccept = async (invite: PendingInvite) => {
     setAcceptingId(invite.id)
     try {
-      await api.post(`/auth/invite/${invite.token}/accept`)
-      // Remove accepted invite from list
-      setInvites(invites.filter((i) => i.id !== invite.id))
-      // Refresh page to show new organization
-      window.location.reload()
-    } catch (error: any) {
-      console.error('Failed to accept invite:', error)
-      toast.error(error.response?.data?.error || 'Failed to accept invite')
+      await api.post(`/auth/pending-invites/${invite.id}/accept`)
+      setInvites((list) => list.filter((i) => i.id !== invite.id))
+      toast.success(t('invite.joined', { org: invite.organizationName }))
+      // Show the new organization in the switcher and command palette
+      refreshWorkspace().catch(() => {})
+    } catch (error: unknown) {
+      toast.error(`${t('pending-invites.error')} ${getErrorMessage(error)}`)
     } finally {
       setAcceptingId(null)
     }
   }
 
-  const handleDismiss = () => {
-    setDismissed(true)
-  }
-
-  if (dismissed || invites.length === 0) {
-    return null
-  }
-
-  const getRoleIcon = (role: string) => {
-    switch (role) {
-      case 'OWNER':
-        return <Shield className="w-4 h-4 text-purple-500" />
-      case 'ADMIN':
-        return <Shield className="w-4 h-4 text-blue-500" />
-      default:
-        return <User className="w-4 h-4 text-gray-500" />
-    }
-  }
+  if (dismissed || invites.length === 0) return null
 
   return (
-    <div className="bg-gradient-to-r from-amber-50 to-orange-50 border-b border-amber-200">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-3">
+    <div className="border-b bg-muted/40">
+      <div className="mx-auto max-w-7xl space-y-2 px-4 py-2.5 md:px-8">
         {invites.map((invite) => (
-          <div
-            key={invite.id}
-            className="flex items-center justify-between gap-4"
-          >
-            <div className="flex items-center gap-3 min-w-0">
-              <div className="flex-shrink-0 w-10 h-10 rounded-full bg-amber-100 flex items-center justify-center">
-                <Building2 className="w-5 h-5 text-amber-600" />
+          <div key={invite.id} className="flex items-center justify-between gap-4">
+            <div className="flex min-w-0 items-center gap-3">
+              <div className="grid h-8 w-8 shrink-0 place-items-center rounded-md bg-secondary">
+                <Building2 className="h-4 w-4 text-secondary-foreground" />
               </div>
               <div className="min-w-0">
-                <p className="text-sm font-medium text-gray-900">
-                  You've been invited to join{' '}
-                  <span className="font-semibold">
-                    {invite.organizationName}
-                  </span>
+                <p className="truncate text-sm font-medium text-foreground">
+                  {t('pending-invites.message', { org: invite.organizationName })}
                 </p>
-                <div className="flex items-center gap-2 mt-0.5">
-                  {getRoleIcon(invite.role)}
-                  <span className="text-xs text-gray-600 capitalize">
-                    {invite.role.toLowerCase()} access
-                  </span>
-                  <span className="text-xs text-gray-400">
-                    · Expires {new Date(invite.expiresAt).toLocaleDateString()}
-                  </span>
-                </div>
+                <p className="text-xs text-muted-foreground">
+                  {t('pending-invites.meta', {
+                    role: t(`roles.${invite.role}`),
+                    date: new Date(invite.expiresAt).toLocaleDateString(i18n.language),
+                  })}
+                </p>
               </div>
             </div>
-            <div className="flex items-center gap-2 flex-shrink-0">
+            <div className="flex shrink-0 items-center gap-1">
               <Button
-                size="sm"
+                size="icon"
                 variant="ghost"
-                onClick={handleDismiss}
-                className="text-gray-500 hover:text-gray-700"
+                onClick={() => setDismissed(true)}
+                aria-label={t('pending-invites.dismiss')}
+                className="h-8 w-8 text-muted-foreground"
               >
-                <X className="w-4 h-4" />
+                <X className="h-4 w-4" />
               </Button>
-              <Button
-                size="sm"
-                onClick={() => handleAccept(invite)}
-                disabled={acceptingId === invite.id}
-                className="bg-amber-600 hover:bg-amber-700 text-white"
-              >
+              <Button size="sm" onClick={() => handleAccept(invite)} disabled={acceptingId === invite.id}>
                 {acceptingId === invite.id ? (
-                  <>
-                    <span className="animate-spin mr-2">⟳</span>
-                    Joining...
-                  </>
+                  <Loader2 className="mr-1.5 h-4 w-4 animate-spin" />
                 ) : (
-                  <>
-                    <Check className="w-4 h-4 mr-1" />
-                    Accept
-                  </>
+                  <Check className="mr-1.5 h-4 w-4" />
                 )}
+                {acceptingId === invite.id ? t('invite.joining') : t('pending-invites.accept')}
               </Button>
             </div>
           </div>

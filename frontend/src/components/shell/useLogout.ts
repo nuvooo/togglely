@@ -4,8 +4,11 @@ import { resetWorkspaceCache } from '@/lib/workspace'
 import { useAuthStore } from '@/store/authStore'
 import { useWorkspaceStore } from '@/store/workspaceStore'
 
-/** Logs out and clears all workspace state (cache and remembered context). */
-export function useLogout() {
+/**
+ * Logs out and clears all workspace state (cache and remembered context),
+ * then opens `redirectTo` (the login page by default).
+ */
+export function useLogout(redirectTo = '/login') {
   const navigate = useNavigate()
   const logout = useAuthStore((s) => s.logout)
 
@@ -13,6 +16,6 @@ export function useLogout() {
     resetWorkspaceCache()
     useWorkspaceStore.getState().reset()
     logout()
-    navigate('/login')
-  }, [logout, navigate])
+    navigate(redirectTo)
+  }, [logout, navigate, redirectTo])
 }
