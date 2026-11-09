@@ -942,6 +942,8 @@ export const de = {
   'experiments-page.form.errors.required': 'Pflichtfeld.',
   'experiments-page.form.errors.too-long': 'Höchstens {{max}} Zeichen.',
   'experiments-page.form.errors.key-format': 'Nur Buchstaben, Ziffern, - und _.',
+  'experiments-page.form.errors.key-format-lower': 'Nur Kleinbuchstaben, Ziffern, - und _.',
+  'experiments-page.form.errors.key-taken': 'Dieser Key wird schon von einem anderen Experiment dieses Projekts verwendet.',
   'experiments-page.form.errors.key-duplicate': 'Jede Variante braucht einen eigenen Key.',
   'experiments-page.form.errors.flag-required': 'Bitte ein Flag wählen.',
   'experiments-page.form.errors.environment-required': 'Bitte ein Environment wählen.',

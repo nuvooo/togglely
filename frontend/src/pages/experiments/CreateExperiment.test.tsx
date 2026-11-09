@@ -160,13 +160,52 @@ describe('CreateExperiment', () => {
 
   it('shows the server error', async () => {
     const user = userEvent.setup()
-    mocks.post.mockRejectedValue(axiosError(409, 'Key already exists'))
+    mocks.post.mockRejectedValue(
+      axiosError(409, 'An active experiment already exists for this flag and environment')
+    )
     renderPage()
     await user.type(await screen.findByLabelText('Name', { selector: '#exp-name' }), 'Header')
     await choose(user, 'Flag', /New header/)
     await choose(user, 'Environment', 'Development')
     await user.click(screen.getByRole('button', { name: 'Create experiment' }))
-    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('Key already exists'))
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith('An active experiment already exists for this flag and environment')
+    )
+  })
+
+  it.each([
+    ['409 with code', { ...axiosError(409, 'An experiment with this key already exists in this project') }, true],
+    ['500 unique constraint (older backend)', axiosError(500, 'Unique constraint failed on the constraint: `Experiment_projectId_key_key`'), false],
+  ])('maps a duplicate key (%s) to a friendly key error', async (_label, error, withCode) => {
+    const err = withCode
+      ? { ...error, response: { ...error.response, data: { ...error.response.data, code: 'EXPERIMENT_KEY_TAKEN' } } }
+      : error
+    const user = userEvent.setup()
+    mocks.post.mockRejectedValue(err)
+    renderPage()
+    await user.type(await screen.findByLabelText('Name', { selector: '#exp-name' }), 'Header')
+    await choose(user, 'Flag', /New header/)
+    await choose(user, 'Environment', 'Development')
+    await user.click(screen.getByRole('button', { name: 'Create experiment' }))
+
+    const message = 'This key is already used by another experiment of this project.'
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith(message))
+    expect(screen.getByText(message)).toBeInTheDocument()
+    // Editing the key clears the error
+    await user.type(screen.getByLabelText('Key', { selector: '#exp-key' }), '-2')
+    expect(screen.queryByText(message)).not.toBeInTheDocument()
+  })
+
+  it('rejects upper-case experiment keys like the backend', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    const key = await screen.findByLabelText('Key', { selector: '#exp-key' })
+    await user.type(key, 'Header')
+    await user.click(screen.getByRole('button', { name: 'Create experiment' }))
+    expect(
+      await screen.findByText('Only lower-case letters, digits, - and _.')
+    ).toBeInTheDocument()
+    expect(mocks.post).not.toHaveBeenCalled()
   })
 
   it('is read-only for viewers', async () => {

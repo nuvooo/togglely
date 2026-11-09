@@ -5,6 +5,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { DataTable, type DataTableColumn } from '@/components/data/DataTable'
 import { EmptyState } from '@/components/feedback/EmptyState'
 import { ErrorState } from '@/components/feedback/ErrorState'
+import { RoleUnavailableNotice } from '@/components/feedback/RoleUnavailableNotice'
 import { PageHeader } from '@/components/page/PageHeader'
 import { PageToolbar } from '@/components/page/PageToolbar'
 import { Badge } from '@/components/ui/badge'
@@ -29,7 +30,7 @@ export default function ExperimentsList() {
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const projectId = useExperimentProjectId()
-  const { canEdit, canDelete, roleLoading } = useExperimentPermissions(projectId)
+  const { canEdit, canDelete, roleLoading, roleUnavailable } = useExperimentPermissions(projectId)
   const [searchParams, setSearchParams] = useSearchParams()
   const status = parseStatus(searchParams.get('status'))
   const [query, setQuery] = useState('')
@@ -243,6 +244,7 @@ export default function ExperimentsList() {
         description={t('experiments-page.subtitle')}
         actions={!loading && !loadError && experiments.length > 0 ? createButton : undefined}
       />
+      <RoleUnavailableNotice show={roleUnavailable} />
       {content}
       {dialog}
     </div>

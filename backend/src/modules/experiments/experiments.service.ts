@@ -8,6 +8,7 @@ import {
 import { ExperimentStatus } from '@prisma/client'
 import { isObjectId } from '../../shared/access/access.service'
 import { PrismaService } from '../../shared/prisma.service'
+import { isPrismaUniqueConstraintError } from '../../shared/prisma-errors'
 import { AuditLogsService } from '../audit-logs/audit-logs.service'
 import { ChangeEventsService } from '../change-events/change-events.service'
 import {
@@ -57,7 +58,10 @@ export class ExperimentsService {
       )
     }
 
-    const experiment = await this.prisma.experiment.create({
+    // Keys are unique per project (@@unique([projectId, key])): a duplicate
+    // is a conflict, not a server error.
+    const experiment = await this.prisma.experiment
+      .create({
       data: {
         name: dto.name,
         key: dto.key.trim().toLowerCase(),
@@ -72,6 +76,16 @@ export class ExperimentsService {
       },
       include: { variants: true },
     })
+      .catch((error: unknown) => {
+        if (isPrismaUniqueConstraintError(error)) {
+          throw new ConflictException({
+            message: 'An experiment with this key already exists in this project',
+            error: 'Conflict',
+            code: 'EXPERIMENT_KEY_TAKEN',
+          })
+        }
+        throw error
+      })
 
     // Create variants if provided
     if (dto.variants && dto.variants.length > 0) {

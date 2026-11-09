@@ -10,7 +10,8 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import { Skeleton } from '@/components/ui/skeleton'
-import { getErrorMessage } from '@/lib/errors'
+import { getErrorCode, getErrorMessage, getErrorStatus } from '@/lib/errors'
+import { notifyWriteError } from '@/lib/permissions'
 import { experimentPath, projectPath } from '@/lib/routes'
 import { cn } from '@/lib/utils'
 import { experimentsApi, LIMITS, type ProjectEnvironment, type ProjectFlag } from './components/api'
@@ -24,6 +25,16 @@ import {
   validateDraft,
   weightTotal,
 } from './components/validation'
+
+/**
+ * Duplicate experiment key: 409 with code EXPERIMENT_KEY_TAKEN, or the raw
+ * unique-constraint 500 of older backends.
+ */
+function isDuplicateKey(error: unknown): boolean {
+  if (getErrorCode(error) === 'EXPERIMENT_KEY_TAKEN') return true
+  const status = getErrorStatus(error)
+  return (status === 409 || status === 500) && /unique constraint/i.test(getErrorMessage(error))
+}
 
 let uidCounter = 0
 const uid = () => `v${++uidCounter}`
@@ -62,6 +73,8 @@ export default function CreateExperiment() {
     variants: initialVariants(),
   }))
   const [keyEdited, setKeyEdited] = useState(false)
+  /** Key the server rejected as already used (cleared once the key changes). */
+  const [takenKey, setTakenKey] = useState<string | null>(null)
   const [submitted, setSubmitted] = useState(false)
   const [isSubmitting, setIsSubmitting] = useState(false)
   const formRef = useRef<HTMLFormElement>(null)
@@ -97,6 +110,9 @@ export default function CreateExperiment() {
   const flagType = flag?.flagType
   const errors: DraftErrors = submitted ? validateDraft(draft, flagType) : {}
   const err = (field: string) => {
+    if (field === 'key' && takenKey !== null && takenKey === draft.key.trim()) {
+      return t('experiments-page.form.errors.key-taken')
+    }
     const e = errors[field]
     return e ? t(`experiments-page.form.errors.${e.code}`, e.params) : undefined
   }
@@ -200,7 +216,13 @@ export default function CreateExperiment() {
       toast.success(t('experiments-page.toast.created', { name: created.name ?? draft.name }))
       navigate(experimentPath(projectId, created.id))
     } catch (e: unknown) {
-      toast.error(getErrorMessage(e))
+      if (isDuplicateKey(e)) {
+        setTakenKey(draft.key.trim())
+        toast.error(t('experiments-page.form.errors.key-taken'))
+        requestAnimationFrame(() => formRef.current?.querySelector<HTMLElement>('#exp-key')?.focus())
+      } else {
+        notifyWriteError(e, t)
+      }
     } finally {
       setIsSubmitting(false)
     }

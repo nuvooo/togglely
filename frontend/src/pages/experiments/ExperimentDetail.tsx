@@ -4,6 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { EmptyState } from '@/components/feedback/EmptyState'
 import { ErrorState } from '@/components/feedback/ErrorState'
+import { RoleUnavailableNotice } from '@/components/feedback/RoleUnavailableNotice'
 import { PageHeader } from '@/components/page/PageHeader'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
@@ -29,7 +30,7 @@ export default function ExperimentDetail() {
   const { id: routeId, experimentId } = useParams<{ id: string; experimentId: string }>()
   const id = routeId || experimentId || ''
   const projectId = useExperimentProjectId()
-  const { canEdit, canDelete, roleLoading } = useExperimentPermissions(projectId)
+  const { canEdit, canDelete, roleLoading, roleUnavailable } = useExperimentPermissions(projectId)
   const [searchParams, setSearchParams] = useSearchParams()
   const tabParam = searchParams.get('tab')
   const tab: Tab = (TABS as readonly string[]).includes(tabParam ?? '') ? (tabParam as Tab) : 'overview'
@@ -177,6 +178,7 @@ export default function ExperimentDetail() {
           ) : undefined
         }
       />
+      <RoleUnavailableNotice show={roleUnavailable} />
 
       <Tabs value={tab} onValueChange={setTab}>
         <TabsList>

@@ -25,7 +25,8 @@ describe('validateDraft', () => {
   it('checks the general fields', () => {
     const errors = validateDraft(draft({ name: ' ', key: 'has space', flagId: '', environmentId: '', trafficPercent: '0' }))
     expect(errors.name.code).toBe('required')
-    expect(errors.key.code).toBe('key-format')
+    expect(errors.key.code).toBe('key-format-lower')
+    expect(validateDraft(draft({ key: 'Upper' })).key.code).toBe('key-format-lower')
     expect(errors.flagId.code).toBe('flag-required')
     expect(errors.environmentId.code).toBe('environment-required')
     expect(errors.trafficPercent.code).toBe('traffic-range')

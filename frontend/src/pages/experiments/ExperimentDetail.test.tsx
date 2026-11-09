@@ -10,12 +10,14 @@ const mocks = vi.hoisted(() => ({
   get: vi.fn(),
   post: vi.fn(),
   del: vi.fn(),
+  refreshWorkspace: vi.fn(() => Promise.resolve()),
 }))
 const toast = vi.hoisted(() => ({ success: vi.fn(), error: vi.fn() }))
 
 vi.mock('@/lib/axios', () => ({ default: { get: mocks.get, post: mocks.post, delete: mocks.del } }))
 vi.mock('sonner', () => ({ toast }))
 vi.mock('@/lib/workspace', () => ({
+  refreshWorkspace: mocks.refreshWorkspace,
   useWorkspace: () => ({
     projects: [{ id: PROJECT, name: 'Shop', key: 'shop', type: 'SINGLE', organizationId: 'o1' }],
     organizations: [{ id: 'o1', name: 'Acme', role: mocks.role }],
@@ -83,6 +85,16 @@ describe('ExperimentDetail', () => {
     expect(await screen.findByRole('button', { name: 'Pause' })).toBeInTheDocument()
     expect(screen.getByRole('button', { name: 'Complete' })).toBeInTheDocument()
     expect(screen.getAllByText('Running').length).toBeGreaterThan(0)
+  })
+
+  it('a 403 on start toasts "No permission" and reloads the role', async () => {
+    const user = userEvent.setup()
+    serve(experiment())
+    mocks.post.mockRejectedValue(axiosError(403, 'Forbidden resource'))
+    renderPage()
+    await user.click(await screen.findByRole('button', { name: 'Start' }))
+    await waitFor(() => expect(toast.error).toHaveBeenCalledWith('No permission'))
+    expect(mocks.refreshWorkspace).toHaveBeenCalled()
   })
 
   it('asks before completing', async () => {

@@ -1,4 +1,5 @@
 import { useParams, useSearchParams } from 'react-router-dom'
+import { useProjectRole } from '@/lib/permissions'
 import { useWorkspace } from '@/lib/workspace'
 
 /**
@@ -11,21 +12,20 @@ export function useExperimentProjectId(): string {
   return projectId || searchParams.get('projectId') || ''
 }
 
-const WRITE_ROLES = ['OWNER', 'ADMIN', 'MEMBER']
-const DELETE_ROLES = ['OWNER', 'ADMIN']
-
 /**
  * Mirrors the backend checks: MEMBER+ creates, starts, pauses and completes;
  * ADMIN+ deletes. `roleLoading` is true until the role is known.
  */
 export function useExperimentPermissions(projectId: string) {
-  const { projects, organizations, isLoading } = useWorkspace()
-  const orgId = projects.find((p) => p.id === projectId)?.organizationId
-  const role = organizations.find((o) => o.id === orgId)?.role ?? ''
+  const { projects } = useWorkspace()
+  const { canEdit, canManage, roleLoading, roleUnavailable } =
+    useProjectRole(projectId)
   return {
-    canEdit: WRITE_ROLES.includes(role),
-    canDelete: DELETE_ROLES.includes(role),
-    roleLoading: isLoading,
+    canEdit,
+    canDelete: canManage,
+    roleLoading,
+    /** The workspace failed to load: show `RoleUnavailableNotice`. */
+    roleUnavailable,
     projectName: projects.find((p) => p.id === projectId)?.name,
   }
 }

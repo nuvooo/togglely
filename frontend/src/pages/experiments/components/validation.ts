@@ -24,6 +24,8 @@ export interface ExperimentDraft {
 export type DraftErrors = Record<string, { code: string; params?: Record<string, unknown> }>
 
 const KEY_PATTERN = /^[a-zA-Z0-9_-]+$/
+/** Experiment keys: the backend stores them lower-cased, so only lower case is accepted. */
+const EXPERIMENT_KEY_PATTERN = /^[a-z0-9_-]+$/
 const isInt = (value: string) => /^\d+$/.test(value.trim())
 
 /** Lower-case key from a name: "Homepage CTA" → "homepage-cta". */
@@ -66,7 +68,7 @@ export function validateDraft(draft: ExperimentDraft, flagType?: string): DraftE
 
   if (!draft.key.trim()) errors.key = { code: 'required' }
   else if (draft.key.length > LIMITS.key) errors.key = { code: 'too-long', params: { max: LIMITS.key } }
-  else if (!KEY_PATTERN.test(draft.key)) errors.key = { code: 'key-format' }
+  else if (!EXPERIMENT_KEY_PATTERN.test(draft.key)) errors.key = { code: 'key-format-lower' }
 
   if (draft.description.length > LIMITS.text)
     errors.description = { code: 'too-long', params: { max: LIMITS.text } }

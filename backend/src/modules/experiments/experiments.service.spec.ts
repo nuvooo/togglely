@@ -169,6 +169,23 @@ describe('ExperimentsService', () => {
       expect(result!.variants).toHaveLength(2)
     })
 
+    it('maps a duplicate key (P2002) to 409 with code EXPERIMENT_KEY_TAKEN', async () => {
+      const { service, prisma } = createService()
+      prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+      prisma.environment.findUnique.mockResolvedValue(mockEnvironment)
+      prisma.experiment.findFirst.mockResolvedValue(null)
+      prisma.experiment.create.mockRejectedValue({ code: 'P2002' })
+
+      const error = await service
+        .create('user-1', createDto)
+        .catch((e: unknown) => e)
+
+      expect(error).toBeInstanceOf(ConflictException)
+      expect((error as ConflictException).getResponse()).toEqual(
+        expect.objectContaining({ code: 'EXPERIMENT_KEY_TAKEN' })
+      )
+    })
+
     it('creates embedded variants in a loop', async () => {
       const { service, prisma } = createService()
       prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)

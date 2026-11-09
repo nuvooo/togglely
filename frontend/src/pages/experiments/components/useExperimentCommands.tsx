@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { getErrorMessage } from '@/lib/errors'
+import { notifyWriteError } from '@/lib/permissions'
 import { type Experiment, experimentsApi, type LifecycleAction } from './api'
 
 export type ExperimentCommand = LifecycleAction | 'delete'
@@ -43,7 +43,7 @@ export function useExperimentCommands({ onUpdated, onDeleted }: Options) {
       const key = command === 'start' && experiment.status === 'PAUSED' ? 'resumed' : DONE[command]
       toast.success(t(`experiments-page.toast.${key}`, { name: experiment.name }))
     } catch (err: unknown) {
-      toast.error(getErrorMessage(err))
+      notifyWriteError(err, t)
     } finally {
       setBusyId(null)
     }

@@ -936,6 +936,8 @@ export const en = {
   'experiments-page.form.errors.required': 'Required.',
   'experiments-page.form.errors.too-long': 'At most {{max}} characters.',
   'experiments-page.form.errors.key-format': 'Only letters, digits, - and _.',
+  'experiments-page.form.errors.key-format-lower': 'Only lower-case letters, digits, - and _.',
+  'experiments-page.form.errors.key-taken': 'This key is already used by another experiment of this project.',
   'experiments-page.form.errors.key-duplicate': 'Each variant needs its own key.',
   'experiments-page.form.errors.flag-required': 'Choose a flag.',
   'experiments-page.form.errors.environment-required': 'Choose an environment.',
