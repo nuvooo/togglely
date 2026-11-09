@@ -12,6 +12,7 @@ import {
 } from '@/components/ui/card'
 import api from '@/lib/axios'
 import { getErrorMessage } from '@/lib/errors'
+import { useSetupStatus } from '@/lib/setup'
 
 export default function VerifyEmail() {
   const { token } = useParams<{ token: string }>()
@@ -19,6 +20,8 @@ export default function VerifyEmail() {
     'loading'
   )
   const [message, setMessage] = useState('')
+  // Resending needs a mail server
+  const mailEnabled = useSetupStatus()?.mailEnabled === true
 
   useEffect(() => {
     const verifyEmail = async () => {
@@ -58,9 +61,9 @@ export default function VerifyEmail() {
 
           {status === 'success' && (
             <div className="text-center space-y-4">
-              <CheckCircle className="h-12 w-12 text-green-500 mx-auto" />
-              <Alert className="bg-green-50 border-green-200">
-                <AlertDescription className="text-green-800">
+              <CheckCircle className="h-12 w-12 text-success mx-auto" />
+              <Alert className="border-success/30 bg-success/10">
+                <AlertDescription className="text-foreground">
                   {message}
                 </AlertDescription>
               </Alert>
@@ -80,15 +83,17 @@ export default function VerifyEmail() {
                 <Button asChild variant="outline" className="w-full">
                   <Link to="/login">Go to Login</Link>
                 </Button>
-                <p className="text-sm text-muted-foreground">
-                  Need a new verification email?{' '}
-                  <Link
-                    to="/resend-verification"
-                    className="text-primary hover:underline"
-                  >
-                    Click here
-                  </Link>
-                </p>
+                {mailEnabled && (
+                  <p className="text-sm text-muted-foreground">
+                    Need a new verification email?{' '}
+                    <Link
+                      to="/resend-verification"
+                      className="text-primary hover:underline"
+                    >
+                      Click here
+                    </Link>
+                  </p>
+                )}
               </div>
             </div>
           )}
