@@ -37,6 +37,30 @@ describe('AuthController', () => {
     })
   })
 
+  describe('registerWithInvite', () => {
+    it('returns the session together with the joined organization', async () => {
+      const session = {
+        token: 'jwt',
+        user: { id: 'u1', email: 'a@b.c', name: 'A', emailVerified: true },
+        organizationId: 'org-1',
+      }
+      const invites = { register: jest.fn().mockResolvedValue(session) }
+      const controller = new AuthController(
+        {} as any,
+        {} as any,
+        {} as any,
+        {} as any,
+        invites as any
+      )
+      const body = { firstName: 'A', lastName: 'B', password: 'Secret123' }
+
+      await expect(
+        controller.registerWithInvite('tok', body as any)
+      ).resolves.toEqual(session)
+      expect(invites.register).toHaveBeenCalledWith('tok', body)
+    })
+  })
+
   describe('resendVerification', () => {
     it('finds legacy mixed-case accounts and mails their stored address', async () => {
       const prisma = {

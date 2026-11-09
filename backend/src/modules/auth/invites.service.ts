@@ -189,6 +189,7 @@ export class InvitesService {
         name: `${firstName} ${lastName}`.trim(),
         emailVerified: user.emailVerified,
       },
+      organizationId: invite.organizationId,
     }
   }
 

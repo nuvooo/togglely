@@ -343,6 +343,8 @@ describe('InvitesService', () => {
           name: 'Grace Hopper',
           emailVerified: true,
         },
+        // the client opens the joined organization without guessing
+        organizationId: ORG,
       })
       expect(JSON.stringify(result)).not.toContain('hashed')
       expect(audit.create).toHaveBeenCalledWith(

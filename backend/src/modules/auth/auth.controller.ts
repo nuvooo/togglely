@@ -170,7 +170,7 @@ export class AuthController {
     return this.invites.accept(token, req.user.userId)
   }
 
-  /** Creates an account via an invite link; the response logs the user in. */
+  /** Creates an account via an invite link; the response logs the user in and names the joined organization. */
   @Post('invite/:token/register')
   @Throttle({ default: { ttl: 900000, limit: 10 } })
   async registerWithInvite(

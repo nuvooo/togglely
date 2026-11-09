@@ -69,7 +69,9 @@ describe('InviteAccept', () => {
   })
 
   it('registers via an open link with a chosen email and opens the organization', async () => {
-    mocks.post.mockResolvedValueOnce({ data: { token: 'jwt', user: { id: 'u2', email: 'bob@example.com', name: 'Bob Builder' } } })
+    mocks.post.mockResolvedValueOnce({
+      data: { token: 'jwt', user: { id: 'u2', email: 'bob@example.com', name: 'Bob Builder' }, organizationId: 'o7' },
+    })
     renderPage()
     expect(await screen.findByText('Join Acme')).toBeInTheDocument()
     expect(screen.getByText(/invited as member/i)).toBeInTheDocument()
@@ -78,7 +80,9 @@ describe('InviteAccept', () => {
     fillAccount()
     fireEvent.click(screen.getByRole('button', { name: /create account and join/i }))
 
-    expect(await screen.findByTestId('where')).toHaveTextContent('/orgs/o1/projects')
+    // The register response names the joined organization: no guessing via /organizations
+    expect(await screen.findByTestId('where')).toHaveTextContent('/orgs/o7/projects')
+    expect(mocks.get).not.toHaveBeenCalledWith('/organizations')
     expect(mocks.post).toHaveBeenCalledWith('/auth/invite/tok123/register', {
       firstName: 'Bob',
       lastName: 'Builder',

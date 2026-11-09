@@ -29,17 +29,6 @@ interface InviteInfo {
 
 const sameEmail = (a: string, b: string) => a.trim().toLowerCase() === b.trim().toLowerCase()
 
-/** Org id to open after registering: the new account belongs to exactly one org. */
-async function joinedOrgId(organizationName: string): Promise<string | null> {
-  try {
-    const res = await api.get('/organizations')
-    const orgs: { id: string; name: string }[] = res.data.organizations ?? []
-    return (orgs.find((o) => o.name === organizationName) ?? orgs[0])?.id ?? null
-  } catch {
-    return null
-  }
-}
-
 export default function InviteAccept() {
   const { t } = useTranslation()
   const { token: inviteToken = '' } = useParams<{ token: string }>()
@@ -114,7 +103,7 @@ export default function InviteAccept() {
     const bound = !!info.email
     setIsSubmitting(true)
     try {
-      const { data } = await api.post<SessionResponse>(`${tokenPath}/register`, {
+      const { data } = await api.post<SessionResponse & { organizationId?: string }>(`${tokenPath}/register`, {
         firstName: firstName.trim(),
         lastName: lastName.trim(),
         password,
@@ -126,8 +115,7 @@ export default function InviteAccept() {
       toast.success(t('invite.joined', { org: info.organizationName }))
       // Open links create unverified accounts; a mail is only sent with SMTP
       if (!bound && mailEnabled) toast.info(t('invite.verify-email-sent'))
-      const orgId = await joinedOrgId(info.organizationName)
-      navigate(orgId ? orgPath(orgId) : ROUTES.projects, { replace: true })
+      navigate(data.organizationId ? orgPath(data.organizationId) : ROUTES.projects, { replace: true })
     } catch (err: unknown) {
       setError(getErrorMessage(err))
       setIsSubmitting(false)
