@@ -51,6 +51,9 @@ services:
       FRONTEND_URL: ${FRONTEND_URL:?FRONTEND_URL is required (e.g. https://app.example.com)}
       CORS_ORIGINS: ${CORS_ORIGINS:-${FRONTEND_URL}}
       METRICS_TOKEN: ${METRICS_TOKEN:-}
+      # Recommended for public deployments: required by the first-run setup
+      SETUP_TOKEN: ${SETUP_TOKEN:-}
+      SKIP_DB_PUSH: ${SKIP_DB_PUSH:-false}
     # No published port: the API is reached through the reverse proxy
     # (Coolify domain / frontend nginx), never directly.
     expose:

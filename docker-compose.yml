@@ -46,6 +46,9 @@ services:
       PORT: 4000
       FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
       CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      # Recommended when the instance is publicly reachable before setup
+      SETUP_TOKEN: ${SETUP_TOKEN:-}
+      SKIP_DB_PUSH: ${SKIP_DB_PUSH:-false}
     ports:
       - "127.0.0.1:4000:4000"
     depends_on:
