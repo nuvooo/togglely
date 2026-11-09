@@ -1,6 +1,7 @@
 import { render, screen } from '@testing-library/react'
 import { MemoryRouter, Navigate, Route, Routes, useLocation } from 'react-router-dom'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { expireSession } from '@/lib/session'
 import { resetSetupStatus } from '@/lib/setup'
 import { useAuthStore } from '@/store/authStore'
 
@@ -105,5 +106,27 @@ describe('setup routing', () => {
     status.value.mailEnabled = true
     renderAt('/resend-verification')
     expect(await screen.findByText('resend page')).toBeInTheDocument()
+  })
+})
+
+describe('session expiry', () => {
+  beforeEach(() => {
+    resetSetupStatus()
+    status.fail = false
+  })
+
+  it('lands on the login page after expiry instead of bouncing back into the app', async () => {
+    useAuthStore.getState().setSession({
+      token: 'dead',
+      user: { id: '1', email: 'a@b.c', name: 'A' },
+    })
+
+    expireSession(vi.fn())
+    // The redirect reloads the page: the store rehydrates from storage.
+    await useAuthStore.persist.rehydrate()
+
+    renderAt('/login')
+    expect(await screen.findByText('login page')).toBeInTheDocument()
+    expect(screen.getByTestId('where')).toHaveTextContent(/^\/login$/)
   })
 })
