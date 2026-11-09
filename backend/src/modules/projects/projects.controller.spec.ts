@@ -153,7 +153,9 @@ describe('PATCH /projects/:id mass assignment', () => {
     expect(prisma.project.update).toHaveBeenCalledWith({
       where: { id: PROJECT_ID },
       data: { name: 'Renamed' },
-      include: { environments: true },
+      include: {
+        environments: { orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }] },
+      },
     })
     expect(project.organizationId).toBe(ORG_ID)
   })

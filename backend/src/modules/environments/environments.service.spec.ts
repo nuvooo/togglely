@@ -1,21 +1,28 @@
+import { BadRequestException } from '@nestjs/common'
 import { EnvironmentsService } from './environments.service'
 
 function createService() {
   const prisma = {
     environment: {
       findMany: jest.fn(),
+      findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn(),
       update: jest.fn(),
+      updateMany: jest.fn().mockResolvedValue({ count: 1 }),
       delete: jest.fn(),
     },
     flagEnvironment: {
       deleteMany: jest.fn(),
     },
+    $transaction: jest.fn(async (ops: any[]) => Promise.all(ops)),
   } as any
+  const auditLogs = { create: jest.fn().mockResolvedValue({}) } as any
 
-  const service = new EnvironmentsService(prisma)
-  return { service, prisma }
+  const service = new EnvironmentsService(prisma, auditLogs)
+  return { service, prisma, auditLogs }
 }
+
+const ORDER = [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
 
 describe('EnvironmentsService', () => {
   beforeEach(() => {
@@ -23,7 +30,7 @@ describe('EnvironmentsService', () => {
   })
 
   describe('findByProject', () => {
-    it('returns environments for a project', async () => {
+    it('returns environments for a project in persisted order', async () => {
       const { service, prisma } = createService()
       const mockEnvs = [
         {
@@ -46,6 +53,7 @@ describe('EnvironmentsService', () => {
       expect(result).toHaveLength(2)
       expect(prisma.environment.findMany).toHaveBeenCalledWith({
         where: { projectId: 'proj-1' },
+        orderBy: ORDER,
       })
     })
 
@@ -60,7 +68,7 @@ describe('EnvironmentsService', () => {
   })
 
   describe('create', () => {
-    it('creates a new environment', async () => {
+    it('creates the first environment with sortOrder 0', async () => {
       const { service, prisma } = createService()
       const mockEnv = {
         id: 'env-new',
@@ -83,8 +91,27 @@ describe('EnvironmentsService', () => {
           key: 'staging',
           projectId: 'proj-1',
           organizationId: 'org-1',
+          sortOrder: 0,
         },
       })
+    })
+
+    it('appends the new environment after the last one (max + 1)', async () => {
+      const { service, prisma } = createService()
+      prisma.environment.findFirst.mockResolvedValue({ sortOrder: 4 })
+      prisma.environment.create.mockImplementation(({ data }: any) => data)
+
+      const result = await service.create('proj-1', 'org-1', {
+        name: 'Staging',
+        key: 'staging',
+      })
+
+      expect(prisma.environment.findFirst).toHaveBeenCalledWith({
+        where: { projectId: 'proj-1' },
+        orderBy: { sortOrder: 'desc' },
+        select: { sortOrder: true },
+      })
+      expect(result.sortOrder).toBe(5)
     })
   })
 
@@ -113,6 +140,7 @@ describe('EnvironmentsService', () => {
         name: 'Renamed',
         projectId: 'other-project',
         organizationId: 'other-org',
+        sortOrder: 99,
       } as any)
 
       expect(prisma.environment.update).toHaveBeenCalledWith({
@@ -136,6 +164,93 @@ describe('EnvironmentsService', () => {
       expect(prisma.environment.delete).toHaveBeenCalledWith({
         where: { id: 'env-1' },
       })
+    })
+  })
+
+  describe('reorder', () => {
+    const projectEnvs = [{ id: 'env-a' }, { id: 'env-b' }, { id: 'env-c' }]
+
+    it.each([
+      ['a foreign id', ['env-a', 'env-b', 'env-x']],
+      ['a missing id', ['env-a', 'env-b']],
+      ['a duplicate id', ['env-a', 'env-b', 'env-b']],
+      ['a duplicate replacing a missing id', ['env-a', 'env-a', 'env-c']],
+      ['an extra id', ['env-a', 'env-b', 'env-c', 'env-x']],
+    ])('rejects %s with 400 and writes nothing', async (_n, ids) => {
+      const { service, prisma, auditLogs } = createService()
+      prisma.environment.findMany.mockResolvedValue(projectEnvs)
+
+      await expect(
+        service.reorder('proj-1', 'org-1', 'user-1', ids)
+      ).rejects.toThrow(BadRequestException)
+      expect(prisma.environment.findMany).toHaveBeenCalledWith({
+        where: { projectId: 'proj-1' },
+        orderBy: ORDER,
+        select: { id: true },
+      })
+      expect(prisma.$transaction).not.toHaveBeenCalled()
+      expect(prisma.environment.updateMany).not.toHaveBeenCalled()
+      expect(auditLogs.create).not.toHaveBeenCalled()
+    })
+
+    it('persists sortOrder = index in one transaction and returns the ordered list', async () => {
+      const { service, prisma, auditLogs } = createService()
+      const ordered = [
+        { id: 'env-c', sortOrder: 0 },
+        { id: 'env-a', sortOrder: 1 },
+        { id: 'env-b', sortOrder: 2 },
+      ]
+      prisma.environment.findMany
+        .mockResolvedValueOnce(projectEnvs)
+        .mockResolvedValueOnce(ordered)
+
+      const result = await service.reorder('proj-1', 'org-1', 'user-1', [
+        'env-c',
+        'env-a',
+        'env-b',
+      ])
+
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1)
+      expect(prisma.$transaction.mock.calls[0][0]).toHaveLength(3)
+      expect(prisma.environment.updateMany).toHaveBeenNthCalledWith(1, {
+        where: { id: 'env-c', projectId: 'proj-1' },
+        data: { sortOrder: 0 },
+      })
+      expect(prisma.environment.updateMany).toHaveBeenNthCalledWith(2, {
+        where: { id: 'env-a', projectId: 'proj-1' },
+        data: { sortOrder: 1 },
+      })
+      expect(prisma.environment.updateMany).toHaveBeenNthCalledWith(3, {
+        where: { id: 'env-b', projectId: 'proj-1' },
+        data: { sortOrder: 2 },
+      })
+      expect(prisma.environment.findMany).toHaveBeenLastCalledWith({
+        where: { projectId: 'proj-1' },
+        orderBy: ORDER,
+      })
+      expect(result).toEqual(ordered)
+      expect(auditLogs.create).toHaveBeenCalledWith({
+        action: 'environment.reordered',
+        entityType: 'Project',
+        entityId: 'proj-1',
+        userId: 'user-1',
+        organizationId: 'org-1',
+        projectId: 'proj-1',
+        oldValues: { environmentIds: ['env-a', 'env-b', 'env-c'] },
+        newValues: { environmentIds: ['env-c', 'env-a', 'env-b'] },
+      })
+    })
+
+    it('still returns the new order when writing the audit log fails', async () => {
+      const { service, prisma, auditLogs } = createService()
+      prisma.environment.findMany
+        .mockResolvedValueOnce([{ id: 'env-a' }])
+        .mockResolvedValueOnce([{ id: 'env-a', sortOrder: 0 }])
+      auditLogs.create.mockRejectedValue(new Error('db down'))
+
+      await expect(
+        service.reorder('proj-1', 'org-1', 'user-1', ['env-a'])
+      ).resolves.toEqual([{ id: 'env-a', sortOrder: 0 }])
     })
   })
 })

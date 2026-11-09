@@ -146,6 +146,7 @@ model Environment {
 
   @@unique([projectId, key])
   @@index([projectId])
+  @@index([projectId, sortOrder])
   @@index([organizationId])
   @@map("environments")
 }

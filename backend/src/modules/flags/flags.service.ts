@@ -9,6 +9,11 @@ import { Flag } from '../../domain/flag.entity'
 import { PrismaService } from '../../shared/prisma.service'
 import { isPrismaUniqueConstraintError } from '../../shared/prisma-errors'
 import { AuditLogsService } from '../audit-logs/audit-logs.service'
+import {
+  ENVIRONMENT_ORDER_BY,
+  sortByEnvironmentOrder,
+  sortByEnvironmentPosition,
+} from '../environments/environment-order'
 import { getDefaultFlagValue } from '../sdk/sdk.helpers'
 import { CreateFlagDto } from './dto/create-flag.dto'
 import { UpdateFlagValueDto } from './dto/update-flag-value.dto'
@@ -92,7 +97,7 @@ export class FlagsService {
     // Get project environments first
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      include: { environments: true },
+      include: { environments: { orderBy: ENVIRONMENT_ORDER_BY } },
     })
 
     if (!project) throw new NotFoundException('Project not found')
@@ -152,15 +157,16 @@ export class FlagsService {
       description: f.description,
       flagType: f.flagType,
       projectId: f.projectId,
-      environments: f.flagEnvironments
-        .filter((fe) => !fe.brandId) // Only return non-brand environments
-        .map((fe) => ({
-          id: fe.id,
-          environmentId: fe.environmentId,
-          environmentName: fe.environment.name,
-          enabled: fe.enabled,
-          defaultValue: fe.defaultValue,
-        })),
+      environments: sortByEnvironmentPosition(
+        f.flagEnvironments.filter((fe) => !fe.brandId), // non-brand only
+        project.environments
+      ).map((fe) => ({
+        id: fe.id,
+        environmentId: fe.environmentId,
+        environmentName: fe.environment.name,
+        enabled: fe.enabled,
+        defaultValue: fe.defaultValue,
+      })),
     }))
   }
 
@@ -184,7 +190,7 @@ export class FlagsService {
   async create(projectId: string, userId: string, dto: CreateFlagDto) {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      include: { environments: true },
+      include: { environments: { orderBy: ENVIRONMENT_ORDER_BY } },
     })
 
     if (!project) throw new NotFoundException('Project not found')
@@ -278,7 +284,10 @@ export class FlagsService {
         name: created.name,
         description: created.description,
         flagType: created.flagType,
-        environments: envsWithNames.map((fe) => ({
+        environments: sortByEnvironmentPosition(
+          envsWithNames,
+          project.environments
+        ).map((fe) => ({
           id: fe.id,
           environmentId: fe.environmentId,
           environmentName: fe.environment.name,
@@ -369,7 +378,7 @@ export class FlagsService {
       include: { environment: true },
     })
 
-    return envs.map((fe) => ({
+    return sortByEnvironmentOrder(envs).map((fe) => ({
       id: fe.environment.id,
       name: fe.environment.name,
       enabled: fe.enabled,

@@ -89,6 +89,10 @@ describe('BrandsService', () => {
       expect(result.flags[0].environments).toHaveLength(1)
       expect(result.flags[0].environments[0].enabled).toBe(true)
       expect(result.flags[0].environments[0].isBrandSpecific).toBe(false)
+      expect(prisma.environment.findMany).toHaveBeenCalledWith({
+        where: { projectId: mockBrand.projectId },
+        orderBy: [{ sortOrder: 'asc' }, { createdAt: 'asc' }],
+      })
     })
 
     it('throws when brand is not found', async () => {
@@ -326,9 +330,30 @@ describe('BrandsService inheritance', () => {
       { id: 'env-2', name: 'Prod' },
     ])
     prisma.flagEnvironment.findMany.mockResolvedValue([
-      { id: 'd1', flagId: 'flag-1', environmentId: 'env-1', brandId: null, enabled: true, defaultValue: 'blue' },
-      { id: 'd2', flagId: 'flag-1', environmentId: 'env-2', brandId: null, enabled: true, defaultValue: 'blue' },
-      { id: 'b2', flagId: 'flag-1', environmentId: 'env-2', brandId: 'brand-1', enabled: false, defaultValue: 'red' },
+      {
+        id: 'd1',
+        flagId: 'flag-1',
+        environmentId: 'env-1',
+        brandId: null,
+        enabled: true,
+        defaultValue: 'blue',
+      },
+      {
+        id: 'd2',
+        flagId: 'flag-1',
+        environmentId: 'env-2',
+        brandId: null,
+        enabled: true,
+        defaultValue: 'blue',
+      },
+      {
+        id: 'b2',
+        flagId: 'flag-1',
+        environmentId: 'env-2',
+        brandId: 'brand-1',
+        enabled: false,
+        defaultValue: 'red',
+      },
     ])
 
     const result = await service.findFlagsForBrand('brand-1')

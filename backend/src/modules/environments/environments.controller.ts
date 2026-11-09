@@ -92,11 +92,20 @@ export class EnvironmentsController {
   @Post('project/:projectId/reorder')
   async reorder(
     @Param('projectId') projectId: string,
-    @Body() _dto: ReorderEnvironmentsDto,
+    @Body() dto: ReorderEnvironmentsDto,
     @Req() req: any
   ) {
-    await this.access.assertProjectAccess(req.user.userId, projectId, 'ADMIN')
-    // For now, just return success - reordering would require an order field
-    return { success: true }
+    const { project } = await this.access.assertProjectAccess(
+      req.user.userId,
+      projectId,
+      'ADMIN'
+    )
+    const environments = await this.envsService.reorder(
+      project.id,
+      project.organizationId,
+      req.user.userId,
+      dto.environmentIds
+    )
+    return { environments }
   }
 }

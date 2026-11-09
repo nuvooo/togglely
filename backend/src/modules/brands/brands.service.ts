@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { PrismaService } from '../../shared/prisma.service'
 import { isPrismaUniqueConstraintError } from '../../shared/prisma-errors'
 import { AuditLogsService } from '../audit-logs/audit-logs.service'
+import { ENVIRONMENT_ORDER_BY } from '../environments/environment-order'
 import { getDefaultFlagValue } from '../sdk/sdk.helpers'
 
 /**
@@ -37,6 +38,7 @@ export class BrandsService {
 
     const environments = await this.prisma.environment.findMany({
       where: { projectId: brand.projectId },
+      orderBy: ENVIRONMENT_ORDER_BY,
     })
 
     const flagEnvs = await this.prisma.flagEnvironment.findMany({

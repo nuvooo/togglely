@@ -5,6 +5,8 @@ import {
 } from '@nestjs/common'
 import { ProjectsService } from './projects.service'
 
+const ENV_ORDER = [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
+
 const mockProject = {
   id: 'proj-1',
   name: 'Test Project',
@@ -167,8 +169,8 @@ describe('ProjectsService', () => {
             key: 'test-project',
             environments: {
               create: expect.arrayContaining([
-                expect.objectContaining({ key: 'development' }),
-                expect.objectContaining({ key: 'production' }),
+                expect.objectContaining({ key: 'development', sortOrder: 0 }),
+                expect.objectContaining({ key: 'production', sortOrder: 1 }),
               ]),
             },
           }),
@@ -250,7 +252,7 @@ describe('ProjectsService', () => {
       expect(prisma.project.update).toHaveBeenCalledWith({
         where: { id: 'proj-1' },
         data: { name: 'Updated Name' },
-        include: { environments: true },
+        include: { environments: { orderBy: ENV_ORDER } },
       })
     })
 
@@ -276,7 +278,7 @@ describe('ProjectsService', () => {
           type: 'MULTI',
           allowedOrigins: ['https://example.com'],
         },
-        include: { environments: true },
+        include: { environments: { orderBy: ENV_ORDER } },
       })
     })
   })
@@ -515,5 +517,131 @@ describe('ProjectsService.getFlagsWithBrands (brand inheritance)', () => {
       })
     )
     expect(prisma.flagEnvironment.create).not.toHaveBeenCalled()
+  })
+})
+
+describe('ProjectsService (environment order)', () => {
+  const ordered = { environments: { orderBy: ENV_ORDER } }
+
+  it('lists environments by sortOrder in every project read', async () => {
+    const { service, prisma } = createService()
+    prisma.organizationMember.findMany.mockResolvedValue([
+      { organization: { projects: [mockProject] } },
+    ])
+    prisma.project.findUnique.mockResolvedValue(mockProject)
+    prisma.project.findMany.mockResolvedValue([mockProject])
+    prisma.featureFlag.count.mockResolvedValue(0)
+    prisma.featureFlag.findMany.mockResolvedValue([])
+    prisma.brand.findMany.mockResolvedValue([])
+    prisma.environment.findMany.mockResolvedValue([])
+
+    await service.findAll('user-1')
+    expect(prisma.organizationMember.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({
+        include: {
+          organization: { include: { projects: { include: ordered } } },
+        },
+      })
+    )
+
+    await service.findOne('proj-1')
+    await service.getFlagsWithBrands('proj-1')
+    await service.exportFlags('proj-1')
+    for (const call of prisma.project.findUnique.mock.calls) {
+      expect(call[0].include).toEqual(ordered)
+    }
+
+    await service.findByOrganization('org-1')
+    expect(prisma.project.findMany).toHaveBeenCalledWith({
+      where: { organizationId: 'org-1' },
+      include: ordered,
+    })
+
+    await service.getEnvironments('proj-1')
+    expect(prisma.environment.findMany).toHaveBeenCalledWith({
+      where: { projectId: 'proj-1' },
+      orderBy: ENV_ORDER,
+    })
+  })
+
+  it('returns flag environments in the project environment order (flags-with-brands)', async () => {
+    const { service, prisma } = createService()
+    prisma.project.findUnique.mockResolvedValue({
+      ...mockProject,
+      // persisted order: production before development
+      environments: [
+        { id: 'env-2', name: 'Production', key: 'production' },
+        { id: 'env-1', name: 'Development', key: 'development' },
+      ],
+    })
+    const fe = (environmentId: string, name: string) => ({
+      id: `fe-${environmentId}`,
+      environmentId,
+      brandId: null,
+      enabled: false,
+      defaultValue: 'false',
+      environment: { name },
+    })
+    prisma.featureFlag.findMany.mockResolvedValue([
+      {
+        id: 'flag-1',
+        name: 'F',
+        key: 'f',
+        flagType: 'BOOLEAN',
+        flagEnvironments: [
+          fe('env-1', 'Development'),
+          fe('env-2', 'Production'),
+        ],
+      },
+    ])
+    prisma.brand.findMany.mockResolvedValue([])
+
+    const result = await service.getFlagsWithBrands('proj-1')
+
+    expect(result.flags[0].environments.map((e) => e.environmentId)).toEqual([
+      'env-2',
+      'env-1',
+    ])
+  })
+
+  it('exports environments in persisted order', async () => {
+    const { service, prisma } = createService()
+    prisma.project.findUnique.mockResolvedValue({
+      ...mockProject,
+      environments: [
+        { id: 'env-2', name: 'Production', key: 'production' },
+        { id: 'env-1', name: 'Development', key: 'development' },
+      ],
+    })
+    prisma.featureFlag.findMany.mockResolvedValue([
+      {
+        key: 'f',
+        name: 'F',
+        flagType: 'BOOLEAN',
+        flagEnvironments: [
+          {
+            environmentId: 'env-1',
+            brandId: null,
+            environment: { key: 'development' },
+          },
+          {
+            environmentId: 'env-2',
+            brandId: null,
+            environment: { key: 'production' },
+          },
+        ],
+      },
+    ])
+
+    const result = await service.exportFlags('proj-1')
+
+    expect(result.environments.map((e) => e.key)).toEqual([
+      'production',
+      'development',
+    ])
+    expect(result.flags[0].environments.map((e) => e.environmentKey)).toEqual([
+      'production',
+      'development',
+    ])
   })
 })

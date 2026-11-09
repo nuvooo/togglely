@@ -114,8 +114,18 @@ export class SetupController {
         organizationId: org.id,
         environments: {
           create: [
-            { name: 'Development', key: 'development', organizationId: org.id },
-            { name: 'Production', key: 'production', organizationId: org.id },
+            {
+              name: 'Development',
+              key: 'development',
+              organizationId: org.id,
+              sortOrder: 0,
+            },
+            {
+              name: 'Production',
+              key: 'production',
+              organizationId: org.id,
+              sortOrder: 1,
+            },
           ],
         },
       },

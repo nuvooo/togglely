@@ -7,6 +7,10 @@ import {
 import { Project } from '../../domain/project.entity'
 import { PrismaService } from '../../shared/prisma.service'
 import { isPrismaUniqueConstraintError } from '../../shared/prisma-errors'
+import {
+  ENVIRONMENT_ORDER_BY,
+  sortByEnvironmentPosition,
+} from '../environments/environment-order'
 import { getDefaultFlagValue } from '../sdk/sdk.helpers'
 import { CreateProjectDto } from './dto/create-project.dto'
 import { ImportFlagDto, ImportFlagsOptionsDto } from './dto/import-flags.dto'
@@ -21,7 +25,11 @@ export class ProjectsService {
       where: { userId },
       include: {
         organization: {
-          include: { projects: { include: { environments: true } } },
+          include: {
+            projects: {
+              include: { environments: { orderBy: ENVIRONMENT_ORDER_BY } },
+            },
+          },
         },
       },
     })
@@ -58,7 +66,7 @@ export class ProjectsService {
   async findOne(projectId: string) {
     const p = await this.prisma.project.findUnique({
       where: { id: projectId },
-      include: { environments: true },
+      include: { environments: { orderBy: ENVIRONMENT_ORDER_BY } },
     })
 
     if (!p) throw new NotFoundException('Project not found')
@@ -86,6 +94,7 @@ export class ProjectsService {
   async getEnvironments(projectId: string) {
     const envs = await this.prisma.environment.findMany({
       where: { projectId },
+      orderBy: ENVIRONMENT_ORDER_BY,
     })
     return envs
   }
@@ -94,7 +103,7 @@ export class ProjectsService {
     // Get project with environments
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      include: { environments: true },
+      include: { environments: { orderBy: ENVIRONMENT_ORDER_BY } },
     })
 
     if (!project) throw new NotFoundException('Project not found')
@@ -152,7 +161,10 @@ export class ProjectsService {
     })
 
     const result = flagsWithEnvs.map((f) => {
-      const envs = f.flagEnvironments.filter((fe) => !fe.brandId)
+      const envs = sortByEnvironmentPosition(
+        f.flagEnvironments.filter((fe) => !fe.brandId),
+        project.environments
+      )
 
       return {
         id: f.id,
@@ -243,8 +255,18 @@ export class ProjectsService {
         organizationId: project.organizationId,
         environments: {
           create: [
-            { name: 'Development', key: 'development', organizationId: orgId },
-            { name: 'Production', key: 'production', organizationId: orgId },
+            {
+              name: 'Development',
+              key: 'development',
+              organizationId: orgId,
+              sortOrder: 0,
+            },
+            {
+              name: 'Production',
+              key: 'production',
+              organizationId: orgId,
+              sortOrder: 1,
+            },
           ],
         },
       },
@@ -282,7 +304,7 @@ export class ProjectsService {
     const updated = await this.prisma.project.update({
       where: { id: projectId },
       data,
-      include: { environments: true },
+      include: { environments: { orderBy: ENVIRONMENT_ORDER_BY } },
     })
 
     return {
@@ -302,7 +324,7 @@ export class ProjectsService {
   async findByOrganization(orgId: string) {
     const projects = await this.prisma.project.findMany({
       where: { organizationId: orgId },
-      include: { environments: true },
+      include: { environments: { orderBy: ENVIRONMENT_ORDER_BY } },
     })
 
     // Get counts for each project
@@ -402,7 +424,7 @@ export class ProjectsService {
   async exportFlags(projectId: string) {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      include: { environments: true },
+      include: { environments: { orderBy: ENVIRONMENT_ORDER_BY } },
     })
 
     if (!project) throw new NotFoundException('Project not found')
@@ -431,13 +453,14 @@ export class ProjectsService {
         name: f.name,
         description: f.description,
         flagType: f.flagType,
-        environments: f.flagEnvironments
-          .filter((fe) => !fe.brandId)
-          .map((fe) => ({
-            environmentKey: fe.environment.key,
-            enabled: fe.enabled,
-            defaultValue: fe.defaultValue,
-          })),
+        environments: sortByEnvironmentPosition(
+          f.flagEnvironments.filter((fe) => !fe.brandId),
+          project.environments
+        ).map((fe) => ({
+          environmentKey: fe.environment.key,
+          enabled: fe.enabled,
+          defaultValue: fe.defaultValue,
+        })),
       })),
     }
 
@@ -452,7 +475,7 @@ export class ProjectsService {
   ) {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      include: { environments: true },
+      include: { environments: { orderBy: ENVIRONMENT_ORDER_BY } },
     })
 
     if (!project) throw new NotFoundException('Project not found')

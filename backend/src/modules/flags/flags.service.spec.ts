@@ -354,3 +354,82 @@ describe('FlagsService brand inheritance', () => {
     })
   })
 })
+
+describe('FlagsService (environment order)', () => {
+  const ENV_ORDER = [{ sortOrder: 'asc' }, { createdAt: 'asc' }]
+  const fe = (environmentId: string, name: string, sortOrder = 0) => ({
+    id: `fe-${environmentId}`,
+    environmentId,
+    brandId: null,
+    enabled: false,
+    defaultValue: 'false',
+    environment: {
+      id: environmentId,
+      name,
+      sortOrder,
+      createdAt: new Date(2024, 0, 1),
+    },
+  })
+
+  it('findByProject returns flag environments in persisted environment order', async () => {
+    const { service, prisma } = createService()
+    // persisted order: staging (env-2) before production (env-1)
+    prisma.project.findUnique.mockResolvedValue({
+      ...mockProject,
+      environments: [mockProject.environments[1], mockProject.environments[0]],
+    })
+    prisma.featureFlag.findMany.mockResolvedValue([
+      {
+        ...mockFlag,
+        flagEnvironments: [fe('env-1', 'Production'), fe('env-2', 'Staging')],
+      },
+    ])
+
+    const result = await service.findByProject('proj-1')
+
+    expect(prisma.project.findUnique).toHaveBeenCalledWith({
+      where: { id: 'proj-1' },
+      include: { environments: { orderBy: ENV_ORDER } },
+    })
+    expect(result[0].environments.map((e) => e.environmentId)).toEqual([
+      'env-2',
+      'env-1',
+    ])
+  })
+
+  it('create returns the new flag environments in persisted order', async () => {
+    const { service, prisma, txMock } = createService()
+    prisma.project.findUnique.mockResolvedValue({
+      ...mockProject,
+      environments: [mockProject.environments[1], mockProject.environments[0]],
+    })
+    prisma.organizationMember.findFirst.mockResolvedValue({ role: 'ADMIN' })
+    prisma.featureFlag.findFirst.mockResolvedValue(null)
+    txMock.flagEnvironment.findMany.mockResolvedValue([
+      fe('env-1', 'Production'),
+      fe('env-2', 'Staging'),
+    ])
+
+    const result = await service.create('proj-1', 'user-1', {
+      key: 'new-flag',
+      name: 'New',
+      type: 'BOOLEAN',
+    } as any)
+
+    expect(result.featureFlag.environments.map((e) => e.environmentId)).toEqual(
+      ['env-2', 'env-1']
+    )
+  })
+
+  it('getEnvironments orders by the environment sortOrder', async () => {
+    const { service, prisma } = createService()
+    prisma.flagEnvironment.findMany.mockResolvedValue([
+      fe('env-1', 'Production', 1),
+      fe('env-2', 'Staging', 0),
+    ])
+
+    const result = await service.getEnvironments('flag-1')
+
+    expect(result.map((e) => e.id)).toEqual(['env-2', 'env-1'])
+  })
+})
