@@ -86,7 +86,7 @@ export class FlagsController {
     @Req() req: any
   ) {
     await this.access.assertFlagAccess(req.user.userId, flagId, 'MEMBER')
-    const flag = await this.flagsService.update(flagId, dto)
+    const flag = await this.flagsService.update(flagId, dto, req.user.userId)
     return { featureFlag: flag }
   }
 

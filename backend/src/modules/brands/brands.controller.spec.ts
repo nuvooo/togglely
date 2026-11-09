@@ -247,6 +247,22 @@ describe('BrandsController.resetFlagOverride', () => {
     )
   })
 
+  it('still succeeds when the audit write fails', async () => {
+    const { controller, prisma, auditLogs } = setup('MEMBER')
+    auditLogs.create.mockRejectedValue(new Error('audit down'))
+    prisma.flagEnvironment.findFirst.mockResolvedValue({
+      id: 'fe-brand',
+      brandId: BRAND_ID,
+      enabled: true,
+      defaultValue: 'true',
+    })
+    prisma.targetingRule.findMany.mockResolvedValue([])
+
+    await expect(reset(controller)).resolves.toEqual(
+      expect.objectContaining({ deleted: true })
+    )
+  })
+
   it('is a no-op when the brand already inherits', async () => {
     const { controller, prisma, auditLogs } = setup('MEMBER')
     const result = await reset(controller)

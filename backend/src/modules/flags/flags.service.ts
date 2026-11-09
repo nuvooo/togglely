@@ -10,6 +10,7 @@ import { Flag } from '../../domain/flag.entity'
 import { PrismaService } from '../../shared/prisma.service'
 import { isPrismaUniqueConstraintError } from '../../shared/prisma-errors'
 import { AuditLogsService } from '../audit-logs/audit-logs.service'
+import { writeAudit } from '../audit-logs/write-audit'
 import { ChangeEventsService } from '../change-events/change-events.service'
 import {
   ENVIRONMENT_ORDER_BY,
@@ -279,7 +280,7 @@ export class FlagsService {
       changes: [{ flagKey: created.key, action: 'created' }],
     })
 
-    await this.auditLogs.create({
+    await writeAudit(this.auditLogs, this.logger, {
       action: 'flag.created',
       entityType: 'FeatureFlag',
       entityId: created.id,
@@ -314,7 +315,14 @@ export class FlagsService {
     }
   }
 
-  async update(flagId: string, data: { name?: string; description?: string }) {
+  async update(
+    flagId: string,
+    data: { name?: string; description?: string },
+    userId?: string
+  ) {
+    const before = await this.prisma.featureFlag.findUnique({
+      where: { id: flagId },
+    })
     const updated = await this.prisma.featureFlag.update({
       where: { id: flagId },
       data,
@@ -326,6 +334,19 @@ export class FlagsService {
       environmentIds: 'all',
       changes: [{ flagKey: updated.key, action: 'updated' }],
     })
+
+    // Audit only the fields that actually changed.
+    const oldValues: Record<string, unknown> = {}
+    const newValues: Record<string, unknown> = {}
+    for (const field of ['name', 'description'] as const) {
+      if (data[field] === undefined) continue
+      if (before && before[field] === updated[field]) continue
+      oldValues[field] = before?.[field] ?? null
+      newValues[field] = updated[field]
+    }
+    if (Object.keys(newValues).length > 0) {
+      await this.auditFlag('flag.updated', updated, userId, oldValues, newValues)
+    }
 
     return {
       id: updated.id,
@@ -409,7 +430,7 @@ export class FlagsService {
   ) {
     if (!userId) return
     const ref = { flagId: flag.id, flagKey: flag.key }
-    await this.auditLogs.create({
+    await writeAudit(this.auditLogs, this.logger, {
       action,
       entityType: 'FeatureFlag',
       entityId: flag.id,
@@ -717,7 +738,7 @@ export class FlagsService {
     })
 
     if (userId) {
-      await this.auditLogs.create({
+      await writeAudit(this.auditLogs, this.logger, {
         action: 'flag.deleted',
         entityType: 'FeatureFlag',
         entityId: flagId,

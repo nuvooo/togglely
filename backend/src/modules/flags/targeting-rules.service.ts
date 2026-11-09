@@ -1,12 +1,14 @@
 import {
   BadRequestException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common'
 import { FlagType } from '@prisma/client'
 import { isObjectId } from '../../shared/access/access.service'
 import { PrismaService } from '../../shared/prisma.service'
 import { AuditLogsService } from '../audit-logs/audit-logs.service'
+import { writeAudit } from '../audit-logs/write-audit'
 import { ChangeEventsService } from '../change-events/change-events.service'
 import { isRegexPatternAllowed } from '../sdk/evaluation.service'
 import { getDefaultFlagValue } from '../sdk/sdk.helpers'
@@ -54,6 +56,8 @@ interface FlagRef {
  */
 @Injectable()
 export class TargetingRulesService {
+  private readonly logger = new Logger(TargetingRulesService.name)
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogs: AuditLogsService,
@@ -323,7 +327,7 @@ export class TargetingRulesService {
   ) {
     // Names the flag so the flag history finds rule changes
     const ref = { flagId: flag.id, flagKey: flag.key }
-    return this.auditLogs.create({
+    return writeAudit(this.auditLogs, this.logger, {
       action,
       entityType: 'TargetingRule',
       entityId: ruleId,
@@ -331,7 +335,8 @@ export class TargetingRulesService {
       organizationId: flag.organizationId,
       projectId: flag.projectId,
       newValues: newValues ? { ...ref, ...(newValues as object) } : undefined,
-      oldValues: { ...ref, ...((oldValues as object | undefined) ?? {}) },
+      // A created rule has no previous state.
+      oldValues: oldValues ? { ...ref, ...(oldValues as object) } : undefined,
     })
   }
 }

@@ -160,7 +160,7 @@ describe('FlagsController access control', () => {
     await controller.update(FLAG, { name: 'x' }, req)
     await controller.toggle(FLAG, { environmentId: ENV, enabled: true }, req)
     expect(flagsService.create).toHaveBeenCalledWith(PROJECT, USER, createDto)
-    expect(flagsService.update).toHaveBeenCalledWith(FLAG, { name: 'x' })
+    expect(flagsService.update).toHaveBeenCalledWith(FLAG, { name: 'x' }, USER)
     expect(flagsService.toggle).toHaveBeenCalledWith(FLAG, ENV, true, USER)
 
     await expect(controller.delete(FLAG, req)).rejects.toBeInstanceOf(

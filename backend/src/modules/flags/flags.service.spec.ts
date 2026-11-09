@@ -538,6 +538,56 @@ describe('FlagsService change events', () => {
     })
   })
 
+  it('update writes a flag.updated audit entry with old and new name/description', async () => {
+    const { service, prisma, auditLogs } = createService()
+    prisma.featureFlag.findUnique.mockResolvedValue({
+      ...mockFlag,
+      name: 'Old',
+      description: 'old text',
+    })
+    prisma.featureFlag.update = jest.fn().mockResolvedValue({
+      ...mockFlag,
+      name: 'Renamed',
+      description: 'old text',
+    })
+
+    await service.update('flag-1', { name: 'Renamed' }, 'user-1')
+
+    expect(auditLogs.create).toHaveBeenCalledWith({
+      action: 'flag.updated',
+      entityType: 'FeatureFlag',
+      entityId: 'flag-1',
+      userId: 'user-1',
+      organizationId: 'org-1',
+      projectId: 'proj-1',
+      oldValues: { flagId: 'flag-1', flagKey: 'my-flag', name: 'Old' },
+      newValues: { flagId: 'flag-1', flagKey: 'my-flag', name: 'Renamed' },
+    })
+  })
+
+  it('update writes no audit entry when nothing changed', async () => {
+    const { service, prisma, auditLogs } = createService()
+    prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+    prisma.featureFlag.update = jest.fn().mockResolvedValue(mockFlag)
+
+    await service.update('flag-1', { name: mockFlag.name }, 'user-1')
+
+    expect(auditLogs.create).not.toHaveBeenCalled()
+  })
+
+  it('a failing audit write does not fail a successful mutation', async () => {
+    const { service, prisma, auditLogs } = createService()
+    auditLogs.create.mockRejectedValue(new Error('audit down'))
+    prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+
+    await expect(service.delete('flag-1', 'user-1')).resolves.toBeUndefined()
+
+    prisma.featureFlag.update = jest.fn().mockResolvedValue({ ...mockFlag, name: 'New' })
+    await expect(
+      service.update('flag-1', { name: 'New' }, 'user-1')
+    ).resolves.toEqual(expect.objectContaining({ name: 'New' }))
+  })
+
   it('update records nothing when the write fails', async () => {
     const { service, prisma, changes } = createService()
     prisma.featureFlag.update = jest.fn().mockRejectedValue(new Error('x'))

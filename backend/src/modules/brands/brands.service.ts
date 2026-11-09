@@ -2,6 +2,7 @@ import { Injectable, Logger, NotFoundException } from '@nestjs/common'
 import { PrismaService } from '../../shared/prisma.service'
 import { isPrismaUniqueConstraintError } from '../../shared/prisma-errors'
 import { AuditLogsService } from '../audit-logs/audit-logs.service'
+import { writeAudit } from '../audit-logs/write-audit'
 import { ChangeEventsService } from '../change-events/change-events.service'
 import { ChangeAction } from '../change-events/change-events.types'
 import { ENVIRONMENT_ORDER_BY } from '../environments/environment-order'
@@ -202,7 +203,7 @@ export class BrandsService {
     this.recordFlagChanged(flag, environmentId, 'toggled')
 
     if (userId) {
-      await this.auditLogs.create({
+      await writeAudit(this.auditLogs, this.logger, {
         action: 'flag.brand_toggled',
         entityType: 'FlagEnvironment',
         entityId: result.id,
@@ -270,7 +271,7 @@ export class BrandsService {
     this.recordFlagChanged(flag, environmentId, 'updated')
 
     if (userId) {
-      await this.auditLogs.create({
+      await writeAudit(this.auditLogs, this.logger, {
         action: 'flag.brand_override_reset',
         entityType: 'FlagEnvironment',
         entityId: existing.id,

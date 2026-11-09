@@ -245,6 +245,23 @@ describe('TargetingRulesService behaviour', () => {
     )
   })
 
+  it('writes no oldValues for a created rule', async () => {
+    const { controller, req, auditLogs } = setup('MEMBER')
+    await controller.create(FLAG, createDto(), req)
+    expect(auditLogs.create.mock.calls[0][0].oldValues).toBeUndefined()
+  })
+
+  it('a failing audit write does not fail the rule change', async () => {
+    const { controller, req, auditLogs } = setup('MEMBER')
+    auditLogs.create.mockRejectedValue(new Error('audit down'))
+    await expect(controller.create(FLAG, createDto(), req)).resolves.toEqual(
+      expect.objectContaining({ rule: expect.anything() })
+    )
+    await expect(
+      controller.delete(FLAG, RULE, req)
+    ).resolves.not.toThrow()
+  })
+
   it('names the flag in update and delete audit entries', async () => {
     const { controller, req, auditLogs } = setup('MEMBER')
     await controller.update(FLAG, RULE, { enabled: false }, req)
