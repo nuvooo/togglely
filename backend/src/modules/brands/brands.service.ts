@@ -1,4 +1,5 @@
 import { Injectable, Logger, NotFoundException } from '@nestjs/common'
+import { FlagEnvironment } from '@prisma/client'
 import { PrismaService } from '../../shared/prisma.service'
 import { isPrismaUniqueConstraintError } from '../../shared/prisma-errors'
 import { AuditLogsService } from '../audit-logs/audit-logs.service'
@@ -156,7 +157,7 @@ export class BrandsService {
       where: { flagId, environmentId, brandId },
     })
 
-    let result
+    let result: FlagEnvironment
     if (existing) {
       const newEnabled = enabled !== undefined ? enabled : !existing.enabled
       const updateData: Record<string, unknown> = { enabled: newEnabled }
