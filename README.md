@@ -1,3 +1,5 @@
+![Togglely](.github/banner.png)
+
 # 🚩 Togglely - Feature Toggle Management Platform
 
 ![Togglely Dashboard](screenshot.png)
