@@ -1,4 +1,4 @@
-// Helpers for the flag history tab (GET /audit-logs/project/:projectId).
+// Helpers for the flag history tab (GET /audit-logs/project/:projectId?entityId=).
 
 export interface AuditLogEntry {
   id: string
@@ -23,8 +23,8 @@ const asRecord = (value: unknown): Record<string, unknown> | null =>
 
 /**
  * Entries that belong to the flag: the flag itself as entity, or a related
- * entity whose old/new values name the flag (`flagId`). The backend has no
- * entity filter, so this runs client-side.
+ * entity whose old/new values name the flag (`flagId`). The backend filters
+ * by `entityId` the same way; this keeps the tab correct against older servers.
  */
 export function filterFlagLogs(
   logs: AuditLogEntry[],
@@ -58,7 +58,8 @@ export function summarizeChanges(
     new Set([...Object.keys(newValues), ...Object.keys(oldValues)])
   )
   return keys
-    .filter((key) => key !== 'flagId')
+    // The flag reference is context, not a change
+    .filter((key) => key !== 'flagId' && key !== 'flagKey')
     .map((key) => {
       const hasOld = key in oldValues
       const hasNew = key in newValues

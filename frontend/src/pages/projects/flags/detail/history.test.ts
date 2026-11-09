@@ -48,7 +48,12 @@ describe('summarizeChanges', () => {
     expect(
       summarizeChanges({
         oldValues: { enabled: false, name: 'Old' },
-        newValues: { enabled: true, environmentId: 'e1', flagId: 'f1' },
+        newValues: {
+          enabled: true,
+          environmentId: 'e1',
+          flagId: 'f1',
+          flagKey: 'checkout',
+        },
       })
     ).toBe('enabled: false → true, environmentId: e1, name: Old')
   })

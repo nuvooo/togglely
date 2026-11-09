@@ -294,6 +294,10 @@ describe('Flag detail page', () => {
       within(row).getByText('key: new-checkout, name: New checkout')
     ).toBeInTheDocument()
     expect(screen.queryByText(/other-flag/)).not.toBeInTheDocument()
+    // The backend narrows the entries to the flag
+    expect(mocks.get).toHaveBeenCalledWith(`/audit-logs/project/${PROJECT}`, {
+      params: { entityId: FLAG, limit: 200 },
+    })
   })
 
   it('shows an empty history', async () => {

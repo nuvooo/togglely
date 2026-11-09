@@ -19,7 +19,7 @@ interface FlagHistoryTabProps {
   flagId: string
 }
 
-/** Audit log entries of one flag (filtered from the project's latest logs). */
+/** Audit log entries of one flag (its own and those of its rules/brand values). */
 export function FlagHistoryTab({ projectId, flagId }: FlagHistoryTabProps) {
   const { t, i18n } = useTranslation()
   const [logs, setLogs] = useState<AuditLogEntry[]>([])
@@ -30,7 +30,9 @@ export function FlagHistoryTab({ projectId, flagId }: FlagHistoryTabProps) {
     setLoading(true)
     setError(null)
     try {
-      const response = await api.get(`/audit-logs/project/${projectId}`)
+      const response = await api.get(`/audit-logs/project/${projectId}`, {
+        params: { entityId: flagId, limit: 200 },
+      })
       setLogs(filterFlagLogs(response.data?.auditLogs ?? [], flagId))
     } catch (err) {
       setLogs([])
