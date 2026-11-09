@@ -295,3 +295,62 @@ describe('FlagsService', () => {
     })
   })
 })
+
+describe('FlagsService brand inheritance', () => {
+  it('toggle changes only the environment default, never brand overrides', async () => {
+    const { service, prisma } = createService()
+    prisma.flagEnvironment.updateMany = jest.fn()
+    prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+    prisma.flagEnvironment.findFirst.mockResolvedValue({
+      id: 'fe-default',
+      brandId: null,
+      enabled: false,
+    })
+
+    const result = await service.toggle('flag-1', 'env-1', true)
+
+    expect(prisma.flagEnvironment.findFirst).toHaveBeenCalledWith({
+      where: { flagId: 'flag-1', environmentId: 'env-1', brandId: null },
+    })
+    expect(prisma.flagEnvironment.update).toHaveBeenCalledWith({
+      where: { id: 'fe-default' },
+      data: { enabled: true, defaultValue: 'true' },
+    })
+    expect(prisma.flagEnvironment.updateMany).not.toHaveBeenCalled()
+    expect(result).toEqual({
+      flagId: 'flag-1',
+      environmentId: 'env-1',
+      enabled: true,
+    })
+  })
+
+  it('updateValue with brandId creates an override seeded from the default', async () => {
+    const { service, prisma } = createService()
+    prisma.featureFlag.findUnique.mockResolvedValue({
+      ...mockFlag,
+      flagType: 'STRING',
+    })
+    prisma.flagEnvironment.findFirst.mockImplementation(({ where }: any) =>
+      Promise.resolve(
+        where.brandId === null
+          ? { id: 'fe-default', enabled: true, defaultValue: 'blue' }
+          : null
+      )
+    )
+
+    await service.updateValue('flag-1', 'env-1', {
+      value: 'red',
+      brandId: 'brand-1',
+    })
+
+    expect(prisma.flagEnvironment.create).toHaveBeenCalledWith({
+      data: {
+        flagId: 'flag-1',
+        environmentId: 'env-1',
+        brandId: 'brand-1',
+        enabled: true,
+        defaultValue: 'red',
+      },
+    })
+  })
+})

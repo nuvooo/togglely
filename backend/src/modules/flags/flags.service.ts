@@ -313,30 +313,31 @@ export class FlagsService {
 
     if (!flag) throw new NotFoundException('Flag not found')
 
-    const allEnvs = await this.prisma.flagEnvironment.findMany({
-      where: { flagId, environmentId },
+    // Only the environment default (brandId null) is toggled. Brands without
+    // an own row inherit it live; brand overrides stay untouched.
+    const globalEnv = await this.prisma.flagEnvironment.findFirst({
+      where: { flagId, environmentId, brandId: null },
     })
-
-    const globalEnv = allEnvs.find((fe) => !fe.brandId)
     const newEnabled =
       enabled !== undefined ? enabled : !(globalEnv?.enabled ?? false)
 
     // Prepare update data - for BOOLEAN flags, sync defaultValue with enabled
-    const updateData: any = { enabled: newEnabled }
+    const updateData: { enabled: boolean; defaultValue?: string } = {
+      enabled: newEnabled,
+    }
     if (flag.flagType === 'BOOLEAN') {
       updateData.defaultValue = String(newEnabled)
     }
 
-    if (allEnvs.length > 0) {
-      // Update ALL records (global + all brands) so they stay in sync
-      await this.prisma.flagEnvironment.updateMany({
-        where: { flagId, environmentId },
+    if (globalEnv) {
+      await this.prisma.flagEnvironment.update({
+        where: { id: globalEnv.id },
         data: updateData,
       })
       return { flagId, environmentId, enabled: newEnabled }
     }
 
-    // No records exist yet — create the global one
+    // No default exists yet — create it
     try {
       return await this.prisma.flagEnvironment.create({
         data: {
@@ -352,16 +353,11 @@ export class FlagsService {
       })
     } catch (e: any) {
       if (e.code === 'P2002') {
-        const allEnvs2 = await this.prisma.flagEnvironment.findMany({
-          where: { flagId, environmentId },
+        await this.prisma.flagEnvironment.updateMany({
+          where: { flagId, environmentId, brandId: null },
+          data: updateData,
         })
-        if (allEnvs2.length > 0) {
-          await this.prisma.flagEnvironment.updateMany({
-            where: { flagId, environmentId },
-            data: updateData,
-          })
-          return { flagId, environmentId, enabled: newEnabled }
-        }
+        return { flagId, environmentId, enabled: newEnabled }
       }
       throw e
     }
@@ -509,13 +505,24 @@ export class FlagsService {
       })
     }
 
+    // A new brand row is an override: fields not given are taken from the
+    // environment default the brand inherited so far.
+    const inheritedFrom = brandId
+      ? await this.prisma.flagEnvironment.findFirst({
+          where: { flagId, environmentId, brandId: null },
+        })
+      : null
+
     return this.prisma.flagEnvironment.create({
       data: {
         flagId,
         environmentId,
         brandId,
-        enabled: enabled ?? false,
-        defaultValue: defaultValue ?? getDefaultFlagValue(flag.flagType),
+        enabled: enabled ?? inheritedFrom?.enabled ?? false,
+        defaultValue:
+          defaultValue ??
+          inheritedFrom?.defaultValue ??
+          getDefaultFlagValue(flag.flagType),
       },
     })
   }

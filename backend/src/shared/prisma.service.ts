@@ -5,6 +5,7 @@ import {
   type OnModuleInit,
 } from '@nestjs/common'
 import { PrismaClient } from '@prisma/client'
+import { migrateBrandInheritance } from './brand-inherit.migration'
 
 @Injectable()
 export class PrismaService
@@ -16,6 +17,19 @@ export class PrismaService
   async onModuleInit() {
     await this.$connect()
     await this.normalizeLegacyDocuments()
+    await this.runBrandInheritanceMigration()
+  }
+
+  /** One-time, best-effort: never blocks boot. */
+  private async runBrandInheritanceMigration() {
+    try {
+      const deleted = await migrateBrandInheritance(this, this.logger)
+      if (deleted === null) {
+        this.logger.debug('Brand inheritance migration already applied')
+      }
+    } catch (error) {
+      this.logger.warn(`Brand inheritance migration skipped: ${String(error)}`)
+    }
   }
 
   /**

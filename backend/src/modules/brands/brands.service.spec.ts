@@ -42,8 +42,9 @@ function createService() {
     },
   } as any
 
-  const service = new BrandsService(prisma)
-  return { service, prisma }
+  const auditLogs = { create: jest.fn() } as any
+  const service = new BrandsService(prisma, auditLogs)
+  return { service, prisma, auditLogs }
 }
 
 describe('BrandsService', () => {
@@ -288,7 +289,8 @@ describe('BrandsService', () => {
       const { service, prisma } = createService()
       prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
       prisma.flagEnvironment.findFirst
-        .mockResolvedValueOnce(null)
+        .mockResolvedValueOnce(null) // brand row
+        .mockResolvedValueOnce(null) // environment default
         .mockResolvedValueOnce({ id: 'fe-dup' })
       prisma.flagEnvironment.create.mockRejectedValue({ code: 'P2002' })
       prisma.flagEnvironment.update.mockResolvedValue({
@@ -309,5 +311,81 @@ describe('BrandsService', () => {
         data: { enabled: true },
       })
     })
+  })
+})
+
+describe('BrandsService inheritance', () => {
+  it('findFlagsForBrand marks inherited brands and returns the default', async () => {
+    const { service, prisma } = createService()
+    prisma.brand.findUnique.mockResolvedValue(mockBrand)
+    prisma.featureFlag.findMany.mockResolvedValue([
+      { ...mockFlag, flagType: 'STRING' },
+    ])
+    prisma.environment.findMany.mockResolvedValue([
+      { id: 'env-1', name: 'Dev' },
+      { id: 'env-2', name: 'Prod' },
+    ])
+    prisma.flagEnvironment.findMany.mockResolvedValue([
+      { id: 'd1', flagId: 'flag-1', environmentId: 'env-1', brandId: null, enabled: true, defaultValue: 'blue' },
+      { id: 'd2', flagId: 'flag-1', environmentId: 'env-2', brandId: null, enabled: true, defaultValue: 'blue' },
+      { id: 'b2', flagId: 'flag-1', environmentId: 'env-2', brandId: 'brand-1', enabled: false, defaultValue: 'red' },
+    ])
+
+    const result = await service.findFlagsForBrand('brand-1')
+    const [dev, prod] = result.flags[0].environments
+
+    expect(dev).toEqual(
+      expect.objectContaining({
+        enabled: true,
+        defaultValue: 'blue',
+        inherited: true,
+        isBrandSpecific: false,
+        default: { enabled: true, defaultValue: 'blue' },
+      })
+    )
+    expect(prod).toEqual(
+      expect.objectContaining({
+        enabled: false,
+        defaultValue: 'red',
+        inherited: false,
+        isBrandSpecific: true,
+        default: { enabled: true, defaultValue: 'blue' },
+      })
+    )
+    expect(prisma.flagEnvironment.create).not.toHaveBeenCalled()
+  })
+
+  it('toggling an inheriting brand creates an override seeded from the default', async () => {
+    const { service, prisma, auditLogs } = createService()
+    prisma.featureFlag.findUnique.mockResolvedValue({
+      ...mockFlag,
+      flagType: 'STRING',
+      organizationId: 'org-1',
+    })
+    prisma.flagEnvironment.findFirst.mockImplementation(({ where }: any) =>
+      Promise.resolve(
+        where.brandId === null
+          ? { id: 'd1', enabled: true, defaultValue: 'blue' }
+          : null
+      )
+    )
+    prisma.flagEnvironment.create.mockImplementation(({ data }: any) =>
+      Promise.resolve({ id: 'b1', ...data })
+    )
+
+    await service.toggleFlag('brand-1', 'flag-1', 'env-1', undefined, 'user-1')
+
+    expect(prisma.flagEnvironment.create).toHaveBeenCalledWith({
+      data: {
+        flagId: 'flag-1',
+        environmentId: 'env-1',
+        brandId: 'brand-1',
+        enabled: false,
+        defaultValue: 'blue',
+      },
+    })
+    expect(auditLogs.create).toHaveBeenCalledWith(
+      expect.objectContaining({ action: 'flag.brand_toggled' })
+    )
   })
 })

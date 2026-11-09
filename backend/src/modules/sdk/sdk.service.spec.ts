@@ -587,4 +587,177 @@ describe('SdkService', () => {
       expect(result['my-flag'].enabled).toBe(false)
     })
   })
+
+  describe('brand inheritance', () => {
+    const multiProject = { ...mockProject, type: 'MULTI' }
+    const stringFlag = { ...mockFlag, flagType: 'STRING' }
+    const defaultRow = (enabled: boolean, defaultValue: string) => ({
+      id: 'fe-default',
+      flagId: 'flag-1',
+      environmentId: 'env-1',
+      brandId: null,
+      enabled,
+      defaultValue,
+      targetingRules: [],
+    })
+    const brandRow = (enabled: boolean, defaultValue: string) => ({
+      id: 'fe-brand',
+      flagId: 'flag-1',
+      environmentId: 'env-1',
+      brandId: 'brand-1',
+      enabled,
+      defaultValue,
+      targetingRules: [],
+    })
+
+    function setupBrand(prisma: any) {
+      mockValidAccess(prisma, multiProject)
+      prisma.brand.findFirst.mockResolvedValue({ id: 'brand-1', key: 'b' })
+    }
+
+    /** findFirst mock that answers per brandId like the real query. */
+    function rowsByBrand(prisma: any, rows: any[]) {
+      prisma.flagEnvironment.findFirst.mockImplementation(({ where }: any) =>
+        Promise.resolve(
+          rows.find((r) => r.brandId === (where.brandId ?? null)) ?? null
+        )
+      )
+    }
+
+    it('evaluateFlag: brand without row inherits the default and creates nothing', async () => {
+      const { service, prisma } = createService()
+      setupBrand(prisma)
+      prisma.featureFlag.findFirst.mockResolvedValue(stringFlag)
+      rowsByBrand(prisma, [defaultRow(true, 'blue')])
+
+      const result = await service.evaluateFlag(
+        'my-project',
+        'production',
+        'my-flag',
+        'k',
+        'b'
+      )
+
+      expect(result.enabled).toBe(true)
+      expect(result.value).toBe('blue')
+      expect(prisma.flagEnvironment.create).not.toHaveBeenCalled()
+    })
+
+    it('evaluateFlag: brand override wins over the default', async () => {
+      const { service, prisma } = createService()
+      setupBrand(prisma)
+      prisma.featureFlag.findFirst.mockResolvedValue(stringFlag)
+      rowsByBrand(prisma, [defaultRow(true, 'blue'), brandRow(true, 'red')])
+
+      const result = await service.evaluateFlag(
+        'my-project',
+        'production',
+        'my-flag',
+        'k',
+        'b'
+      )
+
+      expect(result.value).toBe('red')
+      expect(prisma.flagEnvironment.create).not.toHaveBeenCalled()
+    })
+
+    it('evaluateFlag: a default change is reflected live for inheriting brands', async () => {
+      const { service, prisma } = createService()
+      setupBrand(prisma)
+      prisma.featureFlag.findFirst.mockResolvedValue(mockFlag)
+      const rows = [defaultRow(false, 'false')]
+      rowsByBrand(prisma, rows)
+
+      const before = await service.evaluateFlag(
+        'my-project',
+        'production',
+        'my-flag',
+        'k',
+        'b'
+      )
+      rows[0] = defaultRow(true, 'true')
+      const after = await service.evaluateFlag(
+        'my-project',
+        'production',
+        'my-flag',
+        'k',
+        'b'
+      )
+
+      expect(before.enabled).toBe(false)
+      expect(after.enabled).toBe(true)
+      expect(prisma.flagEnvironment.create).not.toHaveBeenCalled()
+    })
+
+    it('evaluateFlag: creates only the default row when nothing exists', async () => {
+      const { service, prisma } = createService()
+      setupBrand(prisma)
+      prisma.featureFlag.findFirst.mockResolvedValue(mockFlag)
+      rowsByBrand(prisma, [])
+      prisma.flagEnvironment.create.mockResolvedValue(defaultRow(false, 'false'))
+
+      await service.evaluateFlag('my-project', 'production', 'my-flag', 'k', 'b')
+
+      expect(prisma.flagEnvironment.create).toHaveBeenCalledTimes(1)
+      expect(prisma.flagEnvironment.create.mock.calls[0][0].data.brandId).toBe(
+        null
+      )
+    })
+
+    it('getAllFlags: brand without row inherits the default and creates nothing', async () => {
+      const { service, prisma } = createService()
+      setupBrand(prisma)
+      prisma.featureFlag.findMany.mockResolvedValue([stringFlag])
+      prisma.flagEnvironment.findMany.mockResolvedValue([
+        defaultRow(true, 'blue'),
+      ])
+
+      const result = await service.getAllFlags(
+        'my-project',
+        'production',
+        'k',
+        'b'
+      )
+
+      expect(result['my-flag'].enabled).toBe(true)
+      expect(result['my-flag'].value).toBe('blue')
+      expect(prisma.flagEnvironment.create).not.toHaveBeenCalled()
+    })
+
+    it('getAllFlags: brand override wins and default changes do not leak into it', async () => {
+      const { service, prisma } = createService()
+      setupBrand(prisma)
+      prisma.featureFlag.findMany.mockResolvedValue([stringFlag])
+      prisma.flagEnvironment.findMany.mockResolvedValue([
+        defaultRow(true, 'blue'),
+        brandRow(false, 'red'),
+      ])
+
+      const result = await service.getAllFlags(
+        'my-project',
+        'production',
+        'k',
+        'b'
+      )
+
+      expect(result['my-flag'].enabled).toBe(false)
+      expect(result['my-flag'].value).toBe('red')
+      expect(prisma.flagEnvironment.create).not.toHaveBeenCalled()
+    })
+
+    it('getAllFlags: creates only the default row when nothing exists', async () => {
+      const { service, prisma } = createService()
+      setupBrand(prisma)
+      prisma.featureFlag.findMany.mockResolvedValue([mockFlag])
+      prisma.flagEnvironment.findMany.mockResolvedValue([])
+      prisma.flagEnvironment.create.mockResolvedValue(defaultRow(false, 'false'))
+
+      await service.getAllFlags('my-project', 'production', 'k', 'b')
+
+      expect(prisma.flagEnvironment.create).toHaveBeenCalledTimes(1)
+      expect(prisma.flagEnvironment.create.mock.calls[0][0].data.brandId).toBe(
+        null
+      )
+    })
+  })
 })

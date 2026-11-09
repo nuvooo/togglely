@@ -58,17 +58,26 @@ function setup(
       create: jest.fn().mockResolvedValue({ id: 'fe-1', enabled: true }),
       update: jest.fn(),
       deleteMany: jest.fn(),
+      delete: jest.fn(),
     },
+    targetingRule: {
+      findMany: jest.fn().mockResolvedValue([]),
+      deleteMany: jest.fn(),
+    },
+    ruleCondition: { deleteMany: jest.fn() },
     organizationMember: {
       findFirst: jest
         .fn()
         .mockResolvedValue(role ? { userId: USER_ID, role } : null),
     },
+    $transaction: jest.fn(),
   } as any
+  prisma.$transaction.mockImplementation((cb: any) => cb(prisma))
+  const auditLogs = { create: jest.fn() } as any
   const access = new AccessService(prisma)
-  const service = new BrandsService(prisma)
+  const service = new BrandsService(prisma, auditLogs)
   const controller = new BrandsController(service, access)
-  return { controller, prisma }
+  return { controller, prisma, auditLogs }
 }
 
 const toggleBody = { environmentId: ENV_ID, enabled: true }
@@ -152,6 +161,97 @@ describe('BrandsController (access control)', () => {
       controller.toggleFlag(BRAND_ID, FLAG_ID, toggleBody, req)
     ).rejects.toThrow(NotFoundException)
     expect(prisma.flagEnvironment.create).not.toHaveBeenCalled()
+  })
+})
+
+describe('BrandsController.resetFlagOverride', () => {
+  const reset = (c: BrandsController, envId = ENV_ID) =>
+    c.resetFlagOverride(BRAND_ID, FLAG_ID, envId, req)
+
+  it('rejects non-members with 404', async () => {
+    const { controller, prisma } = setup(null)
+    await expect(reset(controller)).rejects.toThrow(NotFoundException)
+    expect(prisma.flagEnvironment.delete).not.toHaveBeenCalled()
+  })
+
+  it('requires MEMBER (VIEWER gets 403)', async () => {
+    const { controller, prisma } = setup('VIEWER')
+    await expect(reset(controller)).rejects.toThrow(ForbiddenException)
+    expect(prisma.flagEnvironment.delete).not.toHaveBeenCalled()
+  })
+
+  it('rejects invalid ids with 404', async () => {
+    const { controller, prisma } = setup('OWNER')
+    await expect(
+      controller.resetFlagOverride('nope', FLAG_ID, ENV_ID, req)
+    ).rejects.toThrow(NotFoundException)
+    await expect(
+      controller.resetFlagOverride(BRAND_ID, 'nope', ENV_ID, req)
+    ).rejects.toThrow(NotFoundException)
+    await expect(reset(controller, 'nope')).rejects.toThrow(NotFoundException)
+    expect(prisma.flagEnvironment.delete).not.toHaveBeenCalled()
+  })
+
+  it('rejects a flag from another project', async () => {
+    const { controller, prisma } = setup('OWNER', {
+      flagProjectId: OTHER_PROJECT_ID,
+    })
+    await expect(reset(controller)).rejects.toThrow(NotFoundException)
+    expect(prisma.flagEnvironment.delete).not.toHaveBeenCalled()
+  })
+
+  it('rejects an environment from another project', async () => {
+    const { controller, prisma } = setup('OWNER', { envInProject: false })
+    await expect(reset(controller)).rejects.toThrow(NotFoundException)
+    expect(prisma.flagEnvironment.delete).not.toHaveBeenCalled()
+  })
+
+  it('deletes only that brand row and audit-logs it', async () => {
+    const { controller, prisma, auditLogs } = setup('MEMBER')
+    prisma.flagEnvironment.findFirst.mockResolvedValue({
+      id: 'fe-brand',
+      brandId: BRAND_ID,
+      enabled: true,
+      defaultValue: 'true',
+    })
+    prisma.targetingRule.findMany.mockResolvedValue([{ id: 'r1' }])
+
+    const result = await reset(controller)
+
+    expect(prisma.flagEnvironment.findFirst).toHaveBeenCalledWith({
+      where: { flagId: FLAG_ID, environmentId: ENV_ID, brandId: BRAND_ID },
+    })
+    expect(prisma.flagEnvironment.delete).toHaveBeenCalledTimes(1)
+    expect(prisma.flagEnvironment.delete).toHaveBeenCalledWith({
+      where: { id: 'fe-brand' },
+    })
+    expect(prisma.flagEnvironment.deleteMany).not.toHaveBeenCalled()
+    expect(prisma.targetingRule.deleteMany).toHaveBeenCalledWith({
+      where: { flagEnvId: 'fe-brand' },
+    })
+    expect(prisma.ruleCondition.deleteMany).toHaveBeenCalledWith({
+      where: { ruleId: { in: ['r1'] } },
+    })
+    expect(auditLogs.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'flag.brand_override_reset',
+        userId: USER_ID,
+        projectId: PROJECT_ID,
+      })
+    )
+    expect(result).toEqual(
+      expect.objectContaining({ inherited: true, deleted: true })
+    )
+  })
+
+  it('is a no-op when the brand already inherits', async () => {
+    const { controller, prisma, auditLogs } = setup('MEMBER')
+    const result = await reset(controller)
+    expect(prisma.flagEnvironment.delete).not.toHaveBeenCalled()
+    expect(auditLogs.create).not.toHaveBeenCalled()
+    expect(result).toEqual(
+      expect.objectContaining({ inherited: true, deleted: false })
+    )
   })
 })
 

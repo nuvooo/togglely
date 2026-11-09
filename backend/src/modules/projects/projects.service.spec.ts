@@ -449,3 +449,71 @@ describe('ProjectsService', () => {
     })
   })
 })
+
+describe('ProjectsService.getFlagsWithBrands (brand inheritance)', () => {
+  it('marks brands without own row as inherited with the default values and creates nothing', async () => {
+    const { service, prisma } = createService()
+    prisma.project.findUnique.mockResolvedValue({
+      ...mockProject,
+      type: 'MULTI',
+      environments: [{ id: 'env-1', name: 'Development', key: 'development' }],
+    })
+    const flags = [
+      {
+        id: 'flag-1',
+        name: 'Color',
+        key: 'color',
+        flagType: 'STRING',
+        flagEnvironments: [
+          {
+            id: 'fe-default',
+            environmentId: 'env-1',
+            brandId: null,
+            enabled: true,
+            defaultValue: 'blue',
+            environment: { name: 'Development' },
+          },
+          {
+            id: 'fe-b2',
+            environmentId: 'env-1',
+            brandId: 'brand-2',
+            enabled: false,
+            defaultValue: 'red',
+            environment: { name: 'Development' },
+          },
+        ],
+      },
+    ]
+    prisma.featureFlag.findMany.mockResolvedValue(flags)
+    prisma.brand.findMany.mockResolvedValue([
+      { id: 'brand-1', name: 'Alpha', key: 'alpha' },
+      { id: 'brand-2', name: 'Beta', key: 'beta' },
+    ])
+
+    const result = await service.getFlagsWithBrands('proj-1')
+    const env = result.flags[0].environments[0]
+
+    expect(env.enabled).toBe(true)
+    expect(env.defaultValue).toBe('blue')
+    expect(env.brandValues[0]).toEqual(
+      expect.objectContaining({
+        brandId: 'brand-1',
+        brandName: 'Alpha',
+        enabled: true,
+        defaultValue: 'blue',
+        inherited: true,
+        isBrandSpecific: false,
+      })
+    )
+    expect(env.brandValues[1]).toEqual(
+      expect.objectContaining({
+        brandId: 'brand-2',
+        enabled: false,
+        defaultValue: 'red',
+        inherited: false,
+        isBrandSpecific: true,
+      })
+    )
+    expect(prisma.flagEnvironment.create).not.toHaveBeenCalled()
+  })
+})

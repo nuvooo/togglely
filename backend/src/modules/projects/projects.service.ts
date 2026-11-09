@@ -170,13 +170,19 @@ export class ProjectsService {
               (fe) =>
                 fe.environmentId === env.environmentId && fe.brandId === b.id
             )
-            // Always return brand, using default env values if no override exists
+            // Without an own row the brand inherits the default live; its
+            // effective values are the default's. Never created on read.
+            const effectiveValue = brandEnv?.defaultValue ?? env.defaultValue
             return {
               brandId: b.id,
               brandName: b.name,
+              brandKey: b.key,
               enabled: brandEnv?.enabled ?? env.enabled,
-              value: brandEnv?.defaultValue ?? env.defaultValue,
+              defaultValue: effectiveValue,
+              value: effectiveValue,
+              inherited: !brandEnv,
               isOverride: !!brandEnv,
+              isBrandSpecific: !!brandEnv,
             }
           }),
         })),

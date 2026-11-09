@@ -46,6 +46,55 @@ export class BrandsController {
     @Req() req: any
   ) {
     const userId = req.user.userId
+    await this.assertBrandFlagEnvironment(
+      userId,
+      brandId,
+      flagId,
+      dto.environmentId
+    )
+
+    return this.brandsService.toggleFlag(
+      brandId,
+      flagId,
+      dto.environmentId,
+      dto.enabled,
+      userId
+    )
+  }
+
+  /** Deletes the brand override: the brand inherits the default again. */
+  @Delete(':brandId/flags/:flagId/environments/:environmentId')
+  async resetFlagOverride(
+    @Param('brandId') brandId: string,
+    @Param('flagId') flagId: string,
+    @Param('environmentId') environmentId: string,
+    @Req() req: any
+  ) {
+    const userId = req.user.userId
+    const { brand, flag } = await this.assertBrandFlagEnvironment(
+      userId,
+      brandId,
+      flagId,
+      environmentId
+    )
+    return this.brandsService.resetOverride(
+      brand.id,
+      flag.id,
+      environmentId,
+      userId
+    )
+  }
+
+  /**
+   * MEMBER access to brand and flag, and brand, flag and environment must all
+   * belong to the same project. Invalid or foreign ids → 404.
+   */
+  private async assertBrandFlagEnvironment(
+    userId: string,
+    brandId: string,
+    flagId: string,
+    environmentId: string
+  ) {
     const { brand } = await this.access.assertBrandAccess(
       userId,
       brandId,
@@ -56,21 +105,14 @@ export class BrandsController {
       flagId,
       'MEMBER'
     )
-    // Brand, flag and environment must all belong to the same project.
     if (flag.projectId !== brand.projectId) {
       throw new NotFoundException('Feature flag not found')
     }
     await this.access.assertEnvironmentInProject(
-      dto.environmentId,
+      environmentId,
       brand.projectId
     )
-
-    return this.brandsService.toggleFlag(
-      brandId,
-      flagId,
-      dto.environmentId,
-      dto.enabled
-    )
+    return { brand, flag }
   }
 
   @Post('project/:projectId')

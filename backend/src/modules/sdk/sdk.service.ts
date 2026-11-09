@@ -215,46 +215,61 @@ export class SdkService {
 
     const brandId = await this.resolveBrandId(project, brandKey)
 
-    // Find or create flag environment with targeting rules
-    let flagEnv = await this.prisma.flagEnvironment.findFirst({
-      where: {
-        flagId: flag.id,
-        environmentId: environment.id,
-        brandId: brandId || null,
+    const include = {
+      targetingRules: {
+        include: { conditions: true },
+        orderBy: { priority: 'asc' as const },
       },
-      include: {
-        targetingRules: {
-          include: { conditions: true },
-          orderBy: { priority: 'asc' },
-        },
-      },
-    })
+    }
 
-    // Auto-create if missing
-    if (!flagEnv) {
+    // A brand override (own row) wins; without one the brand inherits the
+    // environment default live. Reads never create brand rows.
+    const brandEnv = brandId
+      ? await this.prisma.flagEnvironment.findFirst({
+          where: { flagId: flag.id, environmentId: environment.id, brandId },
+          include,
+        })
+      : null
+
+    let defaultEnv =
+      brandEnv && brandEnv.targetingRules.length > 0
+        ? null
+        : await this.prisma.flagEnvironment.findFirst({
+            where: {
+              flagId: flag.id,
+              environmentId: environment.id,
+              brandId: null,
+            },
+            include,
+          })
+
+    // Only the environment default is ever auto-created on read
+    if (!brandEnv && !defaultEnv) {
       this.logger.debug(
-        `[SDK Service] FlagEnvironment not found, auto-creating with disabled state`
+        `[SDK Service] Default FlagEnvironment not found, auto-creating with disabled state`
       )
-      const created = await this.prisma.flagEnvironment.create({
+      defaultEnv = await this.prisma.flagEnvironment.create({
         data: {
           flagId: flag.id,
           environmentId: environment.id,
-          brandId: brandId || null,
+          brandId: null,
           enabled: false,
           defaultValue: getDefaultFlagValue(flag.flagType),
         },
-        include: {
-          targetingRules: {
-            include: { conditions: true },
-            orderBy: { priority: 'asc' },
-          },
-        },
+        include,
       })
-      flagEnv = created
     }
 
+    const flagEnv = (brandEnv ?? defaultEnv) as NonNullable<typeof defaultEnv>
+    // Brand overrides inherit the environment-level rules unless they define
+    // their own
+    const rules =
+      brandEnv && brandEnv.targetingRules.length > 0
+        ? brandEnv.targetingRules
+        : (defaultEnv?.targetingRules ?? [])
+
     this.logger.debug(
-      `[SDK Service] FlagEnvironment: enabled=${flagEnv.enabled}, value=${flagEnv.defaultValue}, rules=${flagEnv.targetingRules.length}`
+      `[SDK Service] FlagEnvironment: enabled=${flagEnv.enabled}, value=${flagEnv.defaultValue}, rules=${rules.length}, inherited=${!!brandId && !brandEnv}`
     )
 
     // Evaluate: Experiment -> TargetingRules -> Default
@@ -278,22 +293,6 @@ export class SdkService {
           `[SDK Service] Experiment matched: ${expResult.experimentKey}, variant: ${expResult.variantKey}`
         )
       } else {
-        // Evaluate targeting rules (brand overrides inherit the
-        // environment-level rules unless they define their own)
-        const rules =
-          flagEnv.targetingRules.length > 0 || !flagEnv.brandId
-            ? flagEnv.targetingRules
-            : await this.prisma.targetingRule.findMany({
-                where: {
-                  flagEnvironment: {
-                    flagId: flag.id,
-                    environmentId: environment.id,
-                    brandId: null,
-                  },
-                },
-                include: { conditions: true },
-                orderBy: { priority: 'asc' },
-              })
         const ruleResult = this.evaluationService.evaluateRules(rules, context)
         if (ruleResult !== null) {
           resolvedValue = ruleResult
@@ -352,37 +351,18 @@ export class SdkService {
     )
 
     for (const flag of flags) {
-      // Find matching flag environment for this brand
-      let flagEnv = flagEnvs.find(
-        (fe) => fe.flagId === flag.id && fe.brandId === brandId
+      // A brand override (own row) wins; otherwise the brand inherits the
+      // environment default live. Reads never create brand rows.
+      const brandEnv = brandId
+        ? flagEnvs.find((fe) => fe.flagId === flag.id && fe.brandId === brandId)
+        : undefined
+      let defaultEnv = flagEnvs.find(
+        (fe) => fe.flagId === flag.id && !fe.brandId
       )
 
-      // If we are in a MULTI project but no brand-specific env exists yet,
-      // check if a global (null brand) one exists to inherit from, or create brand-specific
-      if (!flagEnv && brandId) {
-        const globalEnv = flagEnvs.find(
-          (fe) => fe.flagId === flag.id && !fe.brandId
-        )
-
-        const created = await this.prisma.flagEnvironment.create({
-          data: {
-            flagId: flag.id,
-            environmentId: environment.id,
-            brandId: brandId,
-            enabled: globalEnv?.enabled ?? false,
-            defaultValue:
-              globalEnv?.defaultValue ?? getDefaultFlagValue(flag.flagType),
-          },
-          include: {
-            targetingRules: {
-              include: { conditions: true },
-              orderBy: { priority: 'asc' },
-            },
-          },
-        })
-        flagEnv = created
-      } else if (!flagEnv && !brandId) {
-        const created = await this.prisma.flagEnvironment.create({
+      // Only the environment default is ever auto-created on read
+      if (!brandEnv && !defaultEnv) {
+        defaultEnv = await this.prisma.flagEnvironment.create({
           data: {
             flagId: flag.id,
             environmentId: environment.id,
@@ -397,9 +377,9 @@ export class SdkService {
             },
           },
         })
-        flagEnv = created
       }
 
+      const flagEnv = brandEnv ?? defaultEnv
       if (flagEnv) {
         let resolvedValue = flagEnv.defaultValue
         let experimentInfo: { key: string; variantKey: string } | undefined
@@ -417,12 +397,12 @@ export class SdkService {
               variantKey: expResult.variantKey,
             }
           } else {
-            // Brand overrides inherit environment-level rules
+            // Brand overrides inherit environment-level rules unless they
+            // define their own
             const rules =
-              flagEnv.targetingRules.length > 0 || !flagEnv.brandId
-                ? flagEnv.targetingRules
-                : (flagEnvs.find((fe) => fe.flagId === flag.id && !fe.brandId)
-                    ?.targetingRules ?? [])
+              brandEnv && brandEnv.targetingRules.length > 0
+                ? brandEnv.targetingRules
+                : (defaultEnv?.targetingRules ?? [])
             const ruleResult = this.evaluationService.evaluateRules(
               rules,
               context
