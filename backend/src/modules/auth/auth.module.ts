@@ -9,5 +9,6 @@ import { SetupController } from './setup.controller'
   imports: [PrismaModule, MailerModule],
   controllers: [AuthController, SetupController],
   providers: [AuthService],
+  exports: [AuthService],
 })
 export class AuthModule {}

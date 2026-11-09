@@ -13,6 +13,7 @@ import { HealthModule } from './modules/health/health.module'
 import { OrganizationsModule } from './modules/organizations/organizations.module'
 import { PasswordResetModule } from './modules/password-reset/password-reset.module'
 import { ProjectsModule } from './modules/projects/projects.module'
+import { SetupModule } from './modules/setup/setup.module'
 import { SdkModule } from './modules/sdk/sdk.module'
 import { ExperimentsModule } from './modules/experiments/experiments.module'
 import { EventsModule } from './modules/events/events.module'
@@ -34,6 +35,7 @@ import { AccessModule } from './shared/access/access.module'
     HealthModule,
     AuditLogsModule,
     AuthModule,
+    SetupModule,
     PasswordResetModule,
     OrganizationsModule,
     EnvironmentsModule,
