@@ -792,4 +792,13 @@ export const en = {
     'Send the last ETag in If-None-Match: unchanged flags return 304 without a body and are not evaluated again.',
   'integration.webhooks-text': 'Server-to-server: signed webhooks notify your backend about every change.',
   'integration.webhooks-link': 'Manage webhooks',
+
+  // Page building blocks (PageHeader, ErrorState)
+  'page.breadcrumb': 'Breadcrumb',
+  'page.retry': 'Try again',
+
+  // Tables & toolbars (DataTable, PageToolbar)
+  'table.search': 'Search …',
+  'table.clear-search': 'Clear search',
+  'table.filters': 'Filters',
 }

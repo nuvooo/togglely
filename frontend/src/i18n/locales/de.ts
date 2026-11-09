@@ -797,4 +797,13 @@ export const de = {
     'Sende das letzte ETag in If-None-Match: Unveränderte Flags liefern 304 ohne Body und werden nicht neu ausgewertet.',
   'integration.webhooks-text': 'Server zu Server: Signierte Webhooks informieren dein Backend über jede Änderung.',
   'integration.webhooks-link': 'Webhooks verwalten',
+
+  // Page building blocks (PageHeader, ErrorState)
+  'page.breadcrumb': 'Brotkrümelnavigation',
+  'page.retry': 'Erneut versuchen',
+
+  // Tables & toolbars (DataTable, PageToolbar)
+  'table.search': 'Suchen …',
+  'table.clear-search': 'Suche leeren',
+  'table.filters': 'Filter',
 }

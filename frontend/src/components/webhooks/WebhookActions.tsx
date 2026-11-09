@@ -2,7 +2,7 @@ import { KeyRound, MoreHorizontal, Pencil, Power, Send, Trash2 } from 'lucide-re
 import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
-import { ConfirmDialog } from '@/components/members/ConfirmDialog'
+import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,

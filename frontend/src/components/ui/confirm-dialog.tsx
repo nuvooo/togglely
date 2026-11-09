@@ -11,17 +11,27 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 
-interface ConfirmDialogProps {
+export interface ConfirmDialogProps {
   open: boolean
   title: string
   description: string
   confirmLabel: string
-  onConfirm: () => Promise<void>
+  onConfirm: () => Promise<void> | void
   onOpenChange: (open: boolean) => void
+  /** Style of the confirm button; destructive by default (replaces `window.confirm()`). */
+  variant?: 'destructive' | 'default'
 }
 
-/** Destructive confirmation; stays open (and busy) until `onConfirm` settles. */
-export function ConfirmDialog({ open, title, description, confirmLabel, onConfirm, onOpenChange }: ConfirmDialogProps) {
+/** Confirmation dialog; stays open (and busy) until `onConfirm` settles. */
+export function ConfirmDialog({
+  open,
+  title,
+  description,
+  confirmLabel,
+  onConfirm,
+  onOpenChange,
+  variant = 'destructive',
+}: ConfirmDialogProps) {
   const { t } = useTranslation()
   const [busy, setBusy] = useState(false)
 
@@ -43,10 +53,14 @@ export function ConfirmDialog({ open, title, description, confirmLabel, onConfir
           <DialogDescription>{description}</DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <Button variant="outline" onClick={() => onOpenChange(false)} disabled={busy}>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={busy}
+          >
             {t('common.cancel')}
           </Button>
-          <Button variant="destructive" onClick={confirm} disabled={busy}>
+          <Button variant={variant} onClick={confirm} disabled={busy}>
             {busy && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
             {confirmLabel}
           </Button>
