@@ -1,14 +1,15 @@
 import { Check, Copy } from 'lucide-react'
-import { useState } from 'react'
+import { useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 
-/** Monospace code sample with a copy button. */
+/** Monospace code sample with a copy button; `label` names the figure for assistive tech. */
 export function CodeBlock({ code, label, className }: { code: string; label: string; className?: string }) {
   const { t } = useTranslation()
   const [copied, setCopied] = useState(false)
+  const captionId = useId()
 
   const copy = async () => {
     try {
@@ -21,7 +22,8 @@ export function CodeBlock({ code, label, className }: { code: string; label: str
   }
 
   return (
-    <div className={cn('relative rounded-md border bg-muted/40', className)}>
+    <figure aria-labelledby={captionId} className={cn('relative m-0 rounded-md border bg-muted/40', className)}>
+      <figcaption id={captionId} className="sr-only">{label}</figcaption>
       <Button
         type="button"
         variant="ghost"
@@ -32,9 +34,9 @@ export function CodeBlock({ code, label, className }: { code: string; label: str
       >
         {copied ? <Check className="h-3.5 w-3.5" /> : <Copy className="h-3.5 w-3.5" />}
       </Button>
-      <pre aria-label={label} className="overflow-x-auto p-3 pr-12 font-mono text-xs leading-relaxed text-foreground">
+      <pre className="overflow-x-auto p-3 pr-12 font-mono text-xs leading-relaxed text-foreground">
         <code>{code}</code>
       </pre>
-    </div>
+    </figure>
   )
 }

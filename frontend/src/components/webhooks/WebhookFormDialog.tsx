@@ -14,7 +14,7 @@ import {
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Switch } from '@/components/ui/switch'
-import { type ProjectEnvironment, type Webhook, webhookErrorMessage, webhooksApi } from '@/lib/webhooks'
+import { type ProjectEnvironment, type Webhook, writeErrorMessage, webhooksApi } from '@/lib/webhooks'
 import { EnvironmentSelect } from './EnvironmentSelect'
 
 interface WebhookFormDialogProps {
@@ -71,7 +71,7 @@ export function WebhookFormDialog({
       }
       onOpenChange(false)
     } catch (err: unknown) {
-      setError(webhookErrorMessage(err, t))
+      setError(writeErrorMessage(err, t))
     } finally {
       setBusy(false)
     }

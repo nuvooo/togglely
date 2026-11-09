@@ -41,7 +41,7 @@ export function WebhooksNotice({
 export default function Webhooks() {
   const { t, i18n } = useTranslation()
   const { projectId = '' } = useParams<{ projectId: string }>()
-  const canManage = useCanManageWebhooks(projectId)
+  const { canManage, roleLoading } = useCanManageWebhooks(projectId)
   const [webhooks, setWebhooks] = useState<Webhook[]>([])
   const [environments, setEnvironments] = useState<ProjectEnvironment[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -87,7 +87,7 @@ export default function Webhooks() {
         <h1 className="text-2xl font-semibold tracking-tight">{t('webhooks.title')}</h1>
         <p className="mt-1 text-sm text-muted-foreground">{t('webhooks.subtitle')}</p>
       </div>
-      {canManage && !loadError && !isLoading && webhooks.length > 0 && (
+      {canManage && !loadError && !isLoading && !roleLoading && webhooks.length > 0 && (
         <Button onClick={() => setCreateOpen(true)}>
           <Plus className="mr-2 h-4 w-4" />
           {t('webhooks.add')}
@@ -97,7 +97,7 @@ export default function Webhooks() {
   )
 
   let content: React.ReactNode
-  if (isLoading) {
+  if (isLoading || roleLoading) {
     content = (
       <div role="status" aria-busy="true" aria-label={t('common.loading')} className="space-y-2">
         <Skeleton className="h-10 w-full" />

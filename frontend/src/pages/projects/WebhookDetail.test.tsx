@@ -8,6 +8,8 @@ const PROJECT = 'p1'
 
 const mocks = vi.hoisted(() => ({
   role: 'ADMIN' as string,
+  workspaceLoading: false,
+  refreshWorkspace: vi.fn(() => Promise.resolve()),
   get: vi.fn(),
   post: vi.fn(),
 }))
@@ -23,10 +25,11 @@ vi.mock('@/lib/axios', () => ({
 }))
 vi.mock('sonner', () => ({ toast }))
 vi.mock('@/lib/workspace', () => ({
+  refreshWorkspace: mocks.refreshWorkspace,
   useWorkspace: () => ({
     projects: [{ id: PROJECT, name: 'Shop', key: 'shop', type: 'SINGLE', organizationId: 'o1' }],
-    organizations: [{ id: 'o1', name: 'Acme', role: mocks.role }],
-    isLoading: false,
+    organizations: mocks.workspaceLoading ? [] : [{ id: 'o1', name: 'Acme', role: mocks.role }],
+    isLoading: mocks.workspaceLoading,
     error: null,
     projectsByOrg: () => [],
   }),
@@ -89,6 +92,7 @@ describe('WebhookDetail', () => {
     await i18n.changeLanguage('de')
     vi.clearAllMocks()
     mocks.role = 'ADMIN'
+    mocks.workspaceLoading = false
     mocks.get.mockImplementation((url: string) => {
       if (url === `/projects/${PROJECT}/webhooks`) return Promise.resolve({ data: { webhooks: [WEBHOOK] } })
       if (url === `/projects/${PROJECT}/webhooks/w1/deliveries`) return Promise.resolve({ data: { deliveries: DELIVERIES } })
@@ -173,12 +177,16 @@ describe('WebhookDetail', () => {
     await waitFor(() => expect(toast.error).toHaveBeenCalledWith(expect.stringMatching(/gerade gesendet/)))
   })
 
-  it('sends a test event from the header', async () => {
+  it('sends a test event from the header (not duplicated in the menu)', async () => {
     mocks.post.mockResolvedValue({ data: { delivery: delivery({ id: 'd4', type: 'webhook.test', responseCode: 202 }) } })
     const user = userEvent.setup()
     renderPage()
     await user.click(await screen.findByRole('button', { name: 'Test senden' }))
     await waitFor(() => expect(toast.success).toHaveBeenCalledWith('Test zugestellt (HTTP 202)'))
+
+    await user.click(screen.getByRole('button', { name: `Aktionen für ${WEBHOOK.url}` }))
+    expect(await screen.findByRole('menuitem', { name: 'Bearbeiten' })).toBeInTheDocument()
+    expect(screen.queryByRole('menuitem', { name: 'Test senden' })).toBeNull()
   })
 
   it('hides write actions for members', async () => {

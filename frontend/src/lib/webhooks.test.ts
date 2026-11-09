@@ -6,6 +6,7 @@ import {
   etagSnippet,
   eventSourceSnippet,
   SIGNATURE_SNIPPET,
+  serverStreamSnippet,
   streamUrl,
   webhookErrorMessage,
 } from './webhooks'
@@ -39,6 +40,7 @@ describe('webhook helpers', () => {
   })
 
   it('maps conflicts and rate limits', () => {
+    expect(webhookErrorMessage(axiosError(403, { message: 'x' }), i18n.t)).toMatch(/keine berechtigung/i)
     expect(webhookErrorMessage(axiosError(409, { message: 'x' }), i18n.t)).toMatch(/gerade gesendet/i)
     expect(webhookErrorMessage(axiosError(429, { message: 'x' }), i18n.t)).toMatch(/zu viele/i)
   })
@@ -52,11 +54,21 @@ describe('webhook helpers', () => {
     expect(deliveryErrorLabel('something_new', i18n.t)).toBe('something_new')
   })
 
+  it('uses plural forms for the failure counter', () => {
+    expect(i18n.t('webhooks.status.failures', { count: 1 })).toBe('1 Fehlschlag in Folge')
+    expect(i18n.t('webhooks.status.failures', { count: 7 })).toBe('7 Fehlschläge in Folge')
+  })
+
   it('builds stream and polling snippets', () => {
     expect(streamUrl('https://flags.example.com', 'shop', 'prod')).toBe('https://flags.example.com/sdk/stream/shop/prod')
     expect(eventSourceSnippet('https://x.io', 'shop', 'prod')).toContain(
-      "new EventSource(\n  'https://x.io/sdk/stream/shop/prod?apiKey=YOUR_API_KEY'"
+      "new EventSource(\n  'https://x.io/sdk/stream/shop/prod?apiKey=YOUR_CLIENT_API_KEY'"
     )
+    expect(eventSourceSnippet('https://x.io', 'shop', 'prod')).toMatch(/CLIENT key only/)
+    const server = serverStreamSnippet('https://x.io', 'shop', 'prod')
+    expect(server).toContain("'X-API-Key': process.env.TOGGLELY_API_KEY")
+    expect(server).toContain("fetch('https://x.io/sdk/stream/shop/prod'")
+    expect(server).not.toContain('apiKey=')
     const curl = etagSnippet('https://x.io', 'shop', 'prod')
     expect(curl).toContain('If-None-Match')
     expect(curl).toContain('https://x.io/sdk/flags/shop/prod')

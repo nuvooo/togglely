@@ -687,7 +687,8 @@ export const de = {
   'webhooks.status.last-success': 'Zugestellt',
   'webhooks.status.last-failed': 'Fehlgeschlagen',
   'webhooks.status.never': 'Noch keine Zustellung',
-  'webhooks.status.failures': '{{count}} Fehlschläge in Folge',
+  'webhooks.status.failures_one': '{{count}} Fehlschlag in Folge',
+  'webhooks.status.failures_other': '{{count}} Fehlschläge in Folge',
   'webhooks.actions.label': 'Aktionen für {{url}}',
   'webhooks.actions.test': 'Test senden',
   'webhooks.actions.rotate': 'Secret rotieren',
@@ -717,6 +718,7 @@ export const de = {
   'webhooks.secret.snippet-hint':
     'HMAC über den unveränderten Body berechnen, in konstanter Zeit vergleichen und Zeitstempel älter als 5 Minuten ablehnen.',
   'webhooks.secret.done': 'Fertig',
+  'webhooks.secret.saved': 'Ich habe das Secret gespeichert',
   'webhooks.rotate.title': 'Secret rotieren?',
   'webhooks.rotate.description':
     'Das bisherige Secret ist sofort ungültig. Hinterlege das neue Secret direkt in deinem Empfänger.',
@@ -741,6 +743,7 @@ export const de = {
   'webhooks.error.invalid_url': 'Das ist keine gültige URL.',
   'webhooks.error.webhook_limit_reached': 'Dieses Projekt hat die maximale Anzahl an Webhooks erreicht.',
   'webhooks.error.environment_not_in_project': 'Eines der gewählten Environments gehört nicht zu diesem Projekt.',
+  'webhooks.error.forbidden': 'Keine Berechtigung: Nur Admins können Webhooks ändern.',
   'webhooks.error.in_flight': 'Diese Zustellung wird gerade gesendet. Versuche es gleich noch einmal.',
   'webhooks.error.rate_limited': 'Zu viele Anfragen. Bitte warte eine Minute.',
   'webhooks.delivery-error.blocked_private_address': 'Private Adresse blockiert',
@@ -786,7 +789,9 @@ export const de = {
   'integration.stream-url': 'Live-Stream-URL',
   'integration.stream-title': 'Live-Stream (Server-Sent Events)',
   'integration.stream-text':
-    'Der Stream sendet beim Verbinden „ready“ und nach jeder Änderung „flags-changed“ mit der neuen Version.',
+    'Der Stream sendet beim Verbinden „ready“ und nach jeder Änderung „flags-changed“ mit der neuen Version. Im Browser nur einen CLIENT-Key verwenden – SERVER-Keys gehören nie in den Browser. EventSource kann keine Header senden; der Key in der URL kann in Proxy-Logs und im Browser-Verlauf auftauchen.',
+  'integration.server-title': 'Live-Stream auf dem Server (Node.js)',
+  'integration.server-text': 'Server: den Key im Header X-API-Key senden, nie in der URL.',
   'integration.etag-title': 'Polling mit ETag',
   'integration.etag-text':
     'Sende das letzte ETag in If-None-Match: Unveränderte Flags liefern 304 ohne Body und werden nicht neu ausgewertet.',

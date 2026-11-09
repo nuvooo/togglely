@@ -1,6 +1,7 @@
 import type { TFunction } from 'i18next'
 import api from '@/lib/axios'
 import { getErrorCode, getErrorMessage, getErrorStatus } from '@/lib/errors'
+import { refreshWorkspace } from '@/lib/workspace'
 
 export interface Webhook {
   id: string
@@ -98,9 +99,19 @@ const API_ERROR_CODES = [
 export function webhookErrorMessage(error: unknown, t: TFunction): string {
   const code = getErrorCode(error)
   if (code && (API_ERROR_CODES as readonly string[]).includes(code)) return t(`webhooks.error.${code}`)
+  if (getErrorStatus(error) === 403) return t('webhooks.error.forbidden')
   if (getErrorStatus(error) === 409) return t('webhooks.error.in_flight')
   if (getErrorStatus(error) === 429) return t('webhooks.error.rate_limited')
   return getErrorMessage(error)
+}
+
+/**
+ * Message for a failed write (create, update, test, …). A 403 means the role
+ * known to the UI is stale: reload the workspace so the page drops write actions.
+ */
+export function writeErrorMessage(error: unknown, t: TFunction): string {
+  if (getErrorStatus(error) === 403) refreshWorkspace().catch(() => {})
+  return webhookErrorMessage(error, t)
 }
 
 const DELIVERY_ERRORS = [
@@ -163,10 +174,13 @@ export function flagsUrl(origin: string, projectKey: string, environmentKey: str
   return `${origin}/sdk/flags/${projectKey}/${environmentKey}`
 }
 
+/** Browser example: EventSource cannot send headers, so only a CLIENT key in the query string. */
 export function eventSourceSnippet(origin: string, projectKey: string, environmentKey: string) {
-  return `// EventSource cannot send headers: pass the API key as query parameter
+  return `// Browser: use a CLIENT key only – SERVER keys never belong in the browser.
+// EventSource cannot send headers, so the key goes into the query string
+// (it may show up in proxy logs and browser history).
 const stream = new EventSource(
-  '${streamUrl(origin, projectKey, environmentKey)}?apiKey=YOUR_API_KEY'
+  '${streamUrl(origin, projectKey, environmentKey)}?apiKey=YOUR_CLIENT_API_KEY'
 )
 
 stream.addEventListener('ready', (e) => {
@@ -177,6 +191,39 @@ stream.addEventListener('flags-changed', (e) => {
   const { version, changes } = JSON.parse(e.data)
   // Reload the flags (e.g. GET /sdk/flags/...) and update your cache
 })`
+}
+
+/** Server example (Node.js 18+): read the stream with fetch and the `X-API-Key` header. */
+export function serverStreamSnippet(origin: string, projectKey: string, environmentKey: string) {
+  return `// Server (Node.js 18+): send the key as header, never in the URL
+async function listen(onChange) {
+  const res = await fetch('${streamUrl(origin, projectKey, environmentKey)}', {
+    headers: { 'X-API-Key': process.env.TOGGLELY_API_KEY, Accept: 'text/event-stream' },
+  })
+  if (!res.ok) throw new Error(\`stream failed: \${res.status}\`)
+
+  const decoder = new TextDecoder()
+  let buffer = ''
+  for await (const chunk of res.body) {
+    buffer += decoder.decode(chunk, { stream: true })
+    let end
+    while ((end = buffer.indexOf('\\n\\n')) !== -1) {
+      const block = buffer.slice(0, end)
+      buffer = buffer.slice(end + 2)
+      const event = /^event: (.*)$/m.exec(block)?.[1]
+      const data = /^data: (.*)$/m.exec(block)?.[1]
+      if (event === 'flags-changed' && data) onChange(JSON.parse(data))
+    }
+  }
+}
+
+// Reconnect after 5 s when the connection ends or fails
+function start() {
+  listen(({ version }) => console.log('flags changed, version', version))
+    .catch((err) => console.error(err))
+    .finally(() => setTimeout(start, 5000))
+}
+start()`
 }
 
 export function etagSnippet(origin: string, projectKey: string, environmentKey: string) {

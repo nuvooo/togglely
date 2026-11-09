@@ -683,7 +683,8 @@ export const en = {
   'webhooks.status.last-success': 'Delivered',
   'webhooks.status.last-failed': 'Failed',
   'webhooks.status.never': 'No deliveries yet',
-  'webhooks.status.failures': '{{count}} failures in a row',
+  'webhooks.status.failures_one': '{{count}} failure in a row',
+  'webhooks.status.failures_other': '{{count}} failures in a row',
   'webhooks.actions.label': 'Actions for {{url}}',
   'webhooks.actions.test': 'Send test',
   'webhooks.actions.rotate': 'Rotate secret',
@@ -712,6 +713,7 @@ export const en = {
   'webhooks.secret.snippet-hint':
     'Compute the HMAC over the raw body, compare in constant time and reject timestamps older than 5 minutes.',
   'webhooks.secret.done': 'Done',
+  'webhooks.secret.saved': 'I have stored the secret',
   'webhooks.rotate.title': 'Rotate secret?',
   'webhooks.rotate.description':
     'The current secret stops working immediately. Update your receiver with the new secret right away.',
@@ -736,6 +738,7 @@ export const en = {
   'webhooks.error.invalid_url': 'This is not a valid URL.',
   'webhooks.error.webhook_limit_reached': 'This project has reached the maximum number of webhooks.',
   'webhooks.error.environment_not_in_project': 'One of the selected environments does not belong to this project.',
+  'webhooks.error.forbidden': 'No permission: only admins can change webhooks.',
   'webhooks.error.in_flight': 'This delivery is being sent right now. Try again in a moment.',
   'webhooks.error.rate_limited': 'Too many requests. Please wait a minute.',
   'webhooks.delivery-error.blocked_private_address': 'Private address blocked',
@@ -781,7 +784,9 @@ export const en = {
   'integration.stream-url': 'Live stream URL',
   'integration.stream-title': 'Live stream (Server-Sent Events)',
   'integration.stream-text':
-    'The stream sends "ready" on connect and "flags-changed" with the new version after every change.',
+    'The stream sends "ready" on connect and "flags-changed" with the new version after every change. In the browser use a CLIENT key only – SERVER keys never belong in the browser. EventSource cannot send headers; a key in the URL can show up in proxy logs and browser history.',
+  'integration.server-title': 'Live stream on the server (Node.js)',
+  'integration.server-text': 'Server: send the key in the X-API-Key header, never in the URL.',
   'integration.etag-title': 'Polling with ETag',
   'integration.etag-text':
     'Send the last ETag in If-None-Match: unchanged flags return 304 without a body and are not evaluated again.',

@@ -1,5 +1,5 @@
 import { KeyRound, MoreHorizontal, Pencil, Power, Send, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/members/ConfirmDialog'
@@ -15,7 +15,7 @@ import {
   type ProjectEnvironment,
   type Webhook,
   type WebhookDelivery,
-  webhookErrorMessage,
+  writeErrorMessage,
   webhooksApi,
 } from '@/lib/webhooks'
 import { notifyDeliveryResult } from './notifyDeliveryResult'
@@ -30,6 +30,8 @@ interface WebhookActionsProps {
   onDeleted: (webhook: Webhook) => void
   /** Called with the result of "send test" */
   onDelivery?: (delivery: WebhookDelivery) => void
+  /** Offer "send test" in the menu (off where the page has its own button) */
+  showTest?: boolean
 }
 
 type Confirmation = 'delete' | 'rotate' | null
@@ -42,11 +44,14 @@ export function WebhookActions({
   onUpdated,
   onDeleted,
   onDelivery,
+  showTest = true,
 }: WebhookActionsProps) {
   const { t } = useTranslation()
   const [editOpen, setEditOpen] = useState(false)
   const [confirmation, setConfirmation] = useState<Confirmation>(null)
   const [secret, setSecret] = useState<string | null>(null)
+  /** New secret from a rotation; shown once the confirmation dialog has closed */
+  const rotatedSecret = useRef<string | null>(null)
 
   const sendTest = async () => {
     const pending = toast.loading(t('webhooks.test.sending'))
@@ -57,7 +62,7 @@ export function WebhookActions({
       onDelivery?.(delivery)
     } catch (err: unknown) {
       toast.dismiss(pending)
-      toast.error(webhookErrorMessage(err, t))
+      toast.error(writeErrorMessage(err, t))
     }
   }
 
@@ -67,7 +72,7 @@ export function WebhookActions({
       onUpdated(updated)
       toast.success(updated.enabled ? t('webhooks.toast.enabled') : t('webhooks.toast.disabled'))
     } catch (err: unknown) {
-      toast.error(webhookErrorMessage(err, t))
+      toast.error(writeErrorMessage(err, t))
     }
   }
 
@@ -80,10 +85,10 @@ export function WebhookActions({
       } else if (confirmation === 'rotate') {
         const result = await webhooksApi.rotateSecret(projectId, webhook.id)
         onUpdated(result.webhook)
-        setSecret(result.secret)
+        rotatedSecret.current = result.secret
       }
     } catch (err: unknown) {
-      toast.error(webhookErrorMessage(err, t))
+      toast.error(writeErrorMessage(err, t))
     }
   }
 
@@ -114,10 +119,12 @@ export function WebhookActions({
           </Button>
         </DropdownMenuTrigger>
         <DropdownMenuContent align="end">
-          <DropdownMenuItem onSelect={sendTest}>
-            <Send className="mr-2 h-4 w-4" />
-            {t('webhooks.actions.test')}
-          </DropdownMenuItem>
+          {showTest && (
+            <DropdownMenuItem onSelect={sendTest}>
+              <Send className="mr-2 h-4 w-4" />
+              {t('webhooks.actions.test')}
+            </DropdownMenuItem>
+          )}
           <DropdownMenuItem onSelect={() => setEditOpen(true)}>
             <Pencil className="mr-2 h-4 w-4" />
             {t('common.edit')}
@@ -157,7 +164,14 @@ export function WebhookActions({
         open={confirmation !== null}
         {...confirmText}
         onConfirm={confirm}
-        onOpenChange={(open) => !open && setConfirmation(null)}
+        onOpenChange={(open) => {
+          if (open) return
+          setConfirmation(null)
+          if (rotatedSecret.current) {
+            setSecret(rotatedSecret.current)
+            rotatedSecret.current = null
+          }
+        }}
       />
 
       <WebhookSecretDialog secret={secret} reason="rotated" onClose={() => setSecret(null)} />

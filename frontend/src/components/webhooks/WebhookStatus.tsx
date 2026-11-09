@@ -17,13 +17,15 @@ export function WebhookStatus({ webhook }: { webhook: Webhook }) {
         {webhook.lastStatus === 'success' && (
           <span className="inline-flex items-center gap-1 text-xs text-success" title={last ?? undefined}>
             <CircleCheck className="h-3.5 w-3.5" aria-hidden />
-            {t('webhooks.status.last-success')}
+            <span>{t('webhooks.status.last-success')}</span>
+            {last && <span className="sr-only"> ({last})</span>}
           </span>
         )}
         {webhook.lastStatus === 'failed' && (
           <span className="inline-flex items-center gap-1 text-xs text-destructive" title={last ?? undefined}>
             <CircleX className="h-3.5 w-3.5" aria-hidden />
-            {t('webhooks.status.last-failed')}
+            <span>{t('webhooks.status.last-failed')}</span>
+            {last && <span className="sr-only"> ({last})</span>}
           </span>
         )}
         {!webhook.lastStatus && <span className="text-xs text-muted-foreground">{t('webhooks.status.never')}</span>}

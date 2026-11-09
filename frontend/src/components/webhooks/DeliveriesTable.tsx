@@ -97,7 +97,8 @@ export function DeliveriesTable({ deliveries, canRedeliver, onRedeliver }: Deliv
                         className="ml-2 px-1.5 py-0 text-[10px] font-medium text-muted-foreground"
                         title={t('webhooks.deliveries.manual-hint')}
                       >
-                        {t('webhooks.deliveries.manual')}
+                        <span>{t('webhooks.deliveries.manual')}</span>
+                        <span className="sr-only">: {t('webhooks.deliveries.manual-hint')}</span>
                       </Badge>
                     )}
                   </td>

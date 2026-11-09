@@ -17,6 +17,7 @@ import {
   type Webhook,
   type WebhookDelivery,
   webhookErrorMessage,
+  writeErrorMessage,
   webhooksApi,
 } from '@/lib/webhooks'
 import { WebhooksNotice } from './Webhooks'
@@ -36,7 +37,7 @@ export default function WebhookDetail() {
   const { t, i18n } = useTranslation()
   const navigate = useNavigate()
   const { projectId = '', webhookId = '' } = useParams<{ projectId: string; webhookId: string }>()
-  const canManage = useCanManageWebhooks(projectId)
+  const { canManage, roleLoading } = useCanManageWebhooks(projectId)
   const [webhook, setWebhook] = useState<Webhook | null>(null)
   const [environments, setEnvironments] = useState<ProjectEnvironment[]>([])
   const [deliveries, setDeliveries] = useState<WebhookDelivery[]>([])
@@ -97,7 +98,7 @@ export default function WebhookDetail() {
       notifyDeliveryResult(await webhooksApi.sendTest(projectId, webhookId), t, 'test')
       await refresh()
     } catch (err: unknown) {
-      toast.error(webhookErrorMessage(err, t))
+      toast.error(writeErrorMessage(err, t))
     } finally {
       setTesting(false)
     }
@@ -109,7 +110,7 @@ export default function WebhookDetail() {
       setDeliveries((list) => list.map((d) => (d.id === result.id ? result : d)))
       notifyDeliveryResult(result, t, 'redeliver')
     } catch (err: unknown) {
-      toast.error(webhookErrorMessage(err, t))
+      toast.error(writeErrorMessage(err, t))
     }
   }
 
@@ -123,7 +124,7 @@ export default function WebhookDetail() {
     </Link>
   )
 
-  if (isLoading) {
+  if (isLoading || roleLoading) {
     return (
       <div role="status" aria-busy="true" aria-label={t('common.loading')} className="mx-auto max-w-5xl space-y-4">
         <Skeleton className="h-4 w-32" />
@@ -180,7 +181,7 @@ export default function WebhookDetail() {
               environments={environments}
               onUpdated={setWebhook}
               onDeleted={() => navigate(listPath)}
-              onDelivery={() => refresh()}
+              showTest={false}
             />
           </div>
         )}

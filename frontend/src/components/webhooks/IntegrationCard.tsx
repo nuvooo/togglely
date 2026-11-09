@@ -12,6 +12,7 @@ import {
   eventSourceSnippet,
   type ProjectEnvironment,
   sdkOrigin,
+  serverStreamSnippet,
   streamUrl,
 } from '@/lib/webhooks'
 import { CodeBlock } from './CodeBlock'
@@ -67,6 +68,12 @@ export function IntegrationCard({ projectId, projectKey, environments }: Integra
           <h3 className="text-sm font-medium">{t('integration.stream-title')}</h3>
           <p className="text-sm text-muted-foreground">{t('integration.stream-text')}</p>
           <CodeBlock code={eventSourceSnippet(origin, projectKey, envKey)} label={t('integration.stream-title')} />
+        </div>
+
+        <div className="space-y-2">
+          <h3 className="text-sm font-medium">{t('integration.server-title')}</h3>
+          <p className="text-sm text-muted-foreground">{t('integration.server-text')}</p>
+          <CodeBlock code={serverStreamSnippet(origin, projectKey, envKey)} label={t('integration.server-title')} />
         </div>
 
         <div className="space-y-2">

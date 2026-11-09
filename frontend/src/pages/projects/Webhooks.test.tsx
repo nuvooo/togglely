@@ -8,6 +8,8 @@ const PROJECT = 'p1'
 
 const mocks = vi.hoisted(() => ({
   role: 'ADMIN' as string,
+  workspaceLoading: false,
+  refreshWorkspace: vi.fn(() => Promise.resolve()),
   webhooks: [] as unknown[],
   listError: null as unknown,
   get: vi.fn(),
@@ -27,10 +29,11 @@ vi.mock('@/lib/axios', () => ({
 }))
 vi.mock('sonner', () => ({ toast }))
 vi.mock('@/lib/workspace', () => ({
+  refreshWorkspace: mocks.refreshWorkspace,
   useWorkspace: () => ({
     projects: [{ id: PROJECT, name: 'Shop', key: 'shop', type: 'SINGLE', organizationId: 'o1' }],
-    organizations: [{ id: 'o1', name: 'Acme', role: mocks.role }],
-    isLoading: false,
+    organizations: mocks.workspaceLoading ? [] : [{ id: 'o1', name: 'Acme', role: mocks.role }],
+    isLoading: mocks.workspaceLoading,
     error: null,
     projectsByOrg: () => [],
   }),
@@ -80,6 +83,7 @@ describe('Webhooks page', () => {
     await i18n.changeLanguage('de')
     vi.clearAllMocks()
     mocks.role = 'ADMIN'
+    mocks.workspaceLoading = false
     mocks.webhooks = [hook()]
     mocks.listError = null
     mocks.get.mockImplementation((url: string) => {
@@ -153,10 +157,19 @@ describe('Webhooks page', () => {
     const secretDialog = await screen.findByRole('dialog', { name: 'Webhook hinzugefügt' })
     expect(within(secretDialog).getByDisplayValue('whsec_PLAINSECRET123')).toBeInTheDocument()
     expect(within(secretDialog).getByText(/Nur jetzt sichtbar/)).toBeInTheDocument()
-    expect(within(secretDialog).getByText('Signatur prüfen (Node.js)')).toBeInTheDocument()
+    expect(within(secretDialog).getByText('Signatur prüfen (Node.js)', { selector: 'summary' })).toBeInTheDocument()
     expect(secretDialog.textContent).toContain('timingSafeEqual')
 
-    await user.click(within(secretDialog).getByRole('button', { name: 'Fertig' }))
+    expect(within(secretDialog).getByRole('figure', { name: 'Signatur prüfen (Node.js)' })).toBeInTheDocument()
+
+    // Neither Escape nor a missing confirmation can close it: the secret would be lost
+    await user.keyboard('{Escape}')
+    expect(screen.getByRole('dialog', { name: 'Webhook hinzugefügt' })).toBeInTheDocument()
+    expect(within(secretDialog).queryByRole('button', { name: 'Close' })).toBeNull()
+    const done = within(secretDialog).getByRole('button', { name: 'Fertig' })
+    expect(done).toBeDisabled()
+    await user.click(within(secretDialog).getByLabelText('Ich habe das Secret gespeichert'))
+    await user.click(done)
     await waitFor(() => expect(screen.queryByDisplayValue('whsec_PLAINSECRET123')).toBeNull())
     // The list only shows the masked secret
     expect(screen.getByRole('link', { name: 'https://new.example.com/hook' })).toBeInTheDocument()
@@ -221,6 +234,46 @@ describe('Webhooks page', () => {
     await waitFor(() => expect(mocks.del).toHaveBeenCalledWith(`/projects/${PROJECT}/webhooks/w1`))
     await waitFor(() => expect(screen.getByText('Noch keine Webhooks')).toBeInTheDocument())
     expect(toast.success).toHaveBeenCalledWith('Webhook gelöscht')
+  })
+
+  it('rotates the secret after confirmation and focuses the secret dialog', async () => {
+    mocks.post.mockResolvedValue({ data: { webhook: hook(), secret: 'whsec_ROTATED456' } })
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: 'Aktionen für https://hooks.example.com/togglely' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Secret rotieren' }))
+    const confirm = await screen.findByRole('dialog', { name: 'Secret rotieren?' })
+    await user.click(within(confirm).getByRole('button', { name: 'Secret rotieren' }))
+
+    await waitFor(() => expect(mocks.post).toHaveBeenCalledWith(`/projects/${PROJECT}/webhooks/w1/rotate-secret`))
+    const secretDialog = await screen.findByRole('dialog', { name: 'Neues Secret erstellt' })
+    expect(screen.queryByRole('dialog', { name: 'Secret rotieren?' })).toBeNull()
+    expect(within(secretDialog).getByDisplayValue('whsec_ROTATED456')).toBeInTheDocument()
+    await waitFor(() => expect(secretDialog.contains(document.activeElement)).toBe(true))
+  })
+
+  it('maps a 403 on write actions to "no permission" and reloads the role', async () => {
+    mocks.patch.mockRejectedValue(axiosError(403, { message: 'Forbidden' }))
+    const user = userEvent.setup()
+    renderPage()
+
+    await user.click(await screen.findByRole('button', { name: 'Aktionen für https://hooks.example.com/togglely' }))
+    await user.click(await screen.findByRole('menuitem', { name: 'Deaktivieren' }))
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith('Keine Berechtigung: Nur Admins können Webhooks ändern.')
+    )
+    expect(mocks.refreshWorkspace).toHaveBeenCalled()
+  })
+
+  it('stays neutral while the role is still loading', async () => {
+    mocks.workspaceLoading = true
+    renderPage()
+    expect(screen.getByRole('status')).toBeInTheDocument()
+    await waitFor(() => expect(mocks.get).toHaveBeenCalled())
+    expect(screen.queryByText(/Nur Lesen/)).toBeNull()
+    expect(screen.queryByRole('table')).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Webhook hinzufügen' })).toBeNull()
   })
 
   it('toggles a webhook off', async () => {
