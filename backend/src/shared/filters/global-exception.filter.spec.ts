@@ -67,6 +67,36 @@ describe('GlobalExceptionFilter', () => {
       )
     })
 
+    it('passes a machine-readable error code through to the client', () => {
+      const filter = createFilter()
+      const { host, json } = createMockHost()
+
+      filter.catch(
+        new HttpException(
+          { message: 'Nope', code: 'SOME_CODE' },
+          HttpStatus.FORBIDDEN
+        ),
+        host
+      )
+
+      expect(json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          statusCode: HttpStatus.FORBIDDEN,
+          message: 'Nope',
+          code: 'SOME_CODE',
+        })
+      )
+    })
+
+    it('omits code when the exception has none', () => {
+      const filter = createFilter()
+      const { host, json } = createMockHost()
+
+      filter.catch(new NotFoundException('x'), host)
+
+      expect(json.mock.calls[0][0]).not.toHaveProperty('code')
+    })
+
     it('handles HttpException with string response', () => {
       const filter = createFilter()
       const { host, status, json } = createMockHost()
