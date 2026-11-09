@@ -6,15 +6,21 @@ export const ORG_AUDIT_LOG_MAX_LIMIT = 200
 
 /** Action prefixes: lower-case words, `_` and `.` only (no regex characters). */
 const ACTION_PATTERN = /^[a-z_.]{1,64}$/
-/** Cursor format returned as `nextCursor`: an ISO timestamp in UTC. */
+/** Timestamp part of a cursor: an ISO timestamp in UTC. */
 const ISO_TIMESTAMP = /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(\.\d{1,3})?Z$/
 
 /** Filters of `GET /audit-logs/organization/:organizationId`. */
 export interface OrgAuditLogQuery {
   /** Page size, 1–200 (default 50). */
   limit?: number
-  /** Only entries strictly older than this (the previous page's `nextCursor`). */
+  /**
+   * Position of the previous page's last entry, from its `nextCursor`
+   * (`<createdAt>_<id>`). Without `beforeId` (a plain ISO cursor of older
+   * clients) only entries strictly older than `before` follow.
+   */
   before?: Date
+  /** Id of the previous page's last entry; breaks createdAt ties. */
+  beforeId?: string
   projectId?: string
   userId?: string
   /** Prefix of the action, e.g. `flag.` or `webhook.created`. */
@@ -57,11 +63,21 @@ export function parseOrgAuditLogQuery(
 
   const before = single(raw, 'before')
   if (before !== undefined) {
-    const date = new Date(before)
-    if (!ISO_TIMESTAMP.test(before) || Number.isNaN(date.getTime())) {
-      throw new BadRequestException('before must be an ISO timestamp')
+    const separator = before.indexOf('_')
+    const iso = separator === -1 ? before : before.slice(0, separator)
+    const id = separator === -1 ? undefined : before.slice(separator + 1)
+    const date = new Date(iso)
+    if (
+      !ISO_TIMESTAMP.test(iso) ||
+      Number.isNaN(date.getTime()) ||
+      (id !== undefined && !isObjectId(id))
+    ) {
+      throw new BadRequestException(
+        'before must be a cursor (<ISO timestamp>_<id>) or an ISO timestamp'
+      )
     }
     query.before = date
+    if (id !== undefined) query.beforeId = id
   }
 
   for (const name of ['projectId', 'userId'] as const) {

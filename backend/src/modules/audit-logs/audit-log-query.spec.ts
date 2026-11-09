@@ -27,6 +27,15 @@ describe('parseOrgAuditLogQuery', () => {
     })
   })
 
+  it('parses a compound cursor <createdAt>_<id>', () => {
+    expect(
+      parseOrgAuditLogQuery({ before: '2026-11-09T10:00:00.000Z_' + USER })
+    ).toEqual({
+      before: new Date('2026-11-09T10:00:00.000Z'),
+      beforeId: USER,
+    })
+  })
+
   it('accepts the limit bounds 1 and 200', () => {
     expect(parseOrgAuditLogQuery({ limit: '1' }).limit).toBe(1)
     expect(parseOrgAuditLogQuery({ limit: '200' }).limit).toBe(200)
@@ -44,6 +53,8 @@ describe('parseOrgAuditLogQuery', () => {
     ['a fractional limit', { limit: '1.5' }],
     ['a non-numeric limit', { limit: 'ten' }],
     ['a malformed before', { before: 'yesterday' }],
+    ['a cursor with a malformed id', { before: '2026-11-09T10:00:00.000Z_nope' }],
+    ['a cursor without an id', { before: '2026-11-09T10:00:00.000Z_' }],
     ['an impossible before date', { before: '2026-13-45T99:00:00.000Z' }],
     ['a malformed projectId', { projectId: 'nope' }],
     ['a malformed userId', { userId: '123' }],
