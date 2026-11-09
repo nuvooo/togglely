@@ -100,9 +100,11 @@ export class WebhookWorker implements OnModuleInit, OnModuleDestroy {
   }
 
   private async processBatch(): Promise<number> {
-    const ids = await this.deliveries.claimDue(WORKER_BATCH_SIZE)
+    const claimed = await this.deliveries.claimDue(WORKER_BATCH_SIZE)
     const results = await Promise.allSettled(
-      ids.map((id) => this.deliveries.attempt(id))
+      claimed.map(({ id, lockToken }) =>
+        this.deliveries.attempt(id, { lockToken })
+      )
     )
     for (const result of results) {
       if (result.status === 'rejected') {
@@ -111,7 +113,7 @@ export class WebhookWorker implements OnModuleInit, OnModuleDestroy {
         )
       }
     }
-    return ids.length
+    return claimed.length
   }
 
   /** Deletes deliveries older than the retention period. */

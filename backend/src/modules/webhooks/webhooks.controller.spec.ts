@@ -373,8 +373,9 @@ describe('WebhooksController', () => {
     })
   })
 
-  it('schedules a retry when the test delivery fails', async () => {
-    const { controller, webhook, send } = await withExisting('ADMIN')
+  it('fails a test delivery immediately without retries or failure count', async () => {
+    const { controller, prisma, webhook, send } = await withExisting('ADMIN')
+    prisma.webhook.rows[0].consecutiveFailures = 19
     send.mockResolvedValue({
       ok: false,
       responseCode: 500,
@@ -382,8 +383,35 @@ describe('WebhooksController', () => {
       durationMs: 2,
     })
     const { delivery } = await controller.test(PROJECT_ID, webhook.id, req)
-    expect(delivery.status).toBe('pending')
-    expect(delivery.nextAttemptAt).toBeInstanceOf(Date)
+    expect(delivery).toMatchObject({
+      status: 'failed',
+      nextAttemptAt: null,
+      manual: true,
+    })
+    const stored = prisma.webhookDelivery.rows.find(
+      (d) => d.id === delivery.id
+    )!
+    expect(stored).toMatchObject({ manual: true, lockToken: null })
+    expect(prisma.webhook.rows[0]).toMatchObject({
+      enabled: true,
+      consecutiveFailures: 19,
+    })
+    expect(prisma.auditLog.create).not.toHaveBeenCalled()
+  })
+
+  it('does not count a failed redeliver toward auto-disable', async () => {
+    const { controller, prisma, webhook, delivery, send } =
+      await withExisting('ADMIN')
+    prisma.webhook.rows[0].consecutiveFailures = 19
+    send.mockResolvedValue({ ok: false, error: 'timeout', durationMs: 2 })
+
+    await controller.redeliver(PROJECT_ID, webhook.id, delivery.id, req)
+
+    expect(prisma.webhook.rows[0]).toMatchObject({
+      enabled: true,
+      consecutiveFailures: 19,
+    })
+    expect(prisma.auditLog.create).not.toHaveBeenCalled()
   })
 
   it('lists deliveries newest first with a bounded limit', async () => {

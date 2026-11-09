@@ -1,3 +1,4 @@
+import { randomUUID } from 'node:crypto'
 import { Inject, Injectable, Logger } from '@nestjs/common'
 import { Prisma, WebhookDelivery } from '@prisma/client'
 import { PrismaService } from '../../shared/prisma.service'
@@ -18,7 +19,7 @@ export type WebhookSender = typeof sendWebhookRequest
 export const DELIVERY_LOCK_MS = 60_000
 
 /** Lock is free when unset, null or expired. */
-function lockFree(now: Date): Prisma.WebhookDeliveryWhereInput[] {
+export function lockFree(now: Date): Prisma.WebhookDeliveryWhereInput[] {
   return [
     { lockedUntil: null },
     { lockedUntil: { isSet: false } },
@@ -26,10 +27,36 @@ function lockFree(now: Date): Prisma.WebhookDeliveryWhereInput[] {
   ]
 }
 
+/** Lock fields for a new claim: expiry plus a token unique to the claimer. */
+export function newLock(now = new Date()) {
+  return {
+    lockedUntil: new Date(now.getTime() + DELIVERY_LOCK_MS),
+    lockToken: randomUUID(),
+  }
+}
+
+export interface ClaimedDelivery {
+  id: string
+  lockToken: string
+}
+
+export interface AttemptOptions {
+  /** Token returned by the claim; results are only written while it matches */
+  lockToken: string
+  /** Send even if the webhook is disabled (test, redeliver) */
+  allowDisabled?: boolean
+  /**
+   * Triggered by a user (redeliver): the attempt does not change the
+   * webhook's failure counter or status. Deliveries stored with
+   * `manual: true` (test events) are always treated as manual.
+   */
+  manual?: boolean
+}
+
 /**
  * Executes webhook delivery attempts and keeps delivery/webhook state:
  * retry plan, failure counter and auto-disable. Callers must hold the
- * delivery's lock (see claim/claimDue) before calling attempt().
+ * delivery's lock (see claim/claimDue) and pass its token to attempt().
  */
 @Injectable()
 export class WebhookDeliveryService {
@@ -41,20 +68,22 @@ export class WebhookDeliveryService {
   ) {}
 
   /**
-   * Atomically locks one delivery for this process. Returns false when
-   * another worker/instance holds it. Single-document updates are atomic in
-   * MongoDB, so two concurrent claims can never both succeed.
+   * Atomically locks one delivery for this process and returns the lock
+   * token, or null when another worker/instance holds it. Single-document
+   * updates are atomic in MongoDB, so two concurrent claims can never both
+   * succeed.
    */
-  async claim(deliveryId: string, now = new Date()): Promise<boolean> {
+  async claim(deliveryId: string, now = new Date()): Promise<string | null> {
+    const lock = newLock(now)
     const { count } = await this.prisma.webhookDelivery.updateMany({
       where: { id: deliveryId, OR: lockFree(now) },
-      data: { lockedUntil: new Date(now.getTime() + DELIVERY_LOCK_MS) },
+      data: lock,
     })
-    return count === 1
+    return count === 1 ? lock.lockToken : null
   }
 
-  /** Claims up to `limit` due pending deliveries; returns the claimed ids. */
-  async claimDue(limit: number, now = new Date()): Promise<string[]> {
+  /** Claims up to `limit` due pending deliveries. */
+  async claimDue(limit: number, now = new Date()): Promise<ClaimedDelivery[]> {
     const candidates = await this.prisma.webhookDelivery.findMany({
       where: {
         status: 'pending',
@@ -65,25 +94,28 @@ export class WebhookDeliveryService {
       take: limit,
       select: { id: true },
     })
-    const claimed: string[] = []
+    const claimed: ClaimedDelivery[] = []
     for (const { id } of candidates) {
+      const lock = newLock(now)
       // Re-checks status so a delivery finished meanwhile is not resent
       const { count } = await this.prisma.webhookDelivery.updateMany({
         where: { id, status: 'pending', OR: lockFree(now) },
-        data: { lockedUntil: new Date(now.getTime() + DELIVERY_LOCK_MS) },
+        data: lock,
       })
-      if (count === 1) claimed.push(id)
+      if (count === 1) claimed.push({ id, lockToken: lock.lockToken })
     }
     return claimed
   }
 
   /**
    * Sends one attempt for a claimed delivery, stores the result and
-   * releases the lock. Returns the updated delivery (null if it vanished).
+   * releases the lock. If the lock was lost meanwhile (expired and claimed
+   * by another worker), nothing is written. Returns the stored delivery
+   * (null if it vanished).
    */
   async attempt(
     deliveryId: string,
-    options: { allowDisabled?: boolean } = {}
+    options: AttemptOptions
   ): Promise<WebhookDelivery | null> {
     const delivery = await this.prisma.webhookDelivery.findUnique({
       where: { id: deliveryId },
@@ -93,17 +125,15 @@ export class WebhookDeliveryService {
     const { webhook, ...row } = delivery
 
     if (!webhook || (!webhook.enabled && !options.allowDisabled)) {
-      return this.prisma.webhookDelivery.update({
-        where: { id: row.id },
-        data: {
-          status: 'failed',
-          error: 'webhook_disabled',
-          nextAttemptAt: null,
-          lockedUntil: null,
-        },
+      await this.writeResult(row.id, options.lockToken, {
+        status: 'failed',
+        error: 'webhook_disabled',
+        nextAttemptAt: null,
       })
+      return this.prisma.webhookDelivery.findUnique({ where: { id: row.id } })
     }
 
+    const manual = options.manual === true || row.manual === true
     const payload = row.event as unknown as WebhookPayload
     const body = JSON.stringify(payload)
     const timestamp = Math.floor(Date.now() / 1000)
@@ -124,28 +154,53 @@ export class WebhookDeliveryService {
     const attempt = row.attempt + 1
     const plan = result.ok
       ? { status: 'success' as const, nextAttemptAt: null }
-      : planAfterFailure(attempt, now)
+      : row.manual === true
+        ? // Test events are one-shot: no retries
+          { status: 'failed' as const, nextAttemptAt: null }
+        : planAfterFailure(attempt, now)
 
-    const updated = await this.prisma.webhookDelivery.update({
-      where: { id: row.id },
-      data: {
-        attempt,
-        status: plan.status,
-        nextAttemptAt: plan.nextAttemptAt,
-        responseCode: result.responseCode ?? null,
-        responseBody: result.responseBody ?? null,
-        error: result.ok ? null : (result.error ?? 'unknown_error'),
-        durationMs: result.durationMs,
-        lockedUntil: null,
-      },
+    const written = await this.writeResult(row.id, options.lockToken, {
+      attempt,
+      status: plan.status,
+      nextAttemptAt: plan.nextAttemptAt,
+      responseCode: result.responseCode ?? null,
+      responseBody: result.responseBody ?? null,
+      error: result.ok ? null : (result.error ?? 'unknown_error'),
+      durationMs: result.durationMs,
     })
 
-    await this.updateWebhookStats(webhook.id, result.ok, now).catch((error) =>
-      this.logger.warn(
-        `Could not update webhook ${webhook.id} stats: ${String(error)}`
+    if (written && !manual) {
+      await this.updateWebhookStats(webhook.id, result.ok, now).catch(
+        (error) =>
+          this.logger.warn(
+            `Could not update webhook ${webhook.id} stats: ${String(error)}`
+          )
       )
-    )
-    return updated
+    }
+    return this.prisma.webhookDelivery.findUnique({ where: { id: row.id } })
+  }
+
+  /**
+   * Stores an attempt result and releases the lock, but only while this
+   * caller still owns the lock. Returns false (and writes nothing) when it
+   * was lost.
+   */
+  private async writeResult(
+    deliveryId: string,
+    lockToken: string,
+    data: Prisma.WebhookDeliveryUpdateManyMutationInput
+  ): Promise<boolean> {
+    const { count } = await this.prisma.webhookDelivery.updateMany({
+      where: { id: deliveryId, lockToken },
+      data: { ...data, lockedUntil: null, lockToken: null },
+    })
+    if (count !== 1) {
+      this.logger.warn(
+        `Lost the lock on webhook delivery ${deliveryId}; result discarded`
+      )
+      return false
+    }
+    return true
   }
 
   private async updateWebhookStats(webhookId: string, ok: boolean, now: Date) {

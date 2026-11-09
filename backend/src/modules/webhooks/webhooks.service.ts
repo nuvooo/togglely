@@ -20,7 +20,8 @@ import {
   webhookUrlPolicy,
 } from './ssrf-guard'
 import {
-  DELIVERY_LOCK_MS,
+  lockFree,
+  newLock,
   WebhookDeliveryService,
 } from './webhook-delivery.service'
 import { WebhookPayload } from './webhook-payload'
@@ -62,6 +63,8 @@ export interface WebhookDeliveryView {
   error: string | null
   durationMs: number | null
   nextAttemptAt: Date | null
+  /** Sent by a user (test event): no retries, not counted as failure */
+  manual: boolean
   createdAt: Date
   updatedAt: Date
   event: unknown
@@ -98,6 +101,7 @@ export function toDeliveryView(delivery: WebhookDelivery): WebhookDeliveryView {
     error: delivery.error ?? null,
     durationMs: delivery.durationMs ?? null,
     nextAttemptAt: delivery.nextAttemptAt ?? null,
+    manual: delivery.manual === true,
     createdAt: delivery.createdAt,
     updatedAt: delivery.updatedAt,
     event: delivery.event,
@@ -242,6 +246,8 @@ export class WebhooksService {
   /** Sends a `webhook.test` event right away and returns the result. */
   async sendTest(webhook: Webhook) {
     const payload = await this.buildTestPayload(webhook)
+    // Locked from the start so the worker does not pick it up meanwhile
+    const lock = newLock()
     const delivery = await this.prisma.webhookDelivery.create({
       data: {
         webhookId: webhook.id,
@@ -249,13 +255,16 @@ export class WebhooksService {
         event: payload as unknown as Prisma.InputJsonValue,
         attempt: 0,
         status: 'pending',
+        // One-shot: no retries, no effect on the failure counter
+        manual: true,
         nextAttemptAt: new Date(),
-        // Locked from the start so the worker does not pick it up meanwhile
-        lockedUntil: new Date(Date.now() + DELIVERY_LOCK_MS),
+        ...lock,
       },
     })
     const result = await this.deliveries.attempt(delivery.id, {
+      lockToken: lock.lockToken,
       allowDisabled: true,
+      manual: true,
     })
     return { delivery: toDeliveryView(result ?? delivery) }
   }
@@ -275,7 +284,9 @@ export class WebhooksService {
 
   /**
    * Resends a delivery immediately with the same event id (receivers can
-   * deduplicate) and restarts its retry plan.
+   * deduplicate) and restarts its retry plan. The manual attempt itself
+   * does not change the webhook's failure counter; later automatic retries
+   * do.
    */
   async redeliver(webhook: Webhook, deliveryId: string) {
     const delivery = isObjectId(deliveryId)
@@ -287,27 +298,24 @@ export class WebhooksService {
     if (!delivery) throw new NotFoundException('Delivery not found')
 
     const now = new Date()
+    const lock = newLock(now)
     const { count } = await this.prisma.webhookDelivery.updateMany({
-      where: {
-        id: delivery.id,
-        OR: [
-          { lockedUntil: null },
-          { lockedUntil: { isSet: false } },
-          { lockedUntil: { lt: now } },
-        ],
-      },
+      where: { id: delivery.id, OR: lockFree(now) },
       data: {
         status: 'pending',
         attempt: 0,
         nextAttemptAt: now,
-        lockedUntil: new Date(now.getTime() + DELIVERY_LOCK_MS),
+        ...lock,
       },
     })
     if (count !== 1) {
       throw new ConflictException('Delivery is currently being sent')
     }
+    // Manual: this attempt does not change the webhook's failure counter
     const result = await this.deliveries.attempt(delivery.id, {
+      lockToken: lock.lockToken,
       allowDisabled: true,
+      manual: true,
     })
     if (!result) throw new NotFoundException('Delivery not found')
     return { delivery: toDeliveryView(result) }

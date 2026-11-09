@@ -28,6 +28,17 @@ function setup(
   return { prisma, send, service }
 }
 
+/** Claims the delivery like the worker does, then attempts it. */
+async function attemptClaimed(
+  service: WebhookDeliveryService,
+  deliveryId: string,
+  options: { allowDisabled?: boolean; manual?: boolean } = {}
+) {
+  const lockToken = await service.claim(deliveryId)
+  expect(lockToken).toEqual(expect.any(String))
+  return service.attempt(deliveryId, { ...options, lockToken: lockToken! })
+}
+
 async function seed(
   prisma: FakeWebhookPrisma,
   webhook: Record<string, unknown> = {},
@@ -90,7 +101,7 @@ describe('WebhookDeliveryService', () => {
     const { prisma, send, service } = setup()
     const { hook, row } = await seed(prisma)
 
-    await service.attempt(row.id)
+    await attemptClaimed(service, row.id)
 
     expect(send).toHaveBeenCalledTimes(1)
     const request = send.mock.calls[0][0]
@@ -121,7 +132,7 @@ describe('WebhookDeliveryService', () => {
     })
     const { hook, row } = await seed(prisma, { consecutiveFailures: 7 })
 
-    const updated = await service.attempt(row.id)
+    const updated = await attemptClaimed(service, row.id)
 
     expect(updated).toMatchObject({
       status: 'success',
@@ -150,7 +161,7 @@ describe('WebhookDeliveryService', () => {
     const { hook, row } = await seed(prisma)
 
     const before = Date.now()
-    const updated = await service.attempt(row.id)
+    const updated = await attemptClaimed(service, row.id)
 
     expect(updated).toMatchObject({
       status: 'pending',
@@ -173,7 +184,7 @@ describe('WebhookDeliveryService', () => {
     const { prisma, service } = setup({ ok: false, error: 'timeout' })
     const { row } = await seed(prisma, {}, { attempt: 5 })
 
-    const updated = await service.attempt(row.id)
+    const updated = await attemptClaimed(service, row.id)
 
     expect(updated).toMatchObject({
       status: 'failed',
@@ -187,7 +198,7 @@ describe('WebhookDeliveryService', () => {
     const { prisma, service } = setup({ ok: false, error: 'timeout' })
     const { hook, row } = await seed(prisma, { consecutiveFailures: 19 })
 
-    await service.attempt(row.id)
+    await attemptClaimed(service, row.id)
 
     const stored = prisma.webhook.rows.find((w) => w.id === hook.id)!
     expect(stored).toMatchObject({ enabled: false, consecutiveFailures: 20 })
@@ -205,7 +216,7 @@ describe('WebhookDeliveryService', () => {
     const { prisma, service } = setup({ ok: false, error: 'timeout' })
     const { hook, row } = await seed(prisma, { consecutiveFailures: 17 })
 
-    await service.attempt(row.id)
+    await attemptClaimed(service, row.id)
 
     expect(prisma.webhook.rows.find((w) => w.id === hook.id)!.enabled).toBe(
       true
@@ -217,7 +228,7 @@ describe('WebhookDeliveryService', () => {
     const { prisma, send, service } = setup()
     const { row } = await seed(prisma, { enabled: false })
 
-    const updated = await service.attempt(row.id)
+    const updated = await attemptClaimed(service, row.id)
 
     expect(send).not.toHaveBeenCalled()
     expect(updated).toMatchObject({
@@ -231,7 +242,7 @@ describe('WebhookDeliveryService', () => {
     const { prisma, send, service } = setup()
     const { row } = await seed(prisma, { enabled: false })
 
-    await service.attempt(row.id, { allowDisabled: true })
+    await attemptClaimed(service, row.id, { allowDisabled: true })
 
     expect(send).toHaveBeenCalledTimes(1)
   })
@@ -239,7 +250,7 @@ describe('WebhookDeliveryService', () => {
   it('returns null when the delivery no longer exists', async () => {
     const { send, service } = setup()
     await expect(
-      service.attempt('ffffffffffffffffffffffff')
+      service.attempt('ffffffffffffffffffffffff', { lockToken: 'x' })
     ).resolves.toBeNull()
     expect(send).not.toHaveBeenCalled()
   })
@@ -249,7 +260,7 @@ describe('WebhookDeliveryService', () => {
     const { row } = await seed(prisma)
     process.env.WEBHOOK_ALLOW_PRIVATE = 'true'
     try {
-      await service.attempt(row.id)
+      await attemptClaimed(service, row.id)
     } finally {
       delete process.env.WEBHOOK_ALLOW_PRIVATE
     }
@@ -281,14 +292,14 @@ describe('WebhookDeliveryService', () => {
         {},
         { lockedUntil: new Date(Date.now() - 1000) }
       )
-      await expect(service.claim(row.id)).resolves.toBe(true)
+      await expect(service.claim(row.id)).resolves.toEqual(expect.any(String))
     })
 
     it('claims deliveries without a lockedUntil field', async () => {
       const { prisma, service } = setup()
       const { row } = await seed(prisma, {}, { lockedUntil: undefined })
       delete prisma.webhookDelivery.rows[0].lockedUntil
-      await expect(service.claim(row.id)).resolves.toBe(true)
+      await expect(service.claim(row.id)).resolves.toEqual(expect.any(String))
     })
   })
 
@@ -337,9 +348,133 @@ describe('WebhookDeliveryService', () => {
       expect(first).toHaveLength(20)
       // 26 due (25 + seed) - 20 already locked
       expect(second).toHaveLength(6)
-      expect(new Set([...first, ...second]).size).toBe(26)
+      const ids = [...first, ...second].map((c) => c.id)
+      expect(new Set(ids).size).toBe(26)
+      const tokens = [...first, ...second].map((c) => c.lockToken)
+      expect(new Set(tokens).size).toBe(26)
       const third = await service.claimDue(20)
       expect(third).toHaveLength(0)
+    })
+  })
+
+  describe('lock ownership', () => {
+    it('stores the claim token and clears it when the result is written', async () => {
+      const { prisma, service } = setup()
+      const { row } = await seed(prisma)
+      const lockToken = await service.claim(row.id)
+      expect(prisma.webhookDelivery.rows[0].lockToken).toBe(lockToken)
+
+      await service.attempt(row.id, { lockToken: lockToken! })
+
+      expect(prisma.webhookDelivery.rows[0]).toMatchObject({
+        status: 'success',
+        lockToken: null,
+        lockedUntil: null,
+      })
+    })
+
+    it('does not overwrite a delivery another worker took over meanwhile', async () => {
+      const { prisma, send, service } = setup({ ok: false, error: 'timeout' })
+      const { hook, row } = await seed(prisma, { consecutiveFailures: 19 })
+      const staleToken = await service.claim(row.id)
+      // The lock expired during a slow attempt and another worker claimed it
+      send.mockImplementationOnce(async () => {
+        Object.assign(prisma.webhookDelivery.rows[0], {
+          lockedUntil: new Date(Date.now() + 60_000),
+          lockToken: 'other-worker',
+          status: 'success',
+          attempt: 3,
+        })
+        return { ok: false, error: 'timeout', durationMs: 1 }
+      })
+
+      const result = await service.attempt(row.id, { lockToken: staleToken! })
+
+      expect(send).toHaveBeenCalledTimes(1)
+      expect(prisma.webhookDelivery.rows[0]).toMatchObject({
+        status: 'success',
+        attempt: 3,
+        lockToken: 'other-worker',
+      })
+      expect(result).toMatchObject({ status: 'success', attempt: 3 })
+      // No stats from the lost attempt (would otherwise auto-disable)
+      expect(prisma.webhook.rows.find((w) => w.id === hook.id)).toMatchObject({
+        enabled: true,
+        consecutiveFailures: 19,
+      })
+      expect(prisma.auditLog.create).not.toHaveBeenCalled()
+    })
+
+    it('does not mark a delivery of a disabled webhook without holding the lock', async () => {
+      const { prisma, send, service } = setup()
+      const { row } = await seed(prisma, { enabled: false })
+      await service.claim(row.id)
+
+      await service.attempt(row.id, { lockToken: 'stale' })
+
+      expect(send).not.toHaveBeenCalled()
+      expect(prisma.webhookDelivery.rows[0].status).toBe('pending')
+    })
+  })
+
+  describe('manual sends', () => {
+    it('fails a manual (test) delivery immediately without a retry plan', async () => {
+      const { prisma, service } = setup({
+        ok: false,
+        responseCode: 500,
+        error: 'unexpected_status',
+      })
+      const { hook, row } = await seed(
+        prisma,
+        { consecutiveFailures: 19 },
+        { manual: true }
+      )
+
+      const updated = await attemptClaimed(service, row.id, {
+        allowDisabled: true,
+      })
+
+      expect(updated).toMatchObject({
+        status: 'failed',
+        attempt: 1,
+        nextAttemptAt: null,
+        error: 'unexpected_status',
+      })
+      expect(prisma.webhook.rows.find((w) => w.id === hook.id)).toMatchObject({
+        enabled: true,
+        consecutiveFailures: 19,
+      })
+      expect(prisma.auditLog.create).not.toHaveBeenCalled()
+    })
+
+    it('a successful manual send leaves the failure counter untouched', async () => {
+      const { prisma, service } = setup()
+      const { hook, row } = await seed(
+        prisma,
+        { consecutiveFailures: 7, lastStatus: 'failed' },
+        { manual: true }
+      )
+
+      await attemptClaimed(service, row.id)
+
+      expect(prisma.webhook.rows.find((w) => w.id === hook.id)).toMatchObject({
+        consecutiveFailures: 7,
+        lastStatus: 'failed',
+      })
+    })
+
+    it('a failed redeliver keeps its retry plan but does not count as failure', async () => {
+      const { prisma, service } = setup({ ok: false, error: 'timeout' })
+      const { hook, row } = await seed(prisma, { consecutiveFailures: 19 })
+
+      const updated = await attemptClaimed(service, row.id, { manual: true })
+
+      expect(updated).toMatchObject({ status: 'pending', attempt: 1 })
+      expect(prisma.webhook.rows.find((w) => w.id === hook.id)).toMatchObject({
+        enabled: true,
+        consecutiveFailures: 19,
+      })
+      expect(prisma.auditLog.create).not.toHaveBeenCalled()
     })
   })
 })

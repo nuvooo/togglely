@@ -501,6 +501,12 @@ model WebhookDelivery {
   durationMs    Int?
   nextAttemptAt DateTime?
   lockedUntil   DateTime?
+  /// Random token of the worker that currently holds the lock; results are
+  /// only written while it still matches (lost locks are not overwritten)
+  lockToken     String?
+  /// Sent by a user (test event or redeliver): no retries, does not affect
+  /// the webhook's failure counter or auto-disable
+  manual        Boolean   @default(false)
   createdAt     DateTime  @default(now())
   updatedAt     DateTime  @updatedAt
 
