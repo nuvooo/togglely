@@ -384,6 +384,7 @@ export const de = {
   'project-detail.no-environments': 'Keine Umgebungen gefunden.',
   'project-detail.no-environments-refresh': 'Keine Umgebungen gefunden. Bitte laden Sie die Seite neu.',
   'project-detail.value': 'Wert:',
+  'project-detail.delete-flag.button-label': 'Flag {{name}} löschen',
   'project-detail.delete-flag.title': 'Feature Flag löschen',
   'project-detail.delete-flag.description': 'Sind Sie sicher, dass Sie <strong>{{name}}</strong> löschen möchten? Diese Aktion kann nicht rückgängig gemacht werden.',
   'project-detail.delete-flag.deleting': 'Wird gelöscht...',
@@ -464,12 +465,16 @@ export const de = {
 
   // Brand-Werte (Multi-Brand-Projekte)
   'brand-values.default-all': 'Standard (alle Brands)',
-  'brand-values.inherits-default': 'erbt Standard',
   'brand-values.override': 'Eigener Wert',
-  'brand-values.reset': 'Zurücksetzen',
-  'brand-values.reset-title':
-    'Eigenen Wert entfernen, damit die Brand wieder den Standard erbt',
   'brand-values.toggle-label': '{{name}} aktiv',
+  'brand-values.legend': 'folgt Standard',
+  'brand-values.linked-label':
+    '{{name}}: erbt Standard – klicken für eigenen Wert',
+  'brand-values.unlinked-label':
+    '{{name}}: eigener Wert – klicken, um wieder dem Standard zu folgen',
+  'brand-values.relinked': '{{name}} folgt wieder dem Standard: {{value}}',
+  'brand-values.state-on': 'an',
+  'brand-values.state-off': 'aus',
   'brand-values.edit-creates-override':
     'Speichern legt einen eigenen Wert (Override) für diese Brand an.',
 
@@ -485,5 +490,7 @@ export const de = {
   'flag-value.saving': 'Speichern...',
   'flag-value.invalid-number': 'Bitte eine gültige Zahl eingeben.',
   'flag-value.invalid-json': 'Ungültiges JSON: {{message}}',
+  'flag-value.unsafe-integer':
+    'Enthält Ganzzahlen größer als 9007199254740991: Sie können beim Speichern oder Lesen an Genauigkeit verlieren. Besser als String speichern.',
   'flag-value.invalid-boolean': 'Wert muss true oder false sein.',
 }

@@ -4,7 +4,7 @@ import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { FlagValueDialog } from '@/components/flags/FlagValueDialog'
-import { FlagValueRow } from '@/components/flags/FlagValueRow'
+import { FlagValueRow, LinkLegend } from '@/components/flags/FlagValueRow'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
@@ -57,11 +57,13 @@ export default function BrandFlags() {
   const [isLoading, setIsLoading] = useState(true)
   const [busyRows, setBusyRows] = useState<Set<string>>(new Set())
 
-  // Value editor
+  // Value editor. `editing` outlives `editorOpen` so the dialog keeps its
+  // content while it animates out; the next open replaces it.
   const [editing, setEditing] = useState<{
     flag: FeatureFlag
     env: FlagEnvironment
   } | null>(null)
+  const [editorOpen, setEditorOpen] = useState(false)
 
   useEffect(() => {
     if (!brandId) return
@@ -109,21 +111,25 @@ export default function BrandFlags() {
       )
     )
 
-  /** Optimistic update → request → refetch; rollback + toast on error. */
+  /**
+   * Optimistic update → request → refetch. On error: toast and refetch (no
+   * snapshot restore, which could revert concurrent changes of other rows).
+   */
   const mutate = async (
     rowKey: string,
     optimistic: () => void,
-    request: () => Promise<unknown>
+    request: () => Promise<unknown>,
+    onSuccess?: () => void
   ) => {
-    const previous = flags
     optimistic()
     setBusyRows((prev) => new Set(prev).add(rowKey))
     try {
       await request()
+      onSuccess?.()
       await refresh()
     } catch (error) {
-      setFlags(previous)
       toast.error(getErrorMessage(error))
+      await refresh()
     } finally {
       setBusyRows((prev) => {
         const next = new Set(prev)
@@ -160,22 +166,58 @@ export default function BrandFlags() {
     )
   }
 
-  /** Removes the override: the brand inherits the default again. */
-  const handleReset = (flag: FeatureFlag, env: FlagEnvironment) => {
+  /**
+   * Unlinks: creates the brand's own row seeded with the current (default)
+   * values; the value itself does not change.
+   */
+  const handleUnlink = (flag: FeatureFlag, env: FlagEnvironment) => {
     if (!brandId) return
     mutate(
       `${flag.id}-${env.environmentId}`,
       () =>
         patchEnv(flag.id, env.environmentId, (e) => ({
           ...e,
-          enabled: e.default?.enabled ?? e.enabled,
-          defaultValue: e.default?.defaultValue ?? e.defaultValue,
+          inherited: false,
+          isBrandSpecific: true,
+        })),
+      () =>
+        api.post(`/brands/${brandId}/flags/${flag.id}/toggle`, {
+          environmentId: env.environmentId,
+          enabled: env.enabled,
+        })
+    )
+  }
+
+  /** Re-links: deletes the override, the brand follows the default again. */
+  const handleRelink = (flag: FeatureFlag, env: FlagEnvironment) => {
+    if (!brandId) return
+    const enabled = env.default?.enabled ?? env.enabled
+    const defaultValue = env.default?.defaultValue ?? env.defaultValue
+    mutate(
+      `${flag.id}-${env.environmentId}`,
+      () =>
+        patchEnv(flag.id, env.environmentId, (e) => ({
+          ...e,
+          enabled,
+          defaultValue,
           inherited: true,
           isBrandSpecific: false,
         })),
       () =>
         api.delete(
           `/brands/${brandId}/flags/${flag.id}/environments/${env.environmentId}`
+        ),
+      () =>
+        toast.success(
+          t('brand-values.relinked', {
+            name: brand?.name ?? '',
+            value:
+              flag.flagType === 'BOOLEAN'
+                ? t(
+                    enabled ? 'brand-values.state-on' : 'brand-values.state-off'
+                  )
+                : defaultValue,
+          })
         )
     )
   }
@@ -262,6 +304,7 @@ export default function BrandFlags() {
 
       {/* Flags List */}
       <div className="space-y-4">
+        {flags.length > 0 && <LinkLegend />}
         {flags.length === 0 ? (
           <Card className="border-dashed">
             <CardContent className="flex flex-col items-center justify-center py-16">
@@ -312,16 +355,22 @@ export default function BrandFlags() {
                         flagType={flag.flagType}
                         enabled={env.enabled}
                         value={env.defaultValue}
-                        inherited={inherited}
-                        overridden={!inherited}
+                        linked={inherited}
+                        onLinkChange={(link) =>
+                          link
+                            ? handleRelink(flag, env)
+                            : handleUnlink(flag, env)
+                        }
                         busy={busyRows.has(`${flag.id}-${env.environmentId}`)}
                         onToggle={(next) => handleToggle(flag, env, next)}
                         onEdit={
                           flag.flagType !== 'BOOLEAN'
-                            ? () => setEditing({ flag, env })
+                            ? () => {
+                                setEditing({ flag, env })
+                                setEditorOpen(true)
+                              }
                             : undefined
                         }
-                        onReset={() => handleReset(flag, env)}
                       />
                     )
                   })}
@@ -333,8 +382,8 @@ export default function BrandFlags() {
       </div>
 
       <FlagValueDialog
-        open={!!editing}
-        onOpenChange={(open) => !open && setEditing(null)}
+        open={editorOpen}
+        onOpenChange={setEditorOpen}
         flagType={editing?.flag.flagType ?? 'STRING'}
         flagName={editing?.flag.name ?? ''}
         environmentName={editing?.env.environmentName ?? ''}

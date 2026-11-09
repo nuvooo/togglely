@@ -1,36 +1,55 @@
-import { Pencil, RotateCcw } from 'lucide-react'
+import { Link2, Link2Off, Pencil } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Switch } from '@/components/ui/switch'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { cn } from '@/lib/utils'
 import type { FlagType } from './FlagValueDialog'
 
 interface FlagValueRowProps {
   /** Row label: "Default (all brands)", a brand or an environment name. */
   label: ReactNode
-  /** Accessible name for the switch / edit button. */
+  /** Accessible name for the switch / edit / link button. */
   name: string
   flagType: FlagType
   enabled: boolean
-  /** Effective value (the default's for inherited brands). */
+  /** Effective value (the default's for linked brands). */
   value: string
-  /** Brand without own row: shows the "inherits default" label. */
-  inherited?: boolean
-  /** Brand with own row: shows the reset button. */
-  overridden?: boolean
+  /**
+   * Brand rows only: true = follows the default (no own row), false = own
+   * value. Omitted for default / environment rows (no link toggle).
+   */
+  linked?: boolean
+  /** Link toggle: false = create an own value, true = follow the default. */
+  onLinkChange?: (linked: boolean) => void
   busy?: boolean
   /** Visual emphasis for the default row. */
   primary?: boolean
   onToggle: (enabled: boolean) => void
   /** Non-boolean flags only: opens the value editor. */
   onEdit?: () => void
-  onReset?: () => void
+}
+
+/** Muted legend line explaining the link icon ("🔗 = follows default"). */
+export function LinkLegend() {
+  const { t } = useTranslation()
+  return (
+    <p className="flex items-center gap-1.5 text-xs text-muted-foreground">
+      <Link2 className="h-3.5 w-3.5" aria-hidden />
+      <span>= {t('brand-values.legend')}</span>
+    </p>
+  )
 }
 
 /**
  * One value row (default, brand or environment): switch for `enabled`, the
- * current value with an edit action for non-boolean flags, and the
- * inheritance state for brands.
+ * current value with an edit action for non-boolean flags and, for brands,
+ * a link toggle (follow the default / own value).
  */
 export function FlagValueRow({
   label,
@@ -38,59 +57,69 @@ export function FlagValueRow({
   flagType,
   enabled,
   value,
-  inherited = false,
-  overridden = false,
+  linked,
+  onLinkChange,
   busy = false,
   primary = false,
   onToggle,
   onEdit,
-  onReset,
 }: FlagValueRowProps) {
   const { t } = useTranslation()
   const showValue = flagType !== 'BOOLEAN'
+  const isLinked = linked === true
+  const linkLabel = isLinked
+    ? t('brand-values.linked-label', { name })
+    : t('brand-values.unlinked-label', { name })
+  const LinkIcon = isLinked ? Link2 : Link2Off
 
   return (
     <div
       data-testid="flag-value-row"
+      data-linked={linked === undefined ? undefined : String(isLinked)}
       className={cn(
         'rounded-md border border-border p-2',
         primary ? 'bg-card' : 'bg-background'
       )}
     >
       <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-0.5">
-          <span
-            className={cn(
-              'truncate text-sm',
-              primary ? 'font-semibold text-foreground' : 'text-foreground'
-            )}
-          >
-            {label}
-          </span>
-          {inherited && (
-            <span className="text-xs italic text-muted-foreground">
-              {t('brand-values.inherits-default')}
-            </span>
+        <span
+          className={cn(
+            'min-w-0 truncate text-sm',
+            primary && 'font-semibold',
+            isLinked ? 'text-muted-foreground' : 'text-foreground'
           )}
-        </div>
+        >
+          {label}
+        </span>
         <div className="flex shrink-0 items-center gap-1.5">
-          {overridden && onReset && (
-            <button
-              type="button"
-              onClick={onReset}
-              disabled={busy}
-              title={t('brand-values.reset-title')}
-              className="inline-flex items-center gap-1 rounded px-1.5 py-0.5 text-xs text-muted-foreground transition-colors hover:bg-accent hover:text-accent-foreground disabled:opacity-50"
-            >
-              <RotateCcw className="h-3 w-3" aria-hidden />
-              {t('brand-values.reset')}
-            </button>
+          {linked !== undefined && onLinkChange && (
+            <TooltipProvider delayDuration={300}>
+              <Tooltip>
+                <TooltipTrigger asChild>
+                  <button
+                    type="button"
+                    onClick={() => onLinkChange(!isLinked)}
+                    disabled={busy}
+                    aria-pressed={isLinked}
+                    aria-label={linkLabel}
+                    className={cn(
+                      'inline-flex h-6 w-6 items-center justify-center rounded transition-colors hover:bg-accent hover:text-accent-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50',
+                      isLinked ? 'text-primary' : 'text-muted-foreground'
+                    )}
+                  >
+                    <LinkIcon className="h-3.5 w-3.5" aria-hidden />
+                  </button>
+                </TooltipTrigger>
+                <TooltipContent>{linkLabel}</TooltipContent>
+              </Tooltip>
+            </TooltipProvider>
           )}
           <Switch
             checked={enabled}
             disabled={busy}
             onCheckedChange={onToggle}
             aria-label={t('brand-values.toggle-label', { name })}
+            className={cn(isLinked && 'opacity-60')}
           />
         </div>
       </div>
@@ -102,7 +131,7 @@ export function FlagValueRow({
           <code
             className={cn(
               'min-w-0 truncate rounded bg-muted px-1.5 py-0.5 font-mono',
-              inherited ? 'text-muted-foreground' : 'text-foreground'
+              isLinked ? 'text-muted-foreground' : 'text-foreground'
             )}
             title={value}
           >

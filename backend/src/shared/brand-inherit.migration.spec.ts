@@ -13,25 +13,68 @@ interface Row {
   rules: number
 }
 
+interface Marker {
+  startedAt: Date
+  completedAt?: Date
+  deleted?: number
+}
+
+const toDate = (value: any): Date => new Date(value?.$date ?? value)
+
+/** Evaluates the subset of a Prisma `where` the migration's delete uses. */
+function matchesDeleteClause(r: Row, clause: any): boolean {
+  return (
+    r.id === clause.id &&
+    r.brandId === clause.brandId &&
+    r.flagId === clause.flagId &&
+    r.environmentId === clause.environmentId &&
+    r.enabled === clause.enabled &&
+    r.defaultValue === clause.defaultValue &&
+    (clause.targetingRules?.none === undefined || r.rules === 0)
+  )
+}
+
 /** In-memory fake of the bits of Prisma the migration uses. */
-function fakePrisma(rows: Row[]) {
-  const markers = new Set<string>()
+function fakePrisma(rows: Row[], opts: { beforeDelete?: () => void } = {}) {
+  const markers = new Map<string, Marker>()
   const store = [...rows]
   const prisma = {
     store,
     markers,
     $runCommandRaw: jest.fn(async (cmd: any) => {
       if (cmd.insert === 'migrations') {
-        const id = cmd.documents[0]._id
-        if (markers.has(id)) {
+        const doc = cmd.documents[0]
+        if (markers.has(doc._id)) {
           return {
             ok: 1,
             n: 0,
-            writeErrors: [{ index: 0, code: 11000, errmsg: 'E11000 duplicate key' }],
+            writeErrors: [
+              { index: 0, code: 11000, errmsg: 'E11000 duplicate key' },
+            ],
           }
         }
-        markers.add(id)
+        markers.set(doc._id, { startedAt: toDate(doc.startedAt) })
         return { ok: 1, n: 1 }
+      }
+      if (cmd.update === 'migrations') {
+        let n = 0
+        for (const { q, u } of cmd.updates) {
+          const marker = markers.get(q._id)
+          if (!marker) continue
+          if (q.completedAt?.$exists === false && marker.completedAt) continue
+          if (
+            q.startedAt?.$lt &&
+            !(marker.startedAt < toDate(q.startedAt.$lt))
+          ) {
+            continue
+          }
+          const set = u.$set ?? {}
+          if (set.startedAt) marker.startedAt = toDate(set.startedAt)
+          if (set.completedAt) marker.completedAt = toDate(set.completedAt)
+          if (set.deleted !== undefined) marker.deleted = set.deleted
+          n++
+        }
+        return { ok: 1, n, nModified: n }
       }
       if (cmd.delete === 'migrations') {
         markers.delete(cmd.deletes[0].q._id)
@@ -57,11 +100,12 @@ function fakePrisma(rows: Row[]) {
         }))
       }),
       deleteMany: jest.fn(async ({ where }: any) => {
+        opts.beforeDelete?.()
+        const clauses: any[] = where.OR ?? []
         let count = 0
-        for (const id of where.id.in) {
-          const idx = store.findIndex((r) => r.id === id && r.brandId !== null)
-          if (idx >= 0) {
-            store.splice(idx, 1)
+        for (let i = store.length - 1; i >= 0; i--) {
+          if (clauses.some((c) => matchesDeleteClause(store[i], c))) {
+            store.splice(i, 1)
             count++
           }
         }
@@ -115,7 +159,32 @@ describe('migrateBrandInheritance', () => {
       'a5',
       'b0',
     ])
-    expect(prisma.markers.has(BRAND_INHERIT_MIGRATION_ID)).toBe(true)
+    const marker = prisma.markers.get(BRAND_INHERIT_MIGRATION_ID)
+    expect(marker?.completedAt).toBeInstanceOf(Date)
+    expect(marker?.deleted).toBe(2)
+  })
+
+  it('keeps a row edited between read and delete', async () => {
+    const prisma = fakePrisma(
+      [
+        row('a0', null, true, 'blue'),
+        row('a1', 'b1', true, 'blue'),
+        row('a2', 'b2', true, 'blue'),
+        row('a3', 'b3', true, 'blue'),
+      ],
+      {
+        beforeDelete: () => {
+          // Concurrent edits after the migration read the rows
+          const a1 = prisma.store.find((r) => r.id === 'a1')
+          const a2 = prisma.store.find((r) => r.id === 'a2')
+          if (a1) a1.defaultValue = 'red'
+          if (a2) a2.enabled = false
+        },
+      }
+    )
+
+    expect(await migrateBrandInheritance(prisma as any, logger)).toBe(1)
+    expect(prisma.store.map((r) => r.id).sort()).toEqual(['a0', 'a1', 'a2'])
   })
 
   it('runs only once', async () => {
@@ -130,6 +199,49 @@ describe('migrateBrandInheritance', () => {
     expect(await migrateBrandInheritance(prisma as any, logger)).toBeNull()
     expect(prisma.store.map((r) => r.id)).toContain('a9')
     expect(prisma.flagEnvironment.deleteMany).toHaveBeenCalledTimes(1)
+  })
+
+  it('skips while another instance holds a fresh, unfinished marker', async () => {
+    const prisma = fakePrisma([
+      row('a0', null, true, 'blue'),
+      row('a1', 'b1', true, 'blue'),
+    ])
+    prisma.markers.set(BRAND_INHERIT_MIGRATION_ID, {
+      startedAt: new Date(Date.now() - 5 * 60_000),
+    })
+
+    expect(await migrateBrandInheritance(prisma as any, logger)).toBeNull()
+    expect(prisma.flagEnvironment.findMany).not.toHaveBeenCalled()
+  })
+
+  it('skips a completed marker even when it is old', async () => {
+    const prisma = fakePrisma([
+      row('a0', null, true, 'blue'),
+      row('a1', 'b1', true, 'blue'),
+    ])
+    prisma.markers.set(BRAND_INHERIT_MIGRATION_ID, {
+      startedAt: new Date(Date.now() - 60 * 60_000),
+      completedAt: new Date(Date.now() - 59 * 60_000),
+    })
+
+    expect(await migrateBrandInheritance(prisma as any, logger)).toBeNull()
+    expect(prisma.store).toHaveLength(2)
+  })
+
+  it('re-runs when an unfinished marker is older than 15 minutes', async () => {
+    const prisma = fakePrisma([
+      row('a0', null, true, 'blue'),
+      row('a1', 'b1', true, 'blue'),
+    ])
+    const stale = new Date(Date.now() - 16 * 60_000)
+    prisma.markers.set(BRAND_INHERIT_MIGRATION_ID, { startedAt: stale })
+
+    expect(await migrateBrandInheritance(prisma as any, logger)).toBe(1)
+    const marker = prisma.markers.get(BRAND_INHERIT_MIGRATION_ID)
+    expect(marker?.completedAt).toBeInstanceOf(Date)
+    expect(marker?.startedAt.getTime()).toBeGreaterThan(stale.getTime())
+    // The next boot sees the completed marker
+    expect(await migrateBrandInheritance(prisma as any, logger)).toBeNull()
   })
 
   it('treats a thrown duplicate key error as already applied', async () => {

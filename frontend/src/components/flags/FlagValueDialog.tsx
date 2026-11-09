@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react'
+import { useEffect, useId, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -27,25 +27,74 @@ function toEditable(flagType: FlagType, value: string): string {
 }
 
 /**
+ * Canonical form of a number value ('1e3' -> '1000', ' 5 ' -> '5'), or null
+ * for empty, NaN or infinite input.
+ */
+export function normalizeNumber(raw: string): string | null {
+  const trimmed = raw.trim()
+  if (trimmed === '') return null
+  const parsed = Number(trimmed)
+  return Number.isFinite(parsed) ? String(parsed) : null
+}
+
+/** Structural equality of parsed JSON values (object key order ignored). */
+function jsonEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (typeof a !== 'object' || typeof b !== 'object' || !a || !b) return false
+  if (Array.isArray(a) !== Array.isArray(b)) return false
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((v, i) => jsonEqual(v, b[i]))
+  }
+  const aObj = a as Record<string, unknown>
+  const bObj = b as Record<string, unknown>
+  const keys = Object.keys(aObj)
+  const bKeys = new Set(Object.keys(bObj))
+  return (
+    keys.length === bKeys.size &&
+    keys.every((k) => bKeys.has(k) && jsonEqual(aObj[k], bObj[k]))
+  )
+}
+
+/**
+ * True when the text contains a digit run (more than 15 digits) above
+ * Number.MAX_SAFE_INTEGER: JSON.parse would silently round it.
+ */
+export function hasUnsafeIntegers(text: string): boolean {
+  const max = BigInt(Number.MAX_SAFE_INTEGER)
+  return (text.match(/\d{16,}/g) ?? []).some((run) => BigInt(run) > max)
+}
+
+/**
  * Validates and normalizes an edited value. Returns the value to send or an
- * error key. JSON is sent compact, numbers trimmed.
+ * error key. Numbers are canonicalized; JSON is sent compact, unless it is
+ * unchanged from `original`, which is then kept verbatim.
  */
 export function normalizeFlagValue(
   flagType: FlagType,
-  raw: string
+  raw: string,
+  original?: string
 ):
   | { ok: true; value: string }
   | { ok: false; error: string; params?: Record<string, string> } {
   if (flagType === 'NUMBER') {
-    const trimmed = raw.trim()
-    if (trimmed === '' || !Number.isFinite(Number(trimmed))) {
-      return { ok: false, error: 'flag-value.invalid-number' }
-    }
-    return { ok: true, value: trimmed }
+    const value = normalizeNumber(raw)
+    return value === null
+      ? { ok: false, error: 'flag-value.invalid-number' }
+      : { ok: true, value }
   }
   if (flagType === 'JSON') {
     try {
-      return { ok: true, value: JSON.stringify(JSON.parse(raw)) }
+      const parsed = JSON.parse(raw)
+      if (original !== undefined) {
+        try {
+          if (jsonEqual(parsed, JSON.parse(original))) {
+            return { ok: true, value: original }
+          }
+        } catch {
+          // Original was not valid JSON: save the new value.
+        }
+      }
+      return { ok: true, value: JSON.stringify(parsed) }
     } catch (error) {
       return {
         ok: false,
@@ -94,6 +143,14 @@ export function FlagValueDialog({
   const [value, setValue] = useState('')
   const [error, setError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
+  const errorId = useId()
+  const hintId = useId()
+  const warningId = useId()
+  const unsafeIntegers = flagType === 'JSON' && hasUnsafeIntegers(value)
+  const describedBy =
+    [error ? errorId : hint ? hintId : null, unsafeIntegers ? warningId : null]
+      .filter(Boolean)
+      .join(' ') || undefined
 
   useEffect(() => {
     if (open) {
@@ -103,7 +160,7 @@ export function FlagValueDialog({
   }, [open, flagType, initialValue])
 
   const handleSave = async () => {
-    const result = normalizeFlagValue(flagType, value)
+    const result = normalizeFlagValue(flagType, value, initialValue)
     if (!result.ok) {
       setError(t(result.error, result.params))
       return
@@ -163,6 +220,7 @@ export function FlagValueDialog({
               className={`${fieldClass} min-h-[160px]`}
               placeholder='{"enabled": true}'
               aria-invalid={!!error}
+              aria-describedby={describedBy}
             />
           ) : flagType === 'BOOLEAN' ? (
             <select
@@ -170,6 +228,7 @@ export function FlagValueDialog({
               value={value}
               onChange={(e) => setValue(e.target.value)}
               className={fieldClass}
+              aria-describedby={describedBy}
             >
               <option value="true">true</option>
               <option value="false">false</option>
@@ -186,15 +245,26 @@ export function FlagValueDialog({
                 setError(null)
               }}
               aria-invalid={!!error}
+              aria-describedby={describedBy}
             />
           )}
           {error && (
-            <p role="alert" className="text-sm text-destructive">
+            <p id={errorId} role="alert" className="text-sm text-destructive">
               {error}
             </p>
           )}
+          {unsafeIntegers && (
+            <p
+              id={warningId}
+              className="rounded-sm border-l-2 border-warning bg-warning/10 px-2 py-1 text-xs text-foreground"
+            >
+              {t('flag-value.unsafe-integer')}
+            </p>
+          )}
           {hint && !error && (
-            <p className="text-xs text-muted-foreground">{hint}</p>
+            <p id={hintId} className="text-xs text-muted-foreground">
+              {hint}
+            </p>
           )}
         </form>
         <DialogFooter>

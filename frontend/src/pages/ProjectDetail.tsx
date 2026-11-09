@@ -11,7 +11,7 @@ import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { FlagValueDialog } from '@/components/flags/FlagValueDialog'
-import { FlagValueRow } from '@/components/flags/FlagValueRow'
+import { FlagValueRow, LinkLegend } from '@/components/flags/FlagValueRow'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -132,8 +132,15 @@ export default function ProjectDetail() {
   const [flagToDelete, setFlagToDelete] = useState<FeatureFlag | null>(null)
   const [isDeletingFlag, setIsDeletingFlag] = useState(false)
 
-  // Value editor (default, brand or single-project environment)
+  // Value editor (default, brand or single-project environment). `editing`
+  // outlives `editorOpen` so the dialog keeps its content while it animates
+  // out; the next open replaces it.
   const [editing, setEditing] = useState<EditingValue | null>(null)
+  const [editorOpen, setEditorOpen] = useState(false)
+  const openEditor = (value: EditingValue) => {
+    setEditing(value)
+    setEditorOpen(true)
+  }
 
   // Brand management
   const [isMultiTenant, setIsMultiTenant] = useState(false)
@@ -274,23 +281,26 @@ export default function ProjectDetail() {
   }
 
   /**
-   * Runs a mutation with optimistic update, refetch on success and rollback
-   * plus toast on error. `rowKey` marks the row busy meanwhile.
+   * Runs a mutation with optimistic update and a refetch afterwards. On error
+   * it shows a toast and refetches instead of restoring a list snapshot, which
+   * could revert concurrent changes of other rows. `rowKey` marks the row
+   * busy meanwhile.
    */
   const mutate = async (
     rowKey: string,
     optimistic: () => void,
-    request: () => Promise<unknown>
+    request: () => Promise<unknown>,
+    onSuccess?: () => void
   ) => {
-    const previousFlags = featureFlags
     optimistic()
     setBusyRows((prev) => new Set(prev).add(rowKey))
     try {
       await request()
+      onSuccess?.()
       await refreshFlags()
     } catch (error) {
-      setFeatureFlags(previousFlags)
       toast.error(getErrorMessage(error))
+      await refreshFlags()
     } finally {
       setBusyRows((prev) => {
         const next = new Set(prev)
@@ -367,8 +377,35 @@ export default function ProjectDetail() {
     )
   }
 
-  /** Deletes the brand override: the brand inherits the default again. */
-  const handleResetBrand = (
+  /**
+   * Unlinks a brand: creates its own row seeded with the current (default)
+   * values; the value itself does not change.
+   */
+  const handleUnlinkBrand = (
+    flag: FeatureFlag,
+    env: FlagEnvironment,
+    brand: BrandFlagValue
+  ) =>
+    mutate(
+      `${flag.id}-${env.environmentId}-${brand.brandId}`,
+      () =>
+        patchEnvironment(flag.id, env.environmentId, (e) => ({
+          ...e,
+          brandValues: e.brandValues?.map((bv) =>
+            bv.brandId === brand.brandId
+              ? { ...bv, inherited: false, isBrandSpecific: true }
+              : bv
+          ),
+        })),
+      () =>
+        api.post(`/brands/${brand.brandId}/flags/${flag.id}/toggle`, {
+          environmentId: env.environmentId,
+          enabled: brand.enabled,
+        })
+    )
+
+  /** Re-links a brand: deletes its override, it follows the default again. */
+  const handleRelinkBrand = (
     flag: FeatureFlag,
     env: FlagEnvironment,
     brand: BrandFlagValue
@@ -393,6 +430,20 @@ export default function ProjectDetail() {
       () =>
         api.delete(
           `/brands/${brand.brandId}/flags/${flag.id}/environments/${env.environmentId}`
+        ),
+      () =>
+        toast.success(
+          t('brand-values.relinked', {
+            name: brand.brandName,
+            value:
+              flag.flagType === 'BOOLEAN'
+                ? t(
+                    env.enabled
+                      ? 'brand-values.state-on'
+                      : 'brand-values.state-off'
+                  )
+                : env.defaultValue,
+          })
         )
     )
 
@@ -460,10 +511,7 @@ export default function ProjectDetail() {
     return (
       <div className="flex flex-col items-center justify-center py-12">
         <p className="text-muted-foreground">Project not found</p>
-        <Button
-          className="mt-4"
-          onClick={() => navigate(ROUTES.orgs)}
-        >
+        <Button className="mt-4" onClick={() => navigate(ROUTES.orgs)}>
           Back to Organizations
         </Button>
       </div>
@@ -643,6 +691,7 @@ export default function ProjectDetail() {
         </Card>
       ) : (
         <div className="space-y-4">
+          {isMultiTenant && <LinkLegend />}
           {filteredFlags.map((flag) => {
             const editable = flag.flagType !== 'BOOLEAN'
             return (
@@ -672,10 +721,17 @@ export default function ProjectDetail() {
                     </div>
                     <div className="flex items-center gap-2">
                       <button
+                        type="button"
                         onClick={() => openDeleteDialog(flag)}
+                        aria-label={t(
+                          'project-detail.delete-flag.button-label',
+                          {
+                            name: flag.name,
+                          }
+                        )}
                         className="p-2 text-muted-foreground hover:text-destructive transition-colors"
                       >
-                        <TrashIcon className="w-5 h-5" />
+                        <TrashIcon className="w-5 h-5" aria-hidden />
                       </button>
                     </div>
                   </div>
@@ -714,7 +770,7 @@ export default function ProjectDetail() {
                                 }
                                 onEdit={
                                   editable
-                                    ? () => setEditing({ flag, env })
+                                    ? () => openEditor({ flag, env })
                                     : undefined
                                 }
                               />
@@ -728,8 +784,12 @@ export default function ProjectDetail() {
                                     flagType={flag.flagType}
                                     enabled={brand.enabled}
                                     value={brand.defaultValue}
-                                    inherited={inherited}
-                                    overridden={!inherited}
+                                    linked={inherited}
+                                    onLinkChange={(link) =>
+                                      link
+                                        ? handleRelinkBrand(flag, env, brand)
+                                        : handleUnlinkBrand(flag, env, brand)
+                                    }
                                     busy={busyRows.has(
                                       `${flag.id}-${env.environmentId}-${brand.brandId}`
                                     )}
@@ -738,11 +798,8 @@ export default function ProjectDetail() {
                                     }
                                     onEdit={
                                       editable
-                                        ? () => setEditing({ flag, env, brand })
+                                        ? () => openEditor({ flag, env, brand })
                                         : undefined
-                                    }
-                                    onReset={() =>
-                                      handleResetBrand(flag, env, brand)
                                     }
                                   />
                                 )
@@ -777,7 +834,7 @@ export default function ProjectDetail() {
                             }
                             onEdit={
                               editable
-                                ? () => setEditing({ flag, env })
+                                ? () => openEditor({ flag, env })
                                 : undefined
                             }
                           />
@@ -824,8 +881,8 @@ export default function ProjectDetail() {
 
       {/* Edit Flag Value Dialog (default, brand or environment) */}
       <FlagValueDialog
-        open={!!editing}
-        onOpenChange={(open) => !open && setEditing(null)}
+        open={editorOpen}
+        onOpenChange={setEditorOpen}
         flagType={editing?.flag.flagType ?? 'STRING'}
         flagName={editing?.flag.name ?? ''}
         environmentName={editing?.env.environmentName ?? ''}

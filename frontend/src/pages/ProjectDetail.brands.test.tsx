@@ -16,7 +16,8 @@ const api = vi.hoisted(() => ({
 }))
 
 vi.mock('@/lib/axios', () => ({ default: api }))
-vi.mock('sonner', () => ({ toast: { error: vi.fn(), success: vi.fn() } }))
+const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }))
+vi.mock('sonner', () => ({ toast }))
 
 import ProjectDetail from './ProjectDetail'
 
@@ -66,6 +67,10 @@ function renderPage() {
   )
 }
 
+/** Link toggle of a brand row. */
+const linkButton = (r: HTMLElement) =>
+  within(r).getByRole('button', { name: /inherits default|own value/i })
+
 /** Row of the value list whose label matches. */
 async function row(label: string) {
   const rows = await screen.findAllByTestId('flag-value-row')
@@ -96,7 +101,7 @@ beforeEach(async () => {
 })
 
 describe('ProjectDetail (multi-brand)', () => {
-  it('renders the default switch, inherited label and reset button', async () => {
+  it('renders the default switch and the link state per brand', async () => {
     state.flags = [flag('BOOLEAN', 'true', 'false')]
     renderPage()
 
@@ -107,13 +112,70 @@ describe('ProjectDetail (multi-brand)', () => {
       })
     ).toBeChecked()
 
-    const alpha = await row('Alpha')
-    expect(within(alpha).getByText('inherits default')).toBeInTheDocument()
-    expect(within(alpha).queryByText('Reset')).not.toBeInTheDocument()
+    expect(
+      within(defaultRow).queryByRole('button', { name: /inherits default/i })
+    ).not.toBeInTheDocument()
 
-    const beta = await row('Beta')
-    expect(within(beta).queryByText('inherits default')).not.toBeInTheDocument()
-    expect(within(beta).getByText('Reset')).toBeInTheDocument()
+    const alpha = linkButton(await row('Alpha'))
+    expect(alpha).toHaveAttribute('aria-pressed', 'true')
+    expect(alpha).toHaveAccessibleName(
+      'Development Alpha: inherits default – click to set own value'
+    )
+
+    const beta = linkButton(await row('Beta'))
+    expect(beta).toHaveAttribute('aria-pressed', 'false')
+    expect(beta).toHaveAccessibleName(
+      'Development Beta: own value – click to follow the default again'
+    )
+    expect(screen.queryByText('Reset')).not.toBeInTheDocument()
+    expect(screen.getByText(/follows default/)).toBeInTheDocument()
+  })
+
+  it('has an accessible delete button per flag', async () => {
+    state.flags = [flag('BOOLEAN', 'true', 'false')]
+    renderPage()
+    expect(
+      await screen.findByRole('button', { name: 'Delete flag Banner' })
+    ).toBeInTheDocument()
+  })
+
+  it('unlink creates an override with the current value; relink deletes it', async () => {
+    state.flags = [flag('STRING', 'blue', 'red')]
+    renderPage()
+
+    await userEvent.click(linkButton(await row('Alpha')))
+    expect(api.post).toHaveBeenCalledWith(
+      '/brands/brand-a/flags/flag-1/toggle',
+      { environmentId: 'env-1', enabled: true }
+    )
+    expect(api.patch).not.toHaveBeenCalled()
+
+    await userEvent.click(linkButton(await row('Beta')))
+    expect(api.delete).toHaveBeenCalledWith(
+      '/brands/brand-b/flags/flag-1/environments/env-1'
+    )
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith(
+        'Beta follows the default again: blue'
+      )
+    )
+  })
+
+  it('refetches and toasts when a mutation fails', async () => {
+    state.flags = [flag('BOOLEAN', 'true', 'false')]
+    renderPage()
+    await row('Beta')
+    api.delete.mockRejectedValueOnce(new Error('nope'))
+    const getCalls = api.get.mock.calls.length
+
+    await userEvent.click(linkButton(await row('Beta')))
+
+    await waitFor(() => expect(toast.error).toHaveBeenCalled())
+    expect(api.get.mock.calls.length).toBeGreaterThan(getCalls)
+    expect(linkButton(await row('Beta'))).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    )
   })
 
   it('toggles the default via the default endpoint', async () => {
@@ -130,7 +192,7 @@ describe('ProjectDetail (multi-brand)', () => {
     })
   })
 
-  it('toggling an inherited brand creates an override; reset deletes it', async () => {
+  it('toggling an inherited brand creates an override; relink deletes it', async () => {
     state.flags = [flag('BOOLEAN', 'true', 'false')]
     renderPage()
 
@@ -140,7 +202,7 @@ describe('ProjectDetail (multi-brand)', () => {
       { environmentId: 'env-1', enabled: false }
     )
 
-    await userEvent.click(within(await row('Beta')).getByText('Reset'))
+    await userEvent.click(linkButton(await row('Beta')))
     expect(api.delete).toHaveBeenCalledWith(
       '/brands/brand-b/flags/flag-1/environments/env-1'
     )
@@ -217,7 +279,7 @@ describe('ProjectDetail (multi-brand)', () => {
 
     const alpha = await row('Alpha')
     expect(within(alpha).getByText('42')).toBeInTheDocument()
-    expect(within(alpha).getByText('inherits default')).toBeInTheDocument()
+    expect(linkButton(alpha)).toHaveAttribute('aria-pressed', 'true')
     const beta = await row('Beta')
     expect(within(beta).getByText('7')).toBeInTheDocument()
   })

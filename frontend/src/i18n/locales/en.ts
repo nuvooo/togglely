@@ -380,6 +380,7 @@ export const en = {
   'project-detail.no-environments': 'No environments found.',
   'project-detail.no-environments-refresh': 'No environments found. Please refresh the page.',
   'project-detail.value': 'Value:',
+  'project-detail.delete-flag.button-label': 'Delete flag {{name}}',
   'project-detail.delete-flag.title': 'Delete Feature Flag',
   'project-detail.delete-flag.description': 'Are you sure you want to delete <strong>{{name}}</strong>? This action cannot be undone.',
   'project-detail.delete-flag.deleting': 'Deleting...',
@@ -460,12 +461,16 @@ export const en = {
 
   // Brand values (multi-brand projects)
   'brand-values.default-all': 'Default (all brands)',
-  'brand-values.inherits-default': 'inherits default',
   'brand-values.override': 'Override',
-  'brand-values.reset': 'Reset',
-  'brand-values.reset-title':
-    'Remove the override so this brand inherits the default again',
   'brand-values.toggle-label': '{{name}} enabled',
+  'brand-values.legend': 'follows default',
+  'brand-values.linked-label':
+    '{{name}}: inherits default – click to set own value',
+  'brand-values.unlinked-label':
+    '{{name}}: own value – click to follow the default again',
+  'brand-values.relinked': '{{name}} follows the default again: {{value}}',
+  'brand-values.state-on': 'on',
+  'brand-values.state-off': 'off',
   'brand-values.edit-creates-override':
     'Saving creates an own value (override) for this brand.',
 
@@ -481,5 +486,7 @@ export const en = {
   'flag-value.saving': 'Saving...',
   'flag-value.invalid-number': 'Please enter a valid number.',
   'flag-value.invalid-json': 'Invalid JSON: {{message}}',
+  'flag-value.unsafe-integer':
+    'Contains integers larger than 9007199254740991: they may lose precision when the value is saved or read. Store them as strings instead.',
   'flag-value.invalid-boolean': 'Value must be true or false.',
 }
