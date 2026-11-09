@@ -6,6 +6,7 @@ import helmet from 'helmet'
 import morgan from 'morgan'
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston'
 import { AppModule } from './app.module'
+import { CHANGE_BUS } from './modules/change-events/change-bus'
 import { ChangeEventsService } from './modules/change-events/change-events.service'
 import {
   SDK_CORS_ALLOWED_HEADERS,
@@ -13,6 +14,7 @@ import {
 } from './modules/sdk/sdk.constants'
 import { SdkService } from './modules/sdk/sdk.service'
 import { handleSdkFlagsRequest } from './modules/sdk/sdk-etag'
+import { readSdkStreamOptions, SdkStreamHub } from './modules/sdk/sdk-stream'
 import { setSdkCorsHeaders } from './modules/sdk/sdk-http.utils'
 import { GlobalExceptionFilter } from './shared/filters/global-exception.filter'
 import { MetricsService } from './shared/metrics/metrics.service'
@@ -131,6 +133,10 @@ async function bootstrap() {
   const sdkService = app.get(SdkService)
   const changeEvents = app.get(ChangeEventsService)
   const sdkFlagsDeps = { sdkService, changeEvents, logger }
+  const sdkStreamHub = new SdkStreamHub(
+    { sdkService, changeEvents, bus: app.get(CHANGE_BUS), logger },
+    readSdkStreamOptions(process.env)
+  )
 
   // Health endpoint
   httpAdapter.get('/health', (req, res) => {
@@ -179,6 +185,17 @@ async function bootstrap() {
       windowMs: 60_000,
       limit: Number(process.env.SDK_RATE_LIMIT_PER_MINUTE) || 600,
     })
+  )
+
+  // Live change stream (Server-Sent Events). Registered after the rate
+  // limiter: opening a stream counts as one request; concurrent streams are
+  // limited per API key and per IP by the hub.
+  httpAdapter.options('/sdk/stream/:projectKey/:environmentKey', (req, res) => {
+    setSdkCorsHeaders(res, req.headers['origin'] as string | undefined)
+    res.status(200).send()
+  })
+  httpAdapter.get('/sdk/stream/:projectKey/:environmentKey', (req, res) =>
+    sdkStreamHub.handle(req, res)
   )
 
   // Get single flag - MUST be registered BEFORE the list endpoint!
