@@ -1,4 +1,4 @@
-import { EventEmitter } from 'events'
+import { EventEmitter } from 'node:events'
 import Redis from 'ioredis'
 import { FlagsChangedEvent } from './change-events.types'
 

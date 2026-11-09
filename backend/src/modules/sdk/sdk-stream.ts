@@ -1,13 +1,13 @@
 import { ChangeBus } from '../change-events/change-bus'
 import { FlagsChangedEvent } from '../change-events/change-events.types'
 import { SDK_ERROR_CODES } from './sdk.constants'
+import { SdkAccess } from './sdk.service'
 import {
   extractSdkApiKey,
   extractSdkOrigin,
   mapSdkError,
   setSdkCorsHeaders,
 } from './sdk-http.utils'
-import { SdkAccess } from './sdk.service'
 
 export interface SdkStreamOptions {
   /** Concurrent streams per API key */
@@ -26,9 +26,7 @@ function positiveInt(value: string | undefined, fallback: number): number {
   return Number.isInteger(parsed) && parsed > 0 ? parsed : fallback
 }
 
-export function readSdkStreamOptions(
-  env: NodeJS.ProcessEnv
-): SdkStreamOptions {
+export function readSdkStreamOptions(env: NodeJS.ProcessEnv): SdkStreamOptions {
   return {
     maxPerKey: positiveInt(env.SSE_MAX_PER_KEY, 50),
     maxPerIp: positiveInt(env.SSE_MAX_PER_IP, 20),
@@ -180,7 +178,9 @@ export class SdkStreamHub {
         connection.environmentId
       )
     } catch (error) {
-      this.deps.logger.error(`[SDK stream] Version lookup failed: ${String(error)}`)
+      this.deps.logger.error(
+        `[SDK stream] Version lookup failed: ${String(error)}`
+      )
       if (!closed) {
         closed = true
         decrement(this.perKey, connection.apiKeyId)

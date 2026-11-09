@@ -1,4 +1,4 @@
-import { EventEmitter } from 'events'
+import { EventEmitter } from 'node:events'
 import {
   CHANGE_BUS_CHANNEL,
   createChangeBus,
@@ -8,7 +8,9 @@ import {
 } from './change-bus'
 import { FlagsChangedEvent } from './change-events.types'
 
-const event = (overrides: Partial<FlagsChangedEvent> = {}): FlagsChangedEvent => ({
+const event = (
+  overrides: Partial<FlagsChangedEvent> = {}
+): FlagsChangedEvent => ({
   eventId: 'evt-1',
   organizationId: 'org',
   projectId: 'p1',
@@ -119,8 +121,16 @@ describe('RedisChangeBus', () => {
   })
 
   it('receives events published by another instance', async () => {
-    const busA = new RedisChangeBus(new FakeRedis(), new FakeRedis(), silentLogger)
-    const busB = new RedisChangeBus(new FakeRedis(), new FakeRedis(), silentLogger)
+    const busA = new RedisChangeBus(
+      new FakeRedis(),
+      new FakeRedis(),
+      silentLogger
+    )
+    const busB = new RedisChangeBus(
+      new FakeRedis(),
+      new FakeRedis(),
+      silentLogger
+    )
     await busA.start()
     await busB.start()
     const handler = jest.fn()

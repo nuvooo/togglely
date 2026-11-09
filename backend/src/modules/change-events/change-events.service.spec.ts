@@ -214,7 +214,10 @@ describe('ChangeEventsService', () => {
     })
     jest.advanceTimersByTime(CHANGE_DEBOUNCE_MS)
     await settle()
-    expect(events[0]).toMatchObject({ environmentId: gone, environmentKey: 'staging' })
+    expect(events[0]).toMatchObject({
+      environmentId: gone,
+      environmentKey: 'staging',
+    })
   })
 
   it('flushes pending changes on module destroy', async () => {
@@ -235,7 +238,7 @@ describe('ChangeEventsService', () => {
     const unref = jest.fn()
     const spy = jest
       .spyOn(global, 'setTimeout')
-      .mockImplementation(((fn: any) => ({ unref }) as any) as any)
+      .mockImplementation(((_fn: any) => ({ unref }) as any) as any)
     await service.recordChange({
       organizationId: 'org',
       projectId: P,

@@ -1,4 +1,4 @@
-import { EventEmitter } from 'events'
+import { EventEmitter } from 'node:events'
 import { ForbiddenException, UnauthorizedException } from '@nestjs/common'
 import { InMemoryChangeBus } from '../change-events/change-bus'
 import { FlagsChangedEvent } from '../change-events/change-events.types'
@@ -20,7 +20,12 @@ function createReq(
 ) {
   const req: any = new EventEmitter()
   req.params = { projectKey: 'shop', environmentKey: 'dev' }
-  req.query = options.apiKey === undefined ? { apiKey: 'k' } : options.apiKey ? { apiKey: options.apiKey } : {}
+  req.query =
+    options.apiKey === undefined
+      ? { apiKey: 'k' }
+      : options.apiKey
+        ? { apiKey: options.apiKey }
+        : {}
   req.headers = options.headers ?? {}
   req.ip = options.ip ?? '1.1.1.1'
   req.socket = { setTimeout: jest.fn(), setNoDelay: jest.fn() }
@@ -83,7 +88,9 @@ describe('SdkStreamHub', () => {
   let changeEvents: { getVersion: jest.Mock }
   let hub: SdkStreamHub
 
-  function createHub(options: Partial<ReturnType<typeof readSdkStreamOptions>> = {}) {
+  function createHub(
+    options: Partial<ReturnType<typeof readSdkStreamOptions>> = {}
+  ) {
     hub = new SdkStreamHub(
       {
         sdkService,

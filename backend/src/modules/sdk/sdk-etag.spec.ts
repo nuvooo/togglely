@@ -46,7 +46,10 @@ describe('etagMatches', () => {
 describe('setSdkCorsHeaders', () => {
   it('exposes the ETag header to browsers', () => {
     const headers: Record<string, string> = {}
-    setSdkCorsHeaders({ setHeader: (k, v) => (headers[k] = v) }, 'https://a.com')
+    setSdkCorsHeaders(
+      { setHeader: (k, v) => (headers[k] = v) },
+      'https://a.com'
+    )
     expect(headers['Access-Control-Expose-Headers']).toContain('ETag')
     expect(headers['Access-Control-Allow-Headers']).toContain('If-None-Match')
   })
@@ -145,7 +148,9 @@ describe('handleSdkFlagsRequest', () => {
 
     await handleSdkFlagsRequest(
       deps as any,
-      req({ 'if-none-match': computeSdkEtag(4, undefined, {}, undefined) }) as any,
+      req({
+        'if-none-match': computeSdkEtag(4, undefined, {}, undefined),
+      }) as any,
       res
     )
 

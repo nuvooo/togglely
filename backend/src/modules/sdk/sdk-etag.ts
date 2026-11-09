@@ -1,5 +1,6 @@
-import { createHash } from 'crypto'
+import { createHash } from 'node:crypto'
 import { SDK_ERROR_CODES } from './sdk.constants'
+import { SdkAccess } from './sdk.service'
 import {
   extractEffectiveBrandKey,
   extractSdkApiKey,
@@ -8,7 +9,6 @@ import {
   parseSdkContext,
   setSdkCorsHeaders,
 } from './sdk-http.utils'
-import { SdkAccess } from './sdk.service'
 
 /**
  * Weak ETag of an SDK flags response: changes whenever the configuration

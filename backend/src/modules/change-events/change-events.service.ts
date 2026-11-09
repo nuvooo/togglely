@@ -1,4 +1,4 @@
-import { randomUUID } from 'crypto'
+import { randomUUID } from 'node:crypto'
 import { Inject, Injectable, Logger, OnModuleDestroy } from '@nestjs/common'
 import { PrismaService } from '../../shared/prisma.service'
 import { CHANGE_BUS, ChangeBus } from './change-bus'
