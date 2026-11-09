@@ -136,11 +136,15 @@ export async function updateFlagValue(
 }
 
 /**
- * Toggle flag (legacy endpoint - kept for compatibility)
+ * Toggle flag in one environment
  * POST /feature-flags/:flagId/toggle
  */
-export async function toggleFlag(flagId: string): Promise<void> {
-  await api.post(`/feature-flags/${flagId}/toggle`)
+export async function toggleFlag(
+  flagId: string,
+  environmentId: string,
+  enabled: boolean
+): Promise<void> {
+  await api.post(`/feature-flags/${flagId}/toggle`, { environmentId, enabled })
 }
 
 // ============ Project API ============
@@ -247,7 +251,7 @@ export async function toggleBrandFlag(
 
 /**
  * Update brand-specific flag value
- * PATCH /brands/:brandId/flags/:flagId
+ * PATCH /feature-flags/:flagId/environments/:environmentId/value
  */
 export async function updateBrandFlagValue(
   brandId: string,
@@ -255,10 +259,10 @@ export async function updateBrandFlagValue(
   environmentId: string,
   defaultValue: string
 ): Promise<void> {
-  await api.patch(`/brands/${brandId}/flags/${flagId}`, {
-    environmentId,
-    defaultValue,
-  })
+  await api.patch(
+    `/feature-flags/${flagId}/environments/${environmentId}/value`,
+    { value: defaultValue, brandId }
+  )
 }
 
 // ============ SDK API (for testing) ============

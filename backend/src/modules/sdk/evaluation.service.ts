@@ -15,6 +15,7 @@ export interface TargetingRuleWithConditions {
   operator: RuleOperator
   serveValue: string
   isDefault: boolean
+  enabled?: boolean
   priority: number
   conditions: RuleConditionData[]
 }
@@ -43,6 +44,27 @@ export const MAX_REGEX_INPUT_LENGTH = 1024
  */
 const NESTED_QUANTIFIER_PATTERN = /\([^)]*[+*}][^)]*\)\s*[+*{]/
 
+/**
+ * Returns true if a tenant-defined regex pattern passes the ReDoS safety
+ * limits and compiles. Used both when saving rules and when evaluating.
+ */
+export function isRegexPatternAllowed(pattern: unknown): pattern is string {
+  if (
+    typeof pattern !== 'string' ||
+    pattern.length === 0 ||
+    pattern.length > MAX_REGEX_PATTERN_LENGTH ||
+    NESTED_QUANTIFIER_PATTERN.test(pattern)
+  ) {
+    return false
+  }
+  try {
+    new RegExp(pattern)
+    return true
+  } catch {
+    return false
+  }
+}
+
 const FORBIDDEN_ATTRIBUTE_KEYS = new Set([
   '__proto__',
   'constructor',
@@ -67,8 +89,10 @@ export class EvaluationService {
       return null
     }
 
-    // Sort by priority (lowest number = highest priority)
-    const sorted = [...rules].sort((a, b) => a.priority - b.priority)
+    // Sort by priority (lowest number = highest priority); skip disabled rules
+    const sorted = rules
+      .filter((r) => r.enabled !== false)
+      .sort((a, b) => a.priority - b.priority)
 
     // Evaluate non-default rules first
     for (const rule of sorted) {
@@ -210,25 +234,14 @@ export class EvaluationService {
    * backtracking. Rejected or invalid patterns never match.
    */
   private safeRegexTest(pattern: string, input: string): boolean {
-    if (
-      typeof pattern !== 'string' ||
-      pattern.length === 0 ||
-      pattern.length > MAX_REGEX_PATTERN_LENGTH ||
-      input.length > MAX_REGEX_INPUT_LENGTH ||
-      NESTED_QUANTIFIER_PATTERN.test(pattern)
-    ) {
+    if (!isRegexPatternAllowed(pattern) || input.length > MAX_REGEX_INPUT_LENGTH) {
       this.logger.warn(
         '[Evaluation] Regex pattern or input rejected by safety limits'
       )
       return false
     }
 
-    try {
-      return new RegExp(pattern).test(input)
-    } catch {
-      this.logger.warn('[Evaluation] Invalid regex pattern in targeting rule')
-      return false
-    }
+    return new RegExp(pattern).test(input)
   }
 
   /**

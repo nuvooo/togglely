@@ -36,6 +36,53 @@ export function extractEffectiveBrandKey(
   return brandKey || tenantId
 }
 
+export const SDK_CONTEXT_MAX_LENGTH = 4096
+export const SDK_CONTEXT_MAX_KEYS = 50
+export const SDK_CONTEXT_VALUE_MAX_LENGTH = 1024
+const SDK_CONTEXT_KEY_PATTERN = /^[A-Za-z0-9_.-]{1,100}$/
+const FORBIDDEN_CONTEXT_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+
+/**
+ * Parses the `context` query parameter sent by the SDK
+ * (`?context=<JSON object>`) into a flat targeting context. Untrusted input:
+ * size-limited, only safe keys and primitive values are kept; anything
+ * invalid yields an empty context instead of an error.
+ */
+export function parseSdkContext(
+  query: Record<string, unknown>
+): Record<string, string | number | boolean> {
+  const raw = query.context
+  if (typeof raw !== 'string' || raw.length === 0) return {}
+  if (raw.length > SDK_CONTEXT_MAX_LENGTH) return {}
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return {}
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+
+  const context: Record<string, string | number | boolean> = Object.create(null)
+  let count = 0
+  for (const [key, value] of Object.entries(parsed)) {
+    if (count >= SDK_CONTEXT_MAX_KEYS) break
+    if (FORBIDDEN_CONTEXT_KEYS.has(key) || !SDK_CONTEXT_KEY_PATTERN.test(key)) {
+      continue
+    }
+    if (typeof value === 'string') {
+      if (value.length > SDK_CONTEXT_VALUE_MAX_LENGTH) continue
+    } else if (typeof value === 'number') {
+      if (!Number.isFinite(value)) continue
+    } else if (typeof value !== 'boolean') {
+      continue
+    }
+    context[key] = value
+    count++
+  }
+  return { ...context }
+}
+
 export function setSdkCorsHeaders(
   res: { setHeader: (name: string, value: string) => void },
   origin?: string

@@ -594,3 +594,39 @@ describe('EvaluationService', () => {
     })
   })
 })
+
+describe('EvaluationService disabled rules', () => {
+  const { EvaluationService } = require('./evaluation.service')
+  const service = new EvaluationService()
+  const rule = (overrides: Record<string, unknown>) => ({
+    id: 'r',
+    name: 'r',
+    operator: 'AND',
+    serveValue: 'on',
+    isDefault: false,
+    priority: 0,
+    conditions: [{ id: 'c', attribute: 'country', operator: 'EQUALS', value: 'DE' }],
+    ...overrides,
+  })
+
+  it('skips disabled rules and falls through to the next one', () => {
+    expect(
+      service.evaluateRules(
+        [
+          rule({ id: 'a', enabled: false, serveValue: 'disabled' }),
+          rule({ id: 'b', priority: 1, serveValue: 'active' }),
+        ],
+        { country: 'DE' }
+      )
+    ).toBe('active')
+  })
+
+  it('ignores a disabled default rule', () => {
+    expect(
+      service.evaluateRules(
+        [rule({ isDefault: true, enabled: false, conditions: [] })],
+        {}
+      )
+    ).toBeNull()
+  })
+})

@@ -277,12 +277,24 @@ export class SdkService {
         this.logger.debug(
           `[SDK Service] Experiment matched: ${expResult.experimentKey}, variant: ${expResult.variantKey}`
         )
-      } else if (flagEnv.targetingRules.length > 0) {
-        // Evaluate targeting rules
-        const ruleResult = this.evaluationService.evaluateRules(
-          flagEnv.targetingRules,
-          context
-        )
+      } else {
+        // Evaluate targeting rules (brand overrides inherit the
+        // environment-level rules unless they define their own)
+        const rules =
+          flagEnv.targetingRules.length > 0 || !flagEnv.brandId
+            ? flagEnv.targetingRules
+            : await this.prisma.targetingRule.findMany({
+                where: {
+                  flagEnvironment: {
+                    flagId: flag.id,
+                    environmentId: environment.id,
+                    brandId: null,
+                  },
+                },
+                include: { conditions: true },
+                orderBy: { priority: 'asc' },
+              })
+        const ruleResult = this.evaluationService.evaluateRules(rules, context)
         if (ruleResult !== null) {
           resolvedValue = ruleResult
           this.logger.debug(
@@ -404,9 +416,15 @@ export class SdkService {
               key: expResult.experimentKey,
               variantKey: expResult.variantKey,
             }
-          } else if (flagEnv.targetingRules.length > 0) {
+          } else {
+            // Brand overrides inherit environment-level rules
+            const rules =
+              flagEnv.targetingRules.length > 0 || !flagEnv.brandId
+                ? flagEnv.targetingRules
+                : (flagEnvs.find((fe) => fe.flagId === flag.id && !fe.brandId)
+                    ?.targetingRules ?? [])
             const ruleResult = this.evaluationService.evaluateRules(
-              flagEnv.targetingRules,
+              rules,
               context
             )
             if (ruleResult !== null) {

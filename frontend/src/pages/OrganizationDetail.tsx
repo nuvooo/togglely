@@ -13,7 +13,9 @@ import {
 import clsx from 'clsx'
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
+import { toast } from 'sonner'
 import api from '@/lib/api'
+import { getErrorMessage } from '@/lib/errors'
 
 // Helper to validate MongoDB ObjectID format (24-char hex)
 const isValidObjectId = (id: string | undefined | null): id is string => {
@@ -59,6 +61,7 @@ export default function OrganizationDetail() {
   const [members, setMembers] = useState<Member[]>([])
   const [projects, setProjects] = useState<Project[]>([])
   const [isLoading, setIsLoading] = useState(true)
+  const [loadError, setLoadError] = useState<string | null>(null)
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<'ADMIN' | 'MEMBER'>('MEMBER')
   const [isInviting, setIsInviting] = useState(false)
@@ -82,69 +85,8 @@ export default function OrganizationDetail() {
         setProjects(projectsRes.data.projects)
       } catch (error) {
         console.error('Failed to fetch organization data:', error)
-        // Mock data for development
-        setOrganization({
-          id: orgId,
-          name: 'Acme Corp',
-          slug: 'acme-corp',
-          description: 'Main company organization for all Acme projects',
-          createdAt: '2024-01-01T00:00:00Z',
-        })
-        setMembers([
-          {
-            id: '1',
-            userId: 'u1',
-            name: 'John Doe',
-            email: 'john@acme.com',
-            role: 'OWNER',
-            joinedAt: '2024-01-01T00:00:00Z',
-          },
-          {
-            id: '2',
-            userId: 'u2',
-            name: 'Jane Smith',
-            email: 'jane@acme.com',
-            role: 'ADMIN',
-            joinedAt: '2024-01-05T00:00:00Z',
-          },
-          {
-            id: '3',
-            userId: 'u3',
-            name: 'Bob Wilson',
-            email: 'bob@acme.com',
-            role: 'MEMBER',
-            joinedAt: '2024-01-10T00:00:00Z',
-          },
-        ])
-        setProjects([
-          {
-            id: '1',
-            name: 'Web Application',
-            slug: 'web-app',
-            description: 'Main web application',
-            featureFlagCount: 12,
-            environmentCount: 3,
-            createdAt: '2024-01-05T00:00:00Z',
-          },
-          {
-            id: '2',
-            name: 'Mobile App',
-            slug: 'mobile-app',
-            description: 'iOS and Android app',
-            featureFlagCount: 8,
-            environmentCount: 2,
-            createdAt: '2024-01-08T00:00:00Z',
-          },
-          {
-            id: '3',
-            name: 'API Gateway',
-            slug: 'api-gateway',
-            description: 'API gateway service',
-            featureFlagCount: 15,
-            environmentCount: 4,
-            createdAt: '2024-01-10T00:00:00Z',
-          },
-        ])
+        setOrganization(null)
+        setLoadError(getErrorMessage(error))
       } finally {
         setIsLoading(false)
       }
@@ -168,6 +110,7 @@ export default function OrganizationDetail() {
       setMembers(response.data.members)
     } catch (error) {
       console.error('Failed to send invitation:', error)
+      toast.error(getErrorMessage(error))
     } finally {
       setIsInviting(false)
     }
@@ -184,6 +127,7 @@ export default function OrganizationDetail() {
       setMembers(members.filter((m) => m.userId !== memberId))
     } catch (error) {
       console.error('Failed to remove member:', error)
+      toast.error(getErrorMessage(error))
     }
   }
 
@@ -230,10 +174,10 @@ export default function OrganizationDetail() {
       <div className="text-center py-12">
         <BuildingOfficeIcon className="mx-auto h-12 w-12 text-gray-400" />
         <h3 className="mt-2 text-sm font-semibold text-gray-900">
-          Organization not found
+          {loadError ? 'Failed to load organization' : 'Organization not found'}
         </h3>
         <p className="mt-1 text-sm text-gray-500">
-          The organization you are looking for does not exist.
+          {loadError ?? 'The organization you are looking for does not exist.'}
         </p>
         <div className="mt-6">
           <Link

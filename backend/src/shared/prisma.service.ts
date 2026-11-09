@@ -15,16 +15,17 @@ export class PrismaService
 
   async onModuleInit() {
     await this.$connect()
-    await this.normalizeFlagEnvironmentBrandIds()
+    await this.normalizeLegacyDocuments()
   }
 
   /**
    * Older flag creation code stored FlagEnvironment documents without a
    * brandId field. Queries filter on `brandId: null`, which on MongoDB does
    * not match missing fields, so those flags were invisible to the SDK.
-   * Idempotent: sets the field explicitly to null once.
+   * Idempotent: sets the field explicitly to null once. Also backfills
+   * fields added to existing collections later.
    */
-  private async normalizeFlagEnvironmentBrandIds() {
+  private async normalizeLegacyDocuments() {
     try {
       const result = (await this.$runCommandRaw({
         update: 'flag_environments',
@@ -41,8 +42,20 @@ export class PrismaService
           `Normalized brandId on ${result.nModified} flag environments`
         )
       }
+
+      // TargetingRule.enabled was added later; missing means enabled
+      await this.$runCommandRaw({
+        update: 'targeting_rules',
+        updates: [
+          {
+            q: { enabled: { $exists: false } },
+            u: { $set: { enabled: true } },
+            multi: true,
+          },
+        ],
+      })
     } catch (error) {
-      this.logger.warn(`brandId normalization skipped: ${String(error)}`)
+      this.logger.warn(`Legacy document normalization skipped: ${String(error)}`)
     }
   }
 

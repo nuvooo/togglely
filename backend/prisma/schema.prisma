@@ -23,13 +23,13 @@ model User {
   updatedAt         DateTime  @updatedAt
 
   // Relations
-  memberships    OrganizationMember[]
-  apiKeys        ApiKey[]
-  auditLogs      AuditLog[]
-  createdFlags   FeatureFlag[] @relation("CreatedFlags")
-  updatedFlags   FeatureFlag[] @relation("UpdatedFlags")
-  acceptedInvites OrganizationInvite[] @relation(name: "AcceptedInvites")
-  createdExperiments Experiment[] @relation("CreatedExperiments")
+  memberships        OrganizationMember[]
+  apiKeys            ApiKey[]
+  auditLogs          AuditLog[]
+  createdFlags       FeatureFlag[]        @relation("CreatedFlags")
+  updatedFlags       FeatureFlag[]        @relation("UpdatedFlags")
+  acceptedInvites    OrganizationInvite[] @relation(name: "AcceptedInvites")
+  createdExperiments Experiment[]         @relation("CreatedExperiments")
 
   @@map("users")
 }
@@ -98,7 +98,7 @@ model Project {
   updatedAt      DateTime    @updatedAt
 
   // Relations
-  organization Organization @relation(fields: [organizationId], references: [id])
+  organization Organization  @relation(fields: [organizationId], references: [id])
   environments Environment[]
   featureFlags FeatureFlag[]
   brands       Brand[]
@@ -215,12 +215,13 @@ model TargetingRule {
   operator   RuleOperator @default(AND)
   serveValue String
   isDefault  Boolean      @default(false)
+  enabled    Boolean      @default(true)
   priority   Int          @default(0)
   createdAt  DateTime     @default(now())
   updatedAt  DateTime     @updatedAt
 
   // Relations
-  flagEnvironment FlagEnvironment @relation(fields: [flagEnvId], references: [id])
+  flagEnvironment FlagEnvironment @relation(fields: [flagEnvId], references: [id], onDelete: Cascade)
   conditions      RuleCondition[]
 
   @@index([flagEnvId])
@@ -241,7 +242,7 @@ model RuleCondition {
   createdAt DateTime          @default(now())
 
   // Relations
-  rule TargetingRule @relation(fields: [ruleId], references: [id])
+  rule TargetingRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
 
   @@index([ruleId])
   @@map("rule_conditions")
@@ -262,18 +263,18 @@ enum ConditionOperator {
 }
 
 model ApiKey {
-  id            String     @id @default(auto()) @map("_id") @db.ObjectId
-  name          String
-  key           String     @unique
-  type          ApiKeyType @default(SERVER)
-  organizationId String    @db.ObjectId
-  userId        String?    @db.ObjectId
-  environmentId String?
-  lastUsedAt    DateTime?
-  expiresAt     DateTime?
-  isActive      Boolean    @default(true)
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  id             String     @id @default(auto()) @map("_id") @db.ObjectId
+  name           String
+  key            String     @unique
+  type           ApiKeyType @default(SERVER)
+  organizationId String     @db.ObjectId
+  userId         String?    @db.ObjectId
+  environmentId  String?
+  lastUsedAt     DateTime?
+  expiresAt      DateTime?
+  isActive       Boolean    @default(true)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
 
   // Relations
   organization Organization @relation(fields: [organizationId], references: [id])
@@ -353,31 +354,31 @@ enum ExperimentEventType {
 }
 
 model Experiment {
-  id              String           @id @default(auto()) @map("_id") @db.ObjectId
-  name            String
-  key             String
-  description     String?
-  hypothesis      String?
-  status          ExperimentStatus @default(DRAFT)
-  flagId          String           @db.ObjectId
-  environmentId   String           @db.ObjectId
-  trafficPercent  Int              @default(100)
-  startedAt       DateTime?
-  endedAt         DateTime?
-  createdById     String           @db.ObjectId
-  projectId       String           @db.ObjectId
-  organizationId  String           @db.ObjectId
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  id             String           @id @default(auto()) @map("_id") @db.ObjectId
+  name           String
+  key            String
+  description    String?
+  hypothesis     String?
+  status         ExperimentStatus @default(DRAFT)
+  flagId         String           @db.ObjectId
+  environmentId  String           @db.ObjectId
+  trafficPercent Int              @default(100)
+  startedAt      DateTime?
+  endedAt        DateTime?
+  createdById    String           @db.ObjectId
+  projectId      String           @db.ObjectId
+  organizationId String           @db.ObjectId
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 
   // Relations
-  flag          FeatureFlag         @relation(fields: [flagId], references: [id])
-  environment   Environment         @relation(fields: [environmentId], references: [id])
-  createdBy     User                @relation("CreatedExperiments", fields: [createdById], references: [id])
-  project       Project             @relation(fields: [projectId], references: [id])
-  organization  Organization        @relation(fields: [organizationId], references: [id])
-  variants      ExperimentVariant[]
-  events        ExperimentEvent[]
+  flag         FeatureFlag         @relation(fields: [flagId], references: [id])
+  environment  Environment         @relation(fields: [environmentId], references: [id])
+  createdBy    User                @relation("CreatedExperiments", fields: [createdById], references: [id])
+  project      Project             @relation(fields: [projectId], references: [id])
+  organization Organization        @relation(fields: [organizationId], references: [id])
+  variants     ExperimentVariant[]
+  events       ExperimentEvent[]
 
   @@unique([projectId, key])
   @@index([flagId])
@@ -387,20 +388,20 @@ model Experiment {
 }
 
 model ExperimentVariant {
-  id            String   @id @default(auto()) @map("_id") @db.ObjectId
-  experimentId  String   @db.ObjectId
-  key           String
-  name          String
-  description   String?
-  value         String
-  weight        Int      @default(50)
-  isControl     Boolean  @default(false)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  experimentId String   @db.ObjectId
+  key          String
+  name         String
+  description  String?
+  value        String
+  weight       Int      @default(50)
+  isControl    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   // Relations
-  experiment    Experiment        @relation(fields: [experimentId], references: [id], onDelete: Cascade)
-  events        ExperimentEvent[]
+  experiment Experiment        @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  events     ExperimentEvent[]
 
   @@unique([experimentId, key])
   @@index([experimentId])
@@ -408,17 +409,17 @@ model ExperimentVariant {
 }
 
 model ExperimentEvent {
-  id            String              @id @default(auto()) @map("_id") @db.ObjectId
-  experimentId  String              @db.ObjectId
-  variantId     String?             @db.ObjectId
-  type          ExperimentEventType
-  userId        String
-  metadata      Json?
-  createdAt     DateTime            @default(now())
+  id           String              @id @default(auto()) @map("_id") @db.ObjectId
+  experimentId String              @db.ObjectId
+  variantId    String?             @db.ObjectId
+  type         ExperimentEventType
+  userId       String
+  metadata     Json?
+  createdAt    DateTime            @default(now())
 
   // Relations
-  experiment    Experiment          @relation(fields: [experimentId], references: [id], onDelete: Cascade)
-  variant       ExperimentVariant?  @relation(fields: [variantId], references: [id])
+  experiment Experiment         @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  variant    ExperimentVariant? @relation(fields: [variantId], references: [id])
 
   @@index([experimentId])
   @@index([variantId])

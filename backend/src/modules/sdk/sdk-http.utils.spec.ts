@@ -135,3 +135,44 @@ describe('sdk-http.utils', () => {
     })
   })
 })
+
+describe('parseSdkContext', () => {
+  const { parseSdkContext } = require('./sdk-http.utils')
+
+  it('parses a JSON object of primitives', () => {
+    expect(
+      parseSdkContext({
+        context: JSON.stringify({ userId: 'u1', age: 30, beta: true }),
+      })
+    ).toEqual({ userId: 'u1', age: 30, beta: true })
+  })
+
+  it('returns an empty context for missing or invalid input', () => {
+    expect(parseSdkContext({})).toEqual({})
+    expect(parseSdkContext({ context: 'not json' })).toEqual({})
+    expect(parseSdkContext({ context: '[1,2]' })).toEqual({})
+    expect(parseSdkContext({ context: ['a'] })).toEqual({})
+    expect(parseSdkContext({ context: 'x'.repeat(5000) })).toEqual({})
+  })
+
+  it('drops nested values, unsafe keys and oversized values', () => {
+    const result = parseSdkContext({
+      context: JSON.stringify({
+        country: 'DE',
+        nested: { a: 1 },
+        list: [1],
+        'bad key': 'x',
+        long: 'y'.repeat(2000),
+      }),
+    })
+    expect(result).toEqual({ country: 'DE' })
+  })
+
+  it('cannot pollute prototypes', () => {
+    const result = parseSdkContext({
+      context: '{"__proto__":{"polluted":true},"constructor":"x","a":"b"}',
+    })
+    expect(result).toEqual({ a: 'b' })
+    expect(({} as any).polluted).toBeUndefined()
+  })
+})

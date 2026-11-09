@@ -13,6 +13,7 @@ import {
   extractSdkApiKey,
   extractSdkOrigin,
   mapSdkError,
+  parseSdkContext,
   setSdkCorsHeaders,
 } from './modules/sdk/sdk-http.utils'
 import { GlobalExceptionFilter } from './shared/filters/global-exception.filter'
@@ -211,7 +212,8 @@ async function bootstrap() {
           flagKey,
           apiKey,
           effectiveBrandKey as string,
-          origin
+          origin,
+          parseSdkContext(req.query)
         )
 
         logger.debug(`[SDK] Success: ${flagKey} =`, result)
@@ -255,7 +257,8 @@ async function bootstrap() {
           environmentKey,
           apiKey,
           effectiveBrandKey as string,
-          origin
+          origin,
+          parseSdkContext(req.query)
         )
 
         logger.debug(
