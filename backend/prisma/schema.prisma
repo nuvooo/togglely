@@ -319,22 +319,42 @@ model AuditLog {
 
 model OrganizationInvite {
   id             String           @id @default(auto()) @map("_id") @db.ObjectId
-  email          String
+  // Optional: unbound invites can be used by anyone holding the link
+  email          String?
   organizationId String           @db.ObjectId
   role           OrganizationRole @default(MEMBER)
-  token          String           @unique
+  // SHA-256 of the invite token; the plain token is only shown once.
+  // Not @unique: MongoDB unique indexes treat a missing field as null, so
+  // legacy invites (no hash) and new invites (no plain token) would collide.
+  // Tokens are 256-bit random values, uniqueness is guaranteed by entropy.
+  tokenHash      String?
+  // Legacy plain token of invites created before hashing was introduced
+  token          String?
   expiresAt      DateTime
   createdAt      DateTime         @default(now())
+  createdById    String?          @db.ObjectId
   acceptedAt     DateTime?
   acceptedById   String?          @db.ObjectId
+  revokedAt      DateTime?
 
   // Relations
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   acceptedBy   User?        @relation(name: "AcceptedInvites", fields: [acceptedById], references: [id])
 
-  @@unique([organizationId, email])
   @@index([organizationId])
+  @@index([organizationId, email])
+  @@index([tokenHash])
+  @@index([token])
   @@map("organization_invites")
+}
+
+/// Singleton documents guarding one-time instance operations (e.g. setup).
+model InstanceLock {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  key       String   @unique
+  createdAt DateTime @default(now())
+
+  @@map("instance_locks")
 }
 
 // --- A/B Testing ---

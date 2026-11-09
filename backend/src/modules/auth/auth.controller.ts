@@ -165,7 +165,7 @@ export class AuthController {
   // Invite-based registration
   @Get('invite/:token')
   async getInviteInfo(@Param('token') token: string) {
-    const invite = await this.prisma.organizationInvite.findUnique({
+    const invite = await this.prisma.organizationInvite.findFirst({
       where: { token },
       include: { organization: true },
     })
@@ -176,9 +176,9 @@ export class AuthController {
     if (invite.acceptedAt) throw new ConflictException('Invite already used')
 
     // Check if user already exists
-    const existingUser = await this.prisma.user.findUnique({
-      where: { email: invite.email },
-    })
+    const existingUser = invite.email
+      ? await this.prisma.user.findUnique({ where: { email: invite.email } })
+      : null
 
     return {
       email: invite.email,
@@ -192,7 +192,7 @@ export class AuthController {
   @Post('invite/:token/accept')
   @UseGuards(AuthGuard)
   async acceptInvite(@Param('token') token: string, @Req() req: any) {
-    const invite = await this.prisma.organizationInvite.findUnique({
+    const invite = await this.prisma.organizationInvite.findFirst({
       where: { token },
       include: { organization: true },
     })
@@ -258,7 +258,7 @@ export class AuthController {
     @Param('token') token: string,
     @Body() body: InviteRegisterDto
   ) {
-    const invite = await this.prisma.organizationInvite.findUnique({
+    const invite = await this.prisma.organizationInvite.findFirst({
       where: { token },
       include: { organization: true },
     })
@@ -267,6 +267,7 @@ export class AuthController {
     if (invite.expiresAt < new Date())
       throw new NotFoundException('Invite expired')
     if (invite.acceptedAt) throw new ConflictException('Invite already used')
+    if (!invite.email) throw new NotFoundException('Invite not found')
 
     // Create user
     await this.authService.register(
