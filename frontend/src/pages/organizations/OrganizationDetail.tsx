@@ -13,6 +13,8 @@ import {
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { refreshWorkspace } from '@/lib/workspace'
+import { orgPath, projectPath } from '@/lib/routes'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -43,7 +45,7 @@ import { useOrganizationStore } from '@/store/organizationStore'
 
 export default function OrganizationDetail() {
   const { t } = useTranslation()
-  const { orgId } = useParams<{ orgId: string }>()
+  const { orgId = '' } = useParams<{ orgId: string }>()
   const navigate = useNavigate()
   const [searchParams] = useSearchParams()
   const {
@@ -105,11 +107,13 @@ export default function OrganizationDetail() {
 
       // Refresh organization data to get complete project list with all fields
       await fetchOrganizationById(orgId)
+      // Keep the workspace switcher in sync.
+      refreshWorkspace().catch(() => {})
 
       // Navigate to the new project (handle both wrapped and unwrapped responses)
       const projectId = (newProject as any).project?.id || newProject.id
       if (projectId) {
-        navigate(`/projects/${projectId}?orgId=${orgId}`)
+        navigate(projectPath(projectId))
       }
     } catch (error) {
       console.error('Failed to create project:', error)
@@ -149,7 +153,7 @@ export default function OrganizationDetail() {
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Link
-          to="/organizations"
+          to="/orgs"
           className="hover:text-foreground transition-colors"
         >
           {t('organization-detail.breadcrumb.organizations')}
@@ -164,7 +168,7 @@ export default function OrganizationDetail() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center gap-4">
           <Button variant="outline" size="icon" asChild>
-            <Link to="/organizations">
+            <Link to="/orgs">
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>
@@ -184,7 +188,7 @@ export default function OrganizationDetail() {
         </div>
         <div className="flex items-center gap-2">
           <Button variant="outline" asChild>
-            <Link to={`/organizations/${orgId}/settings`}>
+            <Link to={orgPath(orgId, 'settings')}>
               <Settings className="w-4 h-4 mr-2" />
               {t('organizations.menu.settings')}
             </Link>
@@ -407,7 +411,7 @@ export default function OrganizationDetail() {
                       </DropdownMenuTrigger>
                       <DropdownMenuContent align="end">
                         <DropdownMenuItem asChild>
-                          <Link to={`/projects/${project.id}?orgId=${orgId}`}>
+                          <Link to={projectPath(project.id)}>
                             {t('organizations.card.view')}
                           </Link>
                         </DropdownMenuItem>
@@ -436,7 +440,7 @@ export default function OrganizationDetail() {
                     </span>
                   </div>
                   <Button variant="secondary" className="w-full" asChild>
-                    <Link to={`/projects/${project.id}?orgId=${orgId}`}>
+                    <Link to={projectPath(project.id)}>
                       {t('organization-detail.projects.view')}
                     </Link>
                   </Button>

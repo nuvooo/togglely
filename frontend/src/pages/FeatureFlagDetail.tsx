@@ -20,6 +20,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import api from '@/lib/api'
+import { projectPath } from '@/lib/routes'
 import { getErrorMessage } from '@/lib/errors'
 import {
   CONDITION_OPERATORS,
@@ -96,7 +97,8 @@ const normalizeEnvironments = (raw: any[]): EnvironmentState[] =>
 const defaultServeValue = (type: FlagType) => (type === 'BOOLEAN' ? 'true' : '')
 
 export default function FeatureFlagDetail() {
-  const { id } = useParams<{ id: string }>()
+  const { id, projectId } = useParams<{ id: string; projectId: string }>()
+  const flagsHref = projectId ? projectPath(projectId, 'flags') : '/overview'
   const navigate = useNavigate()
 
   // Validate flagId early
@@ -239,7 +241,7 @@ export default function FeatureFlagDetail() {
     if (!confirm('Are you sure you want to delete this feature flag?')) return
     try {
       await api.delete(`/feature-flags/${flagId}`)
-      navigate('/feature-flags')
+      navigate(flagsHref)
     } catch (error) {
       console.error('Failed to delete feature flag:', error)
       toast.error(getErrorMessage(error))
@@ -425,7 +427,7 @@ export default function FeatureFlagDetail() {
             </button>
           )}
           <Link
-            to="/feature-flags"
+            to={flagsHref}
             className="inline-flex items-center text-primary hover:text-primary/80"
           >
             <ArrowLeftIcon className="mr-2 h-4 w-4" />
@@ -441,7 +443,7 @@ export default function FeatureFlagDetail() {
       {/* Page header */}
       <div>
         <Link
-          to="/feature-flags"
+          to={flagsHref}
           className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeftIcon className="mr-1 h-4 w-4" />
@@ -481,7 +483,7 @@ export default function FeatureFlagDetail() {
                   </button>
                   <span>•</span>
                   <Link
-                    to={`/projects/${flag.projectId}`}
+                    to={projectPath(flag.projectId)}
                     className="hover:text-primary"
                   >
                     {flag.projectName ?? 'Project'}

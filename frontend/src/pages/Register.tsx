@@ -51,7 +51,7 @@ export default function Register() {
 
     try {
       await register(firstName, lastName, email, password)
-      navigate('/')
+      navigate('/overview')
     } catch (err: unknown) {
       setError(getErrorMessage(err))
     } finally {

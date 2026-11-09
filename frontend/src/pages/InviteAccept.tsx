@@ -1,6 +1,7 @@
 import { AlertCircle, CheckCircle, Loader2, LogIn } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { refreshWorkspace } from '@/lib/workspace'
 import { Alert, AlertDescription } from '@/components/ui/alert'
 import { Button } from '@/components/ui/button'
 import {
@@ -72,11 +73,13 @@ export default function InviteAccept() {
 
     try {
       await api.post(`/auth/invite/${inviteToken}/accept`)
+      // Keep the workspace switcher in sync.
+      refreshWorkspace().catch(() => {})
       setSuccess(true)
 
       // Redirect to dashboard after 2 seconds
       setTimeout(() => {
-        navigate('/')
+        navigate('/overview')
       }, 2000)
     } catch (err: unknown) {
       setError(getErrorMessage(err))

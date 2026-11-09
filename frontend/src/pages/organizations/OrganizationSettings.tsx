@@ -2,6 +2,7 @@ import { AlertTriangle, ArrowLeft, Settings, Trash2, Users } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { refreshWorkspace } from '@/lib/workspace'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -22,6 +23,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import api from '@/lib/axios'
+import { orgPath } from '@/lib/routes'
 import { useOrganizationStore } from '@/store/organizationStore'
 
 interface Organization {
@@ -40,7 +42,7 @@ interface OrganizationMember {
 
 export default function OrganizationSettings() {
   const { t } = useTranslation()
-  const { orgId } = useParams<{ orgId: string }>()
+  const { orgId = '' } = useParams<{ orgId: string }>()
   const navigate = useNavigate()
   const { deleteOrganization } = useOrganizationStore()
 
@@ -105,6 +107,8 @@ export default function OrganizationSettings() {
         description,
       })
       setOrganization(response.data.organization || response.data)
+      // Keep the workspace switcher in sync.
+      refreshWorkspace().catch(() => {})
       setMessage({ type: 'success', text: 'Organization updated successfully' })
     } catch (error: any) {
       console.error('Failed to update organization:', error)
@@ -122,7 +126,9 @@ export default function OrganizationSettings() {
     setIsDeleting(true)
     try {
       await deleteOrganization(orgId)
-      navigate('/organizations')
+      // Keep the workspace switcher in sync.
+      refreshWorkspace().catch(() => {})
+      navigate('/orgs')
     } catch (error: any) {
       console.error('Failed to delete organization:', error)
       setMessage({
@@ -146,7 +152,7 @@ export default function OrganizationSettings() {
     return (
       <div className="flex flex-col items-center justify-center py-12">
         <p className="text-destructive">Organization not found</p>
-        <Button className="mt-4" onClick={() => navigate('/organizations')}>
+        <Button className="mt-4" onClick={() => navigate('/orgs')}>
           Back to Organizations
         </Button>
       </div>
@@ -158,14 +164,14 @@ export default function OrganizationSettings() {
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Link
-          to="/organizations"
+          to="/orgs"
           className="hover:text-foreground transition-colors"
         >
           {t('organization-detail.breadcrumb.organizations')}
         </Link>
         <span>/</span>
         <Link
-          to={`/organizations/${orgId}`}
+          to={orgPath(orgId)}
           className="hover:text-foreground transition-colors"
         >
           {organization.name}
@@ -179,7 +185,7 @@ export default function OrganizationSettings() {
         <Button
           variant="outline"
           size="icon"
-          onClick={() => navigate(`/organizations/${orgId}`)}
+          onClick={() => navigate(orgPath(orgId))}
         >
           <ArrowLeft className="h-4 w-4" />
         </Button>
@@ -276,7 +282,7 @@ export default function OrganizationSettings() {
         <CardContent>
           <Button
             variant="outline"
-            onClick={() => navigate(`/organizations/${orgId}/members`)}
+            onClick={() => navigate(orgPath(orgId, 'members'))}
           >
             Manage Members
           </Button>

@@ -8,8 +8,9 @@ import {
 } from '@heroicons/react/24/outline'
 import clsx from 'clsx'
 import { useEffect, useState } from 'react'
-import { Link } from 'react-router-dom'
+import { Link, useParams } from 'react-router-dom'
 import api from '@/lib/api'
+import { projectPath } from '@/lib/routes'
 
 interface Project {
   id: string
@@ -26,7 +27,9 @@ interface TestResult {
 
 export default function SDKTester() {
   const [projects, setProjects] = useState<Project[]>([])
-  const [selectedProject, setSelectedProject] = useState<string>('')
+  const { projectId } = useParams<{ projectId: string }>()
+  // The project from the route is preselected; the tester can still switch.
+  const [selectedProject, setSelectedProject] = useState<string>(projectId ?? '')
   const [selectedEnvironment, setSelectedEnvironment] = useState<string>('')
   // Note: apiKey is used in generated code example only
   const [apiKey, setApiKey] = useState<string>('')
@@ -200,7 +203,7 @@ console.log('Feature enabled:', isEnabled);`
       {/* Header */}
       <div>
         <Link
-          to="/feature-flags"
+          to={projectId ? projectPath(projectId, 'flags') : '/overview'}
           className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeftIcon className="mr-1 h-4 w-4" />

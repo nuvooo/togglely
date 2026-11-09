@@ -14,7 +14,8 @@ import {
 } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { useNavigate, useParams } from 'react-router-dom'
+import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { refreshWorkspace } from '@/lib/workspace'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -50,6 +51,7 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import api from '@/lib/axios'
+import { orgPath, projectPath } from '@/lib/routes'
 
 interface Project {
   id: string
@@ -85,7 +87,14 @@ interface OrganizationMember {
 
 export default function ProjectSettings() {
   const { t: _t } = useTranslation()
-  const { projectId } = useParams<{ projectId: string }>()
+  const { projectId = '' } = useParams<{ projectId: string }>()
+  const { pathname } = useLocation()
+  // One page serves /environments, /brands and /settings; the URL picks the tab.
+  const routeTab = pathname.endsWith('/environments')
+    ? 'environments'
+    : pathname.endsWith('/brands')
+      ? 'brands'
+      : 'general'
   const navigate = useNavigate()
   const [project, setProject] = useState<Project | null>(null)
   const [environments, setEnvironments] = useState<Environment[]>([])
@@ -201,6 +210,8 @@ export default function ProjectSettings() {
         allowedOrigins,
       })
       setProject(response.data.project)
+      // Keep the workspace switcher in sync.
+      refreshWorkspace().catch(() => {})
       setMessage({
         type: 'success',
         text: 'Project updated successfully',
@@ -226,7 +237,9 @@ export default function ProjectSettings() {
     setIsDeleting(true)
     try {
       await api.delete(`/projects/${projectId}`)
-      navigate(`/organizations/${project?.organizationId}`)
+      // Keep the workspace switcher in sync.
+      refreshWorkspace().catch(() => {})
+      navigate(project?.organizationId ? orgPath(project.organizationId) : '/orgs')
     } catch (error: any) {
       console.error('Failed to delete project:', error)
       setMessage({
@@ -425,7 +438,7 @@ export default function ProjectSettings() {
     return (
       <div className="flex flex-col items-center justify-center py-12">
         <p className="text-destructive">Project not found</p>
-        <Button className="mt-4" onClick={() => navigate('/organizations')}>
+        <Button className="mt-4" onClick={() => navigate('/orgs')}>
           Back to Organizations
         </Button>
       </div>
@@ -440,7 +453,7 @@ export default function ProjectSettings() {
           variant="outline"
           size="icon"
           onClick={() =>
-            navigate(`/projects/${projectId}?orgId=${project.organizationId}`)
+            navigate(projectPath(projectId))
           }
         >
           <ArrowLeft className="h-4 w-4" />
@@ -465,7 +478,7 @@ export default function ProjectSettings() {
         </div>
       )}
 
-      <Tabs defaultValue="general" className="space-y-6">
+      <Tabs key={routeTab} defaultValue={routeTab} className="space-y-6">
         <TabsList>
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="environments">Environments</TabsTrigger>
@@ -757,7 +770,7 @@ export default function ProjectSettings() {
                           size="sm"
                           onClick={() =>
                             navigate(
-                              `/projects/${projectId}/brands/${brand.id}/flags`
+                              `${projectPath(projectId, 'brands')}/${brand.id}`
                             )
                           }
                         >

@@ -18,6 +18,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import api from '@/lib/axios'
+import { projectPath } from '@/lib/routes'
 
 interface Brand {
   id: string
@@ -46,7 +47,7 @@ interface FeatureFlag {
 
 export default function BrandFlags() {
   const { t: _t } = useTranslation()
-  const { projectId, brandId } = useParams<{
+  const { projectId = '', brandId } = useParams<{
     projectId: string
     brandId: string
   }>()
@@ -165,7 +166,7 @@ export default function BrandFlags() {
         <p className="text-destructive">Brand not found</p>
         <Button
           className="mt-4"
-          onClick={() => navigate(`/projects/${projectId}/settings`)}
+          onClick={() => navigate(projectPath(projectId, 'settings'))}
         >
           Back to Settings
         </Button>
@@ -178,14 +179,14 @@ export default function BrandFlags() {
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Link
-          to="/organizations"
+          to="/orgs"
           className="hover:text-foreground transition-colors"
         >
           Organizations
         </Link>
         <span>/</span>
         <Link
-          to={`/projects/${projectId}/settings`}
+          to={projectPath(projectId, 'settings')}
           className="hover:text-foreground transition-colors"
         >
           Project Settings
@@ -200,7 +201,7 @@ export default function BrandFlags() {
           <Button
             variant="outline"
             size="icon"
-            onClick={() => navigate(`/projects/${projectId}/settings`)}
+            onClick={() => navigate(projectPath(projectId, 'settings'))}
           >
             <ArrowLeft className="h-4 w-4" />
           </Button>

@@ -36,7 +36,7 @@ export default function Login() {
 
     try {
       await login(email, password)
-      navigate('/')
+      navigate('/overview')
     } catch (err: unknown) {
       setError(t('login.error-invalid-credentials'))
     } finally {

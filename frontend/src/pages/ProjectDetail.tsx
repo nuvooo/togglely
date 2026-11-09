@@ -9,7 +9,7 @@ import {
 import clsx from 'clsx'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { Link, useNavigate, useParams } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -26,6 +26,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import api from '@/lib/axios'
+import { orgPath, projectPath } from '@/lib/routes'
 
 // Helper to validate MongoDB ObjectID format (24-char hex)
 const isValidObjectId = (id: string | undefined | null): id is string => {
@@ -82,14 +83,10 @@ interface FeatureFlag {
 
 export default function ProjectDetail() {
   const { t } = useTranslation()
-  const { orgId: orgIdFromParams, projectId } = useParams<{
-    orgId: string
-    projectId: string
-  }>()
-  const [searchParams] = useSearchParams()
+  const { projectId = '' } = useParams<{ projectId: string }>()
   const navigate = useNavigate()
-  const orgId = orgIdFromParams || searchParams.get('orgId') || ''
   const [project, setProject] = useState<Project | null>(null)
+  const orgId = project?.organizationId ?? ''
   const [featureFlags, setFeatureFlags] = useState<FeatureFlag[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
@@ -120,7 +117,6 @@ export default function ProjectDetail() {
   )
 
   // Validate IDs early
-  const validOrgId = isValidObjectId(orgId) ? orgId : null
   const validProjectId = isValidObjectId(projectId) ? projectId : null
 
   const fetchData = async (skipLoading = false) => {
@@ -155,13 +151,13 @@ export default function ProjectDetail() {
   }
 
   useEffect(() => {
-    if (!validOrgId || !validProjectId) {
+    if (!validProjectId) {
       setIsLoading(false)
       return
     }
 
     fetchData()
-  }, [validOrgId, validProjectId])
+  }, [validProjectId])
 
   const generateKey = (name: string) => {
     return name
@@ -404,11 +400,11 @@ export default function ProjectDetail() {
       )
     : []
 
-  if (!validOrgId || !validProjectId) {
+  if (!validProjectId) {
     return (
       <div className="flex flex-col items-center justify-center py-12">
-        <p className="text-destructive">Invalid organization or project ID</p>
-        <Button className="mt-4" onClick={() => navigate('/organizations')}>
+        <p className="text-destructive">Invalid project ID</p>
+        <Button className="mt-4" onClick={() => navigate('/orgs')}>
           Back to Organizations
         </Button>
       </div>
@@ -429,9 +425,9 @@ export default function ProjectDetail() {
         <p className="text-muted-foreground">Project not found</p>
         <Button
           className="mt-4"
-          onClick={() => navigate(`/organizations/${orgId}`)}
+          onClick={() => navigate('/orgs')}
         >
-          Back to Organization
+          Back to Organizations
         </Button>
       </div>
     )
@@ -442,7 +438,7 @@ export default function ProjectDetail() {
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Link
-          to="/organizations"
+          to="/orgs"
           className="hover:text-foreground transition-colors"
         >
           {t('organization-detail.breadcrumb.organizations')}
@@ -451,7 +447,7 @@ export default function ProjectDetail() {
           <>
             <span>/</span>
             <Link
-              to={`/organizations/${orgId}`}
+              to={orgPath(orgId)}
               className="hover:text-foreground transition-colors"
             >
               {project.organizationName || 'Organization'}
@@ -468,7 +464,7 @@ export default function ProjectDetail() {
           <Button
             variant="outline"
             size="icon"
-            onClick={() => navigate(`/organizations/${orgId}`)}
+            onClick={() => navigate(orgPath(orgId))}
           >
             <ArrowLeftIcon className="h-4 w-4" />
           </Button>
@@ -487,7 +483,7 @@ export default function ProjectDetail() {
         <div className="flex items-center gap-2">
           <Button
             variant="outline"
-            onClick={() => navigate(`/projects/${projectId}/settings`)}
+            onClick={() => navigate(projectPath(projectId, 'settings'))}
           >
             <Cog6ToothIcon className="w-4 h-4 mr-2" />
             Settings
@@ -617,7 +613,14 @@ export default function ProjectDetail() {
                       <FlagIcon className="w-5 h-5" />
                     </div>
                     <div>
-                      <h3 className="font-semibold text-lg">{flag.name}</h3>
+                      <h3 className="font-semibold text-lg">
+                        <Link
+                          to={`${projectPath(projectId, 'flags')}/${flag.id}`}
+                          className="hover:underline"
+                        >
+                          {flag.name}
+                        </Link>
+                      </h3>
                       <p className="text-sm text-muted-foreground font-mono">
                         {flag.key}
                       </p>
