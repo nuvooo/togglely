@@ -2,12 +2,15 @@
 
 # 🚩 Togglely - Feature Toggle Management Platform
 
-![Togglely Dashboard](screenshot.png)
+<picture>
+  <source media="(prefers-color-scheme: dark)" srcset="docs/images/flags-dark.png">
+  <img src="docs/images/flags-light.png" alt="The feature flags table of a project with one switch per environment">
+</picture>
 
 A complete, self-hosted Feature Toggle Management Platform. Manage feature flags, organizations, projects, and environments with a modern web interface and a powerful API.
 
-🌐 **Live Demo**: [togglely.de](https://togglely.de/)  
-📖 **API Documentation**: [togglely.de/api/docs](https://togglely.de/api/docs)  
+🌐 **Website**: [togglely.de](https://togglely.de/)  
+📖 **Documentation**: [togglely.de/docs](https://togglely.de/docs)  
 💻 **GitHub**: [github.com/nuvooo/togglely](https://github.com/nuvooo/togglely)
 
 ## ✨ Features
@@ -37,11 +40,55 @@ A complete, self-hosted Feature Toggle Management Platform. Manage feature flags
 
 - 🔑 **API Keys**
   - Server, Client, and SDK Keys
+  - MCP Keys for AI agents (project-scoped, hashed, shown once)
   - Expiration dates and revocation
+
+- 🤖 **AI Agents (MCP)**
+  - Built-in MCP server at `/api/mcp` for Claude Code and other MCP clients
+  - Create, update, toggle and clean up flags right from your editor
+  - Toggling only in environments you allow per key, enforced server-side
+  - Every change is audit-logged "via MCP key"
 
 - 🚀 **SDKs for Various Languages**
   - Official JavaScript/TypeScript SDK
   - Easy integration into applications
+
+## 📸 Screenshots
+
+<table>
+  <tr>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/images/targeting-dark.png">
+        <img src="docs/images/targeting-light.png" alt="Two targeting rules on a flag in the production environment">
+      </picture>
+      <p align="center"><b>Targeting rules</b></p>
+    </td>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/images/experiment-dark.png">
+        <img src="docs/images/experiment-light.png" alt="A running experiment with its flag, environment and traffic share">
+      </picture>
+      <p align="center"><b>Experiments</b></p>
+    </td>
+  </tr>
+  <tr>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/images/audit-log-dark.png">
+        <img src="docs/images/audit-log-light.png" alt="The audit log of an organization listing recent changes">
+      </picture>
+      <p align="center"><b>Audit log</b></p>
+    </td>
+    <td width="50%">
+      <picture>
+        <source media="(prefers-color-scheme: dark)" srcset="docs/images/webhooks-dark.png">
+        <img src="docs/images/webhooks-light.png" alt="The webhooks page of a project with two configured webhooks">
+      </picture>
+      <p align="center"><b>Webhooks</b></p>
+    </td>
+  </tr>
+</table>
 
 ## 🚀 Quick Start
 
@@ -59,22 +106,25 @@ git clone https://github.com/nuvooo/togglely.git
 cd togglely
 ```
 
-2. **Start Docker Containers**
+2. **Create a `.env` with a JWT secret** (required, min. 32 chars)
 
 ```bash
-docker-compose up -d
+echo "JWT_SECRET=$(openssl rand -hex 32)" > .env
 ```
 
-3. **Access the application**
+3. **Start Docker Containers**
+
+```bash
+docker compose up -d --build
+```
+
+4. **Access the application**
 
 - Frontend: http://localhost:3000
 - Backend API: http://localhost:4000
 - API Health: http://localhost:4000/health
 
-### Demo Credentials
-
-- **Email**: `demo@togglely.io`
-- **Password**: `demo1234`
+On first start the app opens a setup page where you create the first account and organization.
 
 ## 📁 Project Structure
 
@@ -130,9 +180,42 @@ npx prisma migrate dev
 npx prisma db seed
 ```
 
-## 📡 API Endpoints
+## 🤖 AI Agents (MCP)
 
-AI agents (e.g. Claude Code) can manage flags via the built-in MCP server at `/api/mcp` - see [Connecting AI agents (MCP)](docs/API.md#ki-agenten-anbinden-mcp).
+Togglely ships an [MCP](https://modelcontextprotocol.io) server, so an AI agent such as Claude Code can create a flag while you plan a feature, toggle it while developing and remove it once the feature is rolled out — without leaving the editor.
+
+### Connect Claude Code
+
+1. In the dashboard go to **Organization → API Keys → Create** and choose **MCP (AI agent)**.
+2. Pick the project and the environments the agent may toggle (e.g. only `development`). Without a selection the key can read, create and delete flags, but not toggle them.
+3. Copy the command shown once after creation and run it:
+
+```bash
+claude mcp add --transport http togglely https://<your-togglely-host>/api/mcp \
+  --header "Authorization: Bearer tkm_..."
+```
+
+### Tools
+
+| Tool | What it does |
+|------|--------------|
+| `get_project` | Project, environments (incl. whether the key may toggle them), brands |
+| `list_flags` / `get_flag` | Flags with their state per environment and brand override |
+| `create_flag` | New flag (Boolean, String, Number, JSON) — starts off in every environment |
+| `update_flag` | Change name or description |
+| `set_flag_state` | Turn on/off or set the value — only in environments allowed for the key |
+| `delete_flag` | Two steps (dry run, then `confirm`) — only if the flag has the same state everywhere and no targeting rules or running experiments |
+
+### Security model
+
+- One MCP key = one project. Keys are stored hashed (`tkm_` prefix) and shown only once.
+- Any member can create their own MCP key; the key acts with the creator's current role.
+- The environment lock and the delete rule are enforced by the server, not by the agent's prompt.
+- Rate limits: 120 requests/min per key, 600 requests/min per IP. SDK endpoints reject MCP keys.
+
+Details: [Connecting AI agents (MCP)](docs/API.md#ki-agenten-anbinden-mcp).
+
+## 📡 API Endpoints
 
 ### Authentication
 
@@ -242,6 +325,7 @@ Users
 - Passwords hashed with bcrypt
 - JWT for session management
 - API Keys for SDK access
+- Hashed, project-scoped MCP keys for AI agents with a server-side environment lock
 - Role-based access control
 
 ## 📝 Environment Variables
