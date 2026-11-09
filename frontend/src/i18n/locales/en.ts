@@ -325,6 +325,8 @@ export const en = {
   'org-pages.projects.empty-title': 'No projects yet',
   'org-pages.projects.empty-text': 'Create the first project to manage its feature flags.',
   'org-pages.projects.empty-text-readonly': 'An admin of this organization can create projects.',
+  'org-pages.projects.col-actions': 'Actions',
+  'org-pages.projects.delete-label': 'Delete project {{name}}',
   'org-pages.projects.no-results': 'No matching projects',
   'org-pages.projects.load-error': 'The projects could not be loaded.',
   'org-pages.projects.create-title': 'New project',

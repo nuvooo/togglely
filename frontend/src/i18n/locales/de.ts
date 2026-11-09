@@ -326,6 +326,8 @@ export const de = {
   'org-pages.projects.empty-title': 'Noch keine Projekte',
   'org-pages.projects.empty-text': 'Lege das erste Projekt an, um seine Feature Flags zu verwalten.',
   'org-pages.projects.empty-text-readonly': 'Ein Admin dieser Organisation kann Projekte anlegen.',
+  'org-pages.projects.col-actions': 'Aktionen',
+  'org-pages.projects.delete-label': 'Projekt {{name}} löschen',
   'org-pages.projects.no-results': 'Keine passenden Projekte',
   'org-pages.projects.load-error': 'Die Projekte konnten nicht geladen werden.',
   'org-pages.projects.create-title': 'Neues Projekt',

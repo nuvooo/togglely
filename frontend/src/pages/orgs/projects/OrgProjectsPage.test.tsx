@@ -10,7 +10,7 @@ const state = vi.hoisted(() => ({
   role: 'ADMIN',
   projects: [] as unknown[] | Error,
 }))
-const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn() }))
+const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), delete: vi.fn() }))
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }))
 
 vi.mock('@/lib/axios', () => ({ default: api }))
@@ -73,6 +73,8 @@ describe('OrgProjectsPage', () => {
     state.projects = [SHOP, BLOG]
     api.get.mockReset()
     api.post.mockReset()
+    api.delete.mockReset()
+    api.delete.mockResolvedValue({ data: {} })
     toast.success.mockClear()
     api.get.mockImplementation((url: string) => {
       if (url === `/projects/organization/${ORG_ID}`) {
@@ -169,6 +171,41 @@ describe('OrgProjectsPage', () => {
     await screen.findByRole('link', { name: 'Shop' })
     expect(screen.queryByRole('button', { name: 'New project' })).toBeNull()
     expect(screen.queryByRole('dialog')).toBeNull()
+  })
+
+  it('deletes a project from its row after typing its key', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await user.click(
+      await screen.findByRole('button', { name: 'Delete project Shop' })
+    )
+    const dialog = await screen.findByRole('dialog')
+    const confirm = within(dialog).getByRole('button', {
+      name: 'Delete project',
+    })
+    expect(confirm).toBeDisabled()
+    await user.type(within(dialog).getByRole('textbox'), 'shop')
+    await user.click(confirm)
+
+    expect(api.delete).toHaveBeenCalledWith('/projects/p1')
+    await waitFor(() =>
+      expect(screen.queryByRole('link', { name: 'Shop' })).toBeNull()
+    )
+    expect(screen.getByRole('link', { name: 'Blog' })).toBeInTheDocument()
+    expect(refreshWorkspace).toHaveBeenCalled()
+    // stays on the list instead of opening anything
+    expect(screen.getByTestId('location')).toHaveTextContent(
+      `/orgs/${ORG_ID}/projects`
+    )
+  })
+
+  it('offers no delete action to members and viewers', async () => {
+    state.role = 'MEMBER'
+    renderPage()
+    await screen.findByRole('link', { name: 'Shop' })
+    expect(
+      screen.queryByRole('button', { name: 'Delete project Shop' })
+    ).toBeNull()
   })
 
   it('shows an empty state with a create action', async () => {

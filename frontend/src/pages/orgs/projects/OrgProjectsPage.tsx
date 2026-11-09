@@ -1,4 +1,4 @@
-import { FolderKanban, Plus } from 'lucide-react'
+import { FolderKanban, Plus, Trash2 } from 'lucide-react'
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
@@ -16,6 +16,7 @@ import { handleForbidden } from '@/lib/permissions'
 import { projectPath } from '@/lib/routes'
 import { refreshWorkspace } from '@/lib/workspace'
 import { formatRelative } from '@/pages/projects/flags/flagsFilter'
+import { DeleteProjectDialog } from '@/pages/projects/settings/DeleteProjectDialog'
 import { apiMessage } from '@/pages/projects/settings/project'
 import { useOrgRole } from '../orgRole'
 import { CreateProjectDialog, type NewProject } from './CreateProjectDialog'
@@ -44,6 +45,7 @@ export default function OrgProjectsPage() {
   const [loadError, setLoadError] = useState(false)
   const [query, setQuery] = useState('')
   const [createOpen, setCreateOpen] = useState(false)
+  const [deleting, setDeleting] = useState<OrgProject | null>(null)
   const loadId = useRef(0)
 
   const load = useCallback(async () => {
@@ -169,6 +171,31 @@ export default function OrgProjectsPage() {
     },
   ]
 
+  if (canManage) {
+    columns.push({
+      key: 'actions',
+      header: t('org-pages.projects.col-actions'),
+      srOnlyHeader: true,
+      width: '3.5rem',
+      align: 'right',
+      className: 'px-2',
+      cell: (project) => (
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8 w-8 text-destructive hover:text-destructive"
+          onClick={() => setDeleting(project)}
+          aria-label={t('org-pages.projects.delete-label', {
+            name: project.name,
+          })}
+          title={t('project-settings.danger.delete')}
+        >
+          <Trash2 className="h-4 w-4" />
+        </Button>
+      ),
+    })
+  }
+
   const createButton = (
     <Button onClick={() => setCreateOpen(true)}>
       <Plus className="mr-2 h-4 w-4" />
@@ -250,6 +277,14 @@ export default function OrgProjectsPage() {
         onOpenChange={setCreateOpen}
         orgName={orgName}
         onCreate={create}
+      />
+      <DeleteProjectDialog
+        project={deleting}
+        onOpenChange={(open) => !open && setDeleting(null)}
+        onDeleted={(project) => {
+          setDeleting(null)
+          setProjects((current) => current.filter((p) => p.id !== project.id))
+        }}
       />
     </div>
   )
