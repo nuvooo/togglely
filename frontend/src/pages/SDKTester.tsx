@@ -11,6 +11,12 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import api from '@/lib/api'
 import { projectPath, ROUTES } from '@/lib/routes'
+import {
+  buildSdkSnippet,
+  fetchSdkFlags,
+  type SdkContext,
+  type SdkFlagResult,
+} from '@/lib/sdk-tester'
 
 interface Project {
   id: string
@@ -19,10 +25,8 @@ interface Project {
   environments: { id: string; name: string; key: string }[]
 }
 
-interface TestResult {
+interface TestResult extends SdkFlagResult {
   flagKey: string
-  value: any
-  enabled: boolean
 }
 
 export default function SDKTester() {
@@ -31,8 +35,9 @@ export default function SDKTester() {
   // The project from the route is preselected; the tester can still switch.
   const [selectedProject, setSelectedProject] = useState<string>(projectId ?? '')
   const [selectedEnvironment, setSelectedEnvironment] = useState<string>('')
-  // Note: apiKey is used in generated code example only
   const [apiKey, setApiKey] = useState<string>('')
+  // Flag shown in the generated code (defaults to the first tested flag)
+  const [snippetFlagKey, setSnippetFlagKey] = useState<string>('')
 
   // Context attributes
   const [contextAttrs, setContextAttrs] = useState<
@@ -47,13 +52,6 @@ export default function SDKTester() {
   const [error, setError] = useState<string | null>(null)
   const [copied, setCopied] = useState(false)
 
-  // Demo API keys for generated code examples
-  const getDemoApiKey = (projectKey: string) => {
-    if (projectKey === 'simple-web-app') return 'togglely_demo_simple_key'
-    if (projectKey === 'multi-tenant-saas') return 'togglely_demo_saas_key'
-    return 'your-api-key'
-  }
-
   useEffect(() => {
     fetchProjects()
   }, [])
@@ -63,6 +61,7 @@ export default function SDKTester() {
     setSelectedProject(projectId ?? '')
     setSelectedEnvironment('')
     setTestResults([])
+    setSnippetFlagKey('')
     setError(null)
   }, [projectId])
 
@@ -84,6 +83,13 @@ export default function SDKTester() {
   const selectedProjectData = projects.find((p) => p.id === selectedProject)
   const environments = selectedProjectData?.environments || []
 
+  // Preselect the first environment so a test can run right away
+  useEffect(() => {
+    if (!selectedEnvironment && environments.length > 0) {
+      setSelectedEnvironment(environments[0].id)
+    }
+  }, [environments, selectedEnvironment])
+
   const addContextAttr = () => {
     setContextAttrs([...contextAttrs, { key: '', value: '' }])
   }
@@ -102,8 +108,8 @@ export default function SDKTester() {
     setContextAttrs(newAttrs)
   }
 
-  const buildContext = () => {
-    const context: Record<string, any> = {}
+  const buildContext = (): SdkContext => {
+    const context: SdkContext = {}
     contextAttrs.forEach(({ key, value }) => {
       if (key.trim()) {
         // Try to parse as number or boolean
@@ -117,34 +123,30 @@ export default function SDKTester() {
     return context
   }
 
-  const generateCode = () => {
-    const context = buildContext()
-    const projectKey = selectedProjectData?.key || 'simple-web-app'
-    const envKey =
-      environments.find((e) => e.id === selectedEnvironment)?.key ||
-      'development'
-    const demoKey = apiKey || getDemoApiKey(projectKey)
+  const environmentKey =
+    environments.find((e) => e.id === selectedEnvironment)?.key || 'development'
+  const snippetFlag =
+    testResults.find((r) => r.flagKey === snippetFlagKey) ?? testResults[0] ?? null
 
-    return `import { TogglelyClient } from '@togglely/sdk-core';
-
-const client = new TogglelyClient({
-  apiKey: '${demoKey}',
-  project: '${projectKey}',
-  environment: '${envKey}',
-  baseUrl: '${window.location.origin}'
-});
-
-// Set context for targeting
-client.setContext(${JSON.stringify(context, null, 2)});
-
-// Check if feature is enabled
-const isEnabled = await client.isEnabled('new-dashboard', false);
-console.log('Feature enabled:', isEnabled);`
-  }
+  const generateCode = () =>
+    buildSdkSnippet({
+      apiKey,
+      projectKey: selectedProjectData?.key || 'your-project',
+      environmentKey,
+      // Production serves /sdk on the same origin (nginx); in development
+      // Vite proxies /sdk to the backend.
+      baseUrl: window.location.origin,
+      context: buildContext(),
+      flag: snippetFlag ? { key: snippetFlag.flagKey, flagType: snippetFlag.flagType } : null,
+    })
 
   const runTest = async () => {
-    if (!selectedProject || !selectedEnvironment) {
+    if (!selectedProjectData || !selectedEnvironment) {
       setError('Please select a project and environment')
+      return
+    }
+    if (!apiKey.trim()) {
+      setError('Enter an API key of this organization (Organization → API Keys)')
       return
     }
 
@@ -153,48 +155,20 @@ console.log('Feature enabled:', isEnabled);`
     setTestResults([])
 
     try {
-      const context = buildContext()
-      const projectKey = selectedProjectData?.key
-      const envKey = environments.find((e) => e.id === selectedEnvironment)?.key
-
-      // Get all flags for this project/environment
-      const flagsRes = await api.get(`/feature-flags`, {
-        params: { projectId: selectedProject },
+      const flags = await fetchSdkFlags({
+        projectKey: selectedProjectData.key,
+        environmentKey,
+        apiKey: apiKey.trim(),
+        context: buildContext(),
       })
-
-      const results: TestResult[] = []
-
-      for (const flag of flagsRes.data.featureFlags || []) {
-        try {
-          // Call SDK endpoint with API key for authentication
-          const evalRes = await api.get(
-            `/sdk/flags/${projectKey}/${envKey}/${flag.key}`,
-            {
-              params: {
-                context: JSON.stringify(context),
-              },
-              headers: {
-                'X-API-Key': apiKey || getDemoApiKey(projectKey!),
-              },
-            }
-          )
-          results.push({
-            flagKey: flag.key,
-            value: evalRes.data.value,
-            enabled: evalRes.data.enabled,
-          })
-        } catch (e) {
-          results.push({
-            flagKey: flag.key,
-            value: null,
-            enabled: false,
-          })
-        }
-      }
-
+      const results = Object.entries(flags).map(([flagKey, result]) => ({
+        flagKey,
+        ...result,
+      }))
       setTestResults(results)
-    } catch (err: any) {
-      setError(err.response?.data?.error || 'Failed to run test')
+      if (results.length === 0) setError('This project has no flags in this environment yet')
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to run test')
     } finally {
       setIsLoading(false)
     }
@@ -285,19 +259,19 @@ console.log('Feature enabled:', isEnabled);`
           {/* API Key */}
           <div>
             <label className="block text-sm font-medium text-foreground">
-              API Key (optional)
+              API Key
             </label>
             <input
-              type="text"
+              type="password"
+              autoComplete="off"
               value={apiKey}
               onChange={(e) => setApiKey(e.target.value)}
-              placeholder="togglely_..."
+              placeholder="tk_..."
               className="mt-1 block w-full rounded-md border border-input bg-background shadow-sm focus:border-primary focus:ring-primary sm:text-sm"
             />
             <p className="mt-1 text-xs text-muted-foreground">
-              Uses demo API key if empty (simple-web-app:
-              togglely_demo_simple_key, multi-tenant-saas:
-              togglely_demo_saas_key)
+              An API key of this project's organization. The test calls the
+              same public SDK endpoint your application uses.
             </p>
           </div>
 
@@ -354,7 +328,7 @@ console.log('Feature enabled:', isEnabled);`
           {/* Run Test Button */}
           <button
             onClick={runTest}
-            disabled={isLoading || !selectedProject || !selectedEnvironment}
+            disabled={isLoading || !selectedProject || !selectedEnvironment || !apiKey.trim()}
             className="w-full inline-flex items-center justify-center rounded-md bg-primary px-4 py-2 text-sm font-semibold text-primary-foreground shadow-sm hover:bg-primary/90 disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <PlayIcon className="mr-2 h-4 w-4" />
@@ -382,7 +356,7 @@ console.log('Feature enabled:', isEnabled);`
                 title="Copy to clipboard"
               >
                 {copied ? (
-                  <CheckIcon className="h-4 w-4 text-green-500" />
+                  <CheckIcon className="h-4 w-4 text-success" />
                 ) : (
                   <DocumentDuplicateIcon className="h-4 w-4" />
                 )}
@@ -403,19 +377,28 @@ console.log('Feature enabled:', isEnabled);`
               </div>
               <div className="divide-y divide-border">
                 {testResults.map((result) => (
-                  <div
+                  <button
+                    type="button"
                     key={result.flagKey}
-                    className="px-4 py-3 flex items-center justify-between"
+                    onClick={() => setSnippetFlagKey(result.flagKey)}
+                    title="Use in generated code"
+                    className={clsx(
+                      'w-full px-4 py-3 flex items-center justify-between text-left hover:bg-accent',
+                      snippetFlag?.flagKey === result.flagKey && 'bg-accent'
+                    )}
                   >
-                    <code className="text-sm font-medium">
-                      {result.flagKey}
-                    </code>
+                    <span className="flex items-center gap-2">
+                      <code className="text-sm font-medium">{result.flagKey}</code>
+                      <span className="text-[10px] uppercase text-muted-foreground">
+                        {result.flagType}
+                      </span>
+                    </span>
                     <div className="flex items-center space-x-4">
                       <span
                         className={clsx(
                           'inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium',
                           result.enabled
-                            ? 'bg-green-100 text-green-800 dark:bg-green-950 dark:text-green-400'
+                            ? 'bg-success/15 text-success'
                             : 'bg-muted text-muted-foreground'
                         )}
                       >
@@ -425,7 +408,7 @@ console.log('Feature enabled:', isEnabled);`
                         {JSON.stringify(result.value)}
                       </code>
                     </div>
-                  </div>
+                  </button>
                 ))}
               </div>
             </div>
