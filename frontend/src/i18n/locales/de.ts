@@ -405,6 +405,7 @@ export const de = {
   'org-pages.audit.filter-action': 'Aktion',
   'org-pages.audit.all-projects': 'Alle Projekte',
   'org-pages.audit.all-users': 'Alle Nutzer',
+  'org-pages.audit.former-user': '{{name}} (ehemaliges Mitglied)',
   'org-pages.audit.all-actions': 'Alle Aktionen',
   'org-pages.audit.reset-filters': 'Filter zurücksetzen',
   'org-pages.audit.col-details': 'Details',

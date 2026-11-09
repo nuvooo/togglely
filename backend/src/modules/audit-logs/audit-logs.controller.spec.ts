@@ -145,4 +145,25 @@ describe('AuditLogsController findByOrganization', () => {
     ).rejects.toBeInstanceOf(NotFoundException)
     expect(service.findOrganizationPage).not.toHaveBeenCalled()
   })
+
+  it('lists the users of the log for VIEWERs', async () => {
+    const { controller, service, access, req } = orgSetup()
+    service.findOrganizationUsers = jest
+      .fn()
+      .mockResolvedValue([{ id: USER, isMember: true }])
+    await expect(controller.findOrganizationUsers(ORG, req)).resolves.toEqual({
+      users: [{ id: USER, isMember: true }],
+    })
+    expect(access.assertOrgRole).toHaveBeenCalledWith(USER, ORG, 'VIEWER')
+  })
+
+  it('does not list users of organizations the user is not a member of', async () => {
+    const { controller, service, access, req } = orgSetup()
+    service.findOrganizationUsers = jest.fn()
+    access.assertOrgRole.mockRejectedValue(new NotFoundException())
+    await expect(
+      controller.findOrganizationUsers(ORG, req)
+    ).rejects.toBeInstanceOf(NotFoundException)
+    expect(service.findOrganizationUsers).not.toHaveBeenCalled()
+  })
 })

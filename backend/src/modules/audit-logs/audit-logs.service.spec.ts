@@ -231,4 +231,68 @@ describe('AuditLogsService', () => {
       })
     })
   })
+
+  describe('findOrganizationUsers', () => {
+    const ORG = '64a000000000000000000010'
+    const user = (id: string, firstName: string, email = `${id}@x.io`) => ({
+      id,
+      email,
+      firstName,
+      lastName: null,
+    })
+
+    function usersSetup() {
+      const { prisma, service } = setup()
+      prisma.auditLog.aggregateRaw = jest
+        .fn()
+        .mockResolvedValue([{ _id: { $oid: 'u-gone' } }, { _id: { $oid: 'u-1' } }])
+      prisma.organizationMember.findMany.mockResolvedValue([
+        { userId: 'u-1' },
+        { userId: 'u-2' },
+      ])
+      prisma.user = {
+        findMany: jest
+          .fn()
+          .mockResolvedValue([
+            user('u-2', 'Bea'),
+            user('u-gone', 'Ada'),
+            user('u-1', 'Cleo'),
+          ]),
+      }
+      return { prisma, service }
+    }
+
+    it('returns members and former users found in the log, sorted by name', async () => {
+      const { prisma, service } = usersSetup()
+      const users = await service.findOrganizationUsers(ORG)
+      expect(users).toEqual([
+        { ...user('u-gone', 'Ada'), isMember: false },
+        { ...user('u-2', 'Bea'), isMember: true },
+        { ...user('u-1', 'Cleo'), isMember: true },
+      ])
+      const [{ pipeline }] = prisma.auditLog.aggregateRaw.mock.calls[0]
+      expect(pipeline[0]).toEqual({
+        $match: { organizationId: { $oid: ORG }, userId: { $ne: null } },
+      })
+      expect(prisma.organizationMember.findMany.mock.calls[0][0].where).toEqual(
+        { organizationId: ORG }
+      )
+      expect(
+        [...prisma.user.findMany.mock.calls[0][0].where.id.in].sort()
+      ).toEqual(['u-1', 'u-2', 'u-gone'])
+      // never exposes more than the name and email
+      expect(prisma.user.findMany.mock.calls[0][0].select).toEqual({
+        id: true,
+        email: true,
+        firstName: true,
+        lastName: true,
+      })
+    })
+
+    it('never queries without an organization', async () => {
+      const { prisma, service } = usersSetup()
+      await expect(service.findOrganizationUsers('')).resolves.toEqual([])
+      expect(prisma.auditLog.aggregateRaw).not.toHaveBeenCalled()
+    })
+  })
 })

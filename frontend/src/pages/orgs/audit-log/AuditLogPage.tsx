@@ -1,11 +1,10 @@
 import { ChevronRight, History, Loader2 } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useParams } from 'react-router-dom'
 import { DataTable, type DataTableColumn } from '@/components/data/DataTable'
 import { EmptyState } from '@/components/feedback/EmptyState'
 import { ErrorState } from '@/components/feedback/ErrorState'
-import { type Member, memberName } from '@/components/members/types'
 import { PageHeader } from '@/components/page/PageHeader'
 import { Button } from '@/components/ui/button'
 import api from '@/lib/axios'
@@ -15,7 +14,9 @@ import { useWorkspace } from '@/lib/workspace'
 import {
   ACTION_FILTERS,
   type AuditLogFilters,
+  type AuditLogUser,
   appendPage,
+  auditUserOptions,
   buildAuditParams,
   describeEntity,
   formatAction,
@@ -58,7 +59,7 @@ export default function AuditLogPage() {
   const { orgId = '' } = useParams<{ orgId: string }>()
   const { projectsByOrg } = useWorkspace()
   const projects = projectsByOrg(orgId)
-  const [members, setMembers] = useState<Member[]>([])
+  const [users, setUsers] = useState<AuditLogUser[]>([])
   const [filters, setFilters] = useState<AuditLogFilters>(NO_FILTERS)
   const [logs, setLogs] = useState<OrgAuditLogEntry[]>([])
   const [nextCursor, setNextCursor] = useState<string | null>(null)
@@ -104,14 +105,15 @@ export default function AuditLogPage() {
     if (orgId) load()
   }, [orgId, load])
 
-  // Users for the filter; the log works without them.
+  // Users for the filter (members and former members named in the log);
+  // the log works without them.
   useEffect(() => {
     if (!orgId) return
     let active = true
     api
-      .get(`/organizations/${orgId}/members`)
-      .then((res) => active && setMembers(res.data.members ?? []))
-      .catch(() => active && setMembers([]))
+      .get(`/audit-logs/organization/${orgId}/users`)
+      .then((res) => active && setUsers(res.data.users ?? []))
+      .catch(() => active && setUsers([]))
     return () => {
       active = false
     }
@@ -133,6 +135,11 @@ export default function AuditLogPage() {
       if (id === loadId.current) setLoadingMore(false)
     }
   }
+
+  const userOptions = useMemo(
+    () => auditUserOptions(users, logs),
+    [users, logs]
+  )
 
   const toggle = (id: string) =>
     setExpanded((current) => {
@@ -382,9 +389,11 @@ export default function AuditLogPage() {
           className={SELECT_CLASS}
         >
           <option value="">{t('org-pages.audit.all-users')}</option>
-          {members.map((m) => (
-            <option key={m.userId} value={m.userId}>
-              {memberName(m)}
+          {userOptions.map((u) => (
+            <option key={u.id} value={u.id}>
+              {u.former
+                ? t('org-pages.audit.former-user', { name: u.label })
+                : u.label}
             </option>
           ))}
         </select>

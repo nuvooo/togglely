@@ -404,6 +404,7 @@ export const en = {
   'org-pages.audit.filter-action': 'Action',
   'org-pages.audit.all-projects': 'All projects',
   'org-pages.audit.all-users': 'All users',
+  'org-pages.audit.former-user': '{{name}} (former member)',
   'org-pages.audit.all-actions': 'All actions',
   'org-pages.audit.reset-filters': 'Reset filters',
   'org-pages.audit.col-details': 'Details',

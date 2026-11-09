@@ -7,6 +7,7 @@ import i18n from '@/i18n'
 const ORG_ID = 'org-1'
 const P1 = '0123456789abcdef01234567'
 const U1 = '0123456789abcdef0123aaaa'
+const U2 = '0123456789abcdef0123bbbb'
 
 const state = vi.hoisted(() => ({
   pages: [] as { auditLogs: unknown[]; nextCursor: string | null }[],
@@ -90,17 +91,23 @@ describe('AuditLogPage', () => {
     api.get.mockReset()
     api.get.mockImplementation(
       (url: string, config?: { params?: Record<string, unknown> }) => {
-        if (url === `/organizations/${ORG_ID}/members`) {
+        if (url === `/audit-logs/organization/${ORG_ID}/users`) {
           return Promise.resolve({
             data: {
-              members: [
+              users: [
                 {
-                  id: 'm1',
-                  userId: U1,
+                  id: U1,
                   email: 'ada@example.com',
                   firstName: 'Ada',
                   lastName: 'L',
-                  role: 'OWNER',
+                  isMember: true,
+                },
+                {
+                  id: U2,
+                  email: 'zed@example.com',
+                  firstName: 'Zed',
+                  lastName: '',
+                  isMember: false,
                 },
               ],
             },
@@ -174,6 +181,21 @@ describe('AuditLogPage', () => {
     await waitFor(() =>
       expect(auditCalls()[auditCalls().length - 1][1]).toEqual({
         params: { limit: 50, projectId: P1, action: 'flag.', userId: U1 },
+      })
+    )
+  })
+
+  it('offers former members found in the log as user filter', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    await screen.findByRole('table')
+    const option = await screen.findByRole('option', {
+      name: 'Zed (former member)',
+    })
+    await user.selectOptions(screen.getByLabelText('User'), option)
+    await waitFor(() =>
+      expect(auditCalls()[auditCalls().length - 1][1]).toEqual({
+        params: { limit: 50, userId: U2 },
       })
     )
   })

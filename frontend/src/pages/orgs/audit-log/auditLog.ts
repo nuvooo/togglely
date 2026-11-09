@@ -158,3 +158,47 @@ export function formatAuditUser(user: OrgAuditLogEntry['user']): string | null {
   const name = [user.firstName, user.lastName].filter(Boolean).join(' ').trim()
   return name || user.email || null
 }
+
+/** A user from GET /audit-logs/organization/:orgId/users. */
+export interface AuditLogUser {
+  id: string
+  email: string
+  firstName?: string | null
+  lastName?: string | null
+  /** False for users removed from the organization since. */
+  isMember: boolean
+}
+
+export interface AuditUserOption {
+  id: string
+  label: string
+  /** Removed from the organization; still filterable for old entries. */
+  former: boolean
+}
+
+/**
+ * Options of the user filter: the users of the log (members and former
+ * members) plus anyone named in the loaded entries, sorted by label.
+ */
+export function auditUserOptions(
+  users: AuditLogUser[],
+  logs: OrgAuditLogEntry[]
+): AuditUserOption[] {
+  const options = new Map<string, AuditUserOption>()
+  for (const user of users) {
+    options.set(user.id, {
+      id: user.id,
+      label: formatAuditUser(user) ?? user.id,
+      former: !user.isMember,
+    })
+  }
+  for (const log of logs) {
+    if (!log.user || options.has(log.user.id)) continue
+    options.set(log.user.id, {
+      id: log.user.id,
+      label: formatAuditUser(log.user) ?? log.user.id,
+      former: false,
+    })
+  }
+  return [...options.values()].sort((a, b) => a.label.localeCompare(b.label))
+}

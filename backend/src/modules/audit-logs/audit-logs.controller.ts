@@ -73,6 +73,21 @@ export class AuditLogsController {
     return this.auditLogsService.findOrganizationPage(organizationId, query)
   }
 
+  /**
+   * Users for the log's user filter: members plus former members named in
+   * entries. Returns `{ users: [{ id, email, firstName, lastName, isMember }] }`.
+   */
+  @Get('organization/:organizationId/users')
+  async findOrganizationUsers(
+    @Param('organizationId') organizationId: string,
+    @Req() req: any
+  ) {
+    await this.access.assertOrgRole(req.user.userId, organizationId, 'VIEWER')
+    const users =
+      await this.auditLogsService.findOrganizationUsers(organizationId)
+    return { users }
+  }
+
   /** Latest logs across all organizations the caller is a member of. */
   @Get()
   async findAllForUser(@Req() req: any) {

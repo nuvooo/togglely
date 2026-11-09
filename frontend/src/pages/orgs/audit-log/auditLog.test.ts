@@ -5,6 +5,7 @@ import { en } from '@/i18n/locales/en'
 import {
   ACTION_FILTERS,
   appendPage,
+  auditUserOptions,
   buildAuditParams,
   describeEntity,
   formatAction,
@@ -126,5 +127,31 @@ describe('audit log helpers', () => {
       })
     ).toBe('Ada L')
     expect(formatAuditUser({ id: 'u', email: 'a@x.io' })).toBe('a@x.io')
+  })
+})
+
+describe('auditUserOptions', () => {
+  const ada = { id: 'u1', email: 'ada@x.io', firstName: 'Ada', lastName: 'L' }
+  const bob = { id: 'u2', email: 'bob@x.io', firstName: '', lastName: '' }
+
+  it('lists log users, marks former members and adds users seen in entries', () => {
+    const options = auditUserOptions(
+      [
+        { ...bob, isMember: false },
+        { ...ada, isMember: true },
+      ],
+      [
+        entry('a', { user: ada }),
+        entry('b', {
+          user: { id: 'u3', email: 'cy@x.io', firstName: 'Cy', lastName: null },
+        }),
+        entry('c', { user: null }),
+      ]
+    )
+    expect(options).toEqual([
+      { id: 'u1', label: 'Ada L', former: false },
+      { id: 'u2', label: 'bob@x.io', former: true },
+      { id: 'u3', label: 'Cy', former: false },
+    ])
   })
 })

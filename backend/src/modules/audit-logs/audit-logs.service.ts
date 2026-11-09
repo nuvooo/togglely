@@ -55,7 +55,17 @@ export interface AuditLogQuery {
   limit?: number
 }
 
-const clampLimit = (limit?: number) =>
+/** A user of the organization log filter. */
+export interface AuditLogUser {
+  id: string
+  email: string
+  firstName: string | null
+  lastName: string | null
+  /** False for users removed from the organization since. */
+  isMember: boolean
+}
+
+const clampLimit =(limit?: number) =>
   Math.min(Math.max(limit ?? AUDIT_LOG_DEFAULT_LIMIT, 1), AUDIT_LOG_MAX_LIMIT)
 
 @Injectable()
@@ -154,6 +164,51 @@ export class AuditLogsService {
       auditLogs: page,
       nextCursor: `${last.createdAt.toISOString()}_${last.id}`,
     }
+  }
+
+  /**
+   * Everyone who can appear in the organization log: current members plus
+   * users named in its entries (also those removed from the organization
+   * since). Name and email only, sorted by display name.
+   */
+  async findOrganizationUsers(
+    organizationId: string
+  ): Promise<AuditLogUser[]> {
+    if (!organizationId) return []
+    const [logged, members] = await Promise.all([
+      this.prisma.auditLog.aggregateRaw({
+        pipeline: [
+          {
+            $match: {
+              organizationId: { $oid: organizationId },
+              userId: { $ne: null },
+            },
+          },
+          { $group: { _id: '$userId' } },
+        ],
+      }) as unknown as Promise<{ _id: { $oid: string } | string }[]>,
+      this.prisma.organizationMember.findMany({
+        where: { organizationId },
+        select: { userId: true },
+      }),
+    ])
+    const memberIds = new Set(members.map((m) => m.userId))
+    const ids = new Set(memberIds)
+    for (const doc of logged) {
+      const id = typeof doc._id === 'string' ? doc._id : doc._id?.$oid
+      if (id) ids.add(id)
+    }
+    if (!ids.size) return []
+
+    const users = await this.prisma.user.findMany({
+      where: { id: { in: [...ids] } },
+      select: { id: true, email: true, firstName: true, lastName: true },
+    })
+    const label = (u: (typeof users)[number]) =>
+      [u.firstName, u.lastName].filter(Boolean).join(' ').trim() || u.email
+    return users
+      .map((u) => ({ ...u, isMember: memberIds.has(u.id) }))
+      .sort((a, b) => label(a).localeCompare(label(b)))
   }
 
   /** Latest logs of all organizations the user is a member of. */
