@@ -457,4 +457,29 @@ export const en = {
   'errors.boundary.message':
     'An unexpected error occurred. Please try reloading the page.',
   'errors.boundary.reload': 'Reload page',
+
+  // Brand values (multi-brand projects)
+  'brand-values.default-all': 'Default (all brands)',
+  'brand-values.inherits-default': 'inherits default',
+  'brand-values.override': 'Override',
+  'brand-values.reset': 'Reset',
+  'brand-values.reset-title':
+    'Remove the override so this brand inherits the default again',
+  'brand-values.toggle-label': '{{name}} enabled',
+  'brand-values.edit-creates-override':
+    'Saving creates an own value (override) for this brand.',
+
+  // Flag value editor
+  'flag-value.title': 'Edit value',
+  'flag-value.edit': 'Edit',
+  'flag-value.edit-label': 'Edit value of {{name}}',
+  'flag-value.value': 'Value',
+  'flag-value.description': '{{flag}} in {{environment}}',
+  'flag-value.description-target': '{{flag}} · {{target}} in {{environment}}',
+  'flag-value.label': 'Value ({{type}})',
+  'flag-value.save': 'Save value',
+  'flag-value.saving': 'Saving...',
+  'flag-value.invalid-number': 'Please enter a valid number.',
+  'flag-value.invalid-json': 'Invalid JSON: {{message}}',
+  'flag-value.invalid-boolean': 'Value must be true or false.',
 }

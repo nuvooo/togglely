@@ -461,4 +461,29 @@ export const de = {
   'errors.boundary.message':
     'Ein unerwarteter Fehler ist aufgetreten. Bitte laden Sie die Seite neu.',
   'errors.boundary.reload': 'Seite neu laden',
+
+  // Brand-Werte (Multi-Brand-Projekte)
+  'brand-values.default-all': 'Standard (alle Brands)',
+  'brand-values.inherits-default': 'erbt Standard',
+  'brand-values.override': 'Eigener Wert',
+  'brand-values.reset': 'Zurücksetzen',
+  'brand-values.reset-title':
+    'Eigenen Wert entfernen, damit die Brand wieder den Standard erbt',
+  'brand-values.toggle-label': '{{name}} aktiv',
+  'brand-values.edit-creates-override':
+    'Speichern legt einen eigenen Wert (Override) für diese Brand an.',
+
+  // Flag-Wert-Editor
+  'flag-value.title': 'Wert bearbeiten',
+  'flag-value.edit': 'Bearbeiten',
+  'flag-value.edit-label': 'Wert von {{name}} bearbeiten',
+  'flag-value.value': 'Wert',
+  'flag-value.description': '{{flag}} in {{environment}}',
+  'flag-value.description-target': '{{flag}} · {{target}} in {{environment}}',
+  'flag-value.label': 'Wert ({{type}})',
+  'flag-value.save': 'Wert speichern',
+  'flag-value.saving': 'Speichern...',
+  'flag-value.invalid-number': 'Bitte eine gültige Zahl eingeben.',
+  'flag-value.invalid-json': 'Ungültiges JSON: {{message}}',
+  'flag-value.invalid-boolean': 'Wert muss true oder false sein.',
 }

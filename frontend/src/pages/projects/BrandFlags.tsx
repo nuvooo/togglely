@@ -1,23 +1,16 @@
-import clsx from 'clsx'
-import { ArrowLeft, Building2, Edit2, Flag } from 'lucide-react'
+import { ArrowLeft, Building2, Flag } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams } from 'react-router-dom'
+import { toast } from 'sonner'
+import { FlagValueDialog } from '@/components/flags/FlagValueDialog'
+import { FlagValueRow } from '@/components/flags/FlagValueRow'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card'
-import {
-  Dialog,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog'
-import { Input } from '@/components/ui/input'
-import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import api from '@/lib/axios'
+import { getErrorMessage } from '@/lib/errors'
 import { projectPath, ROUTES } from '@/lib/routes'
 
 interface Brand {
@@ -27,13 +20,16 @@ interface Brand {
   description: string | null
 }
 
+/** Effective brand value in one environment (inherited = no own row). */
 interface FlagEnvironment {
   id: string
   environmentId: string
   environmentName: string
   enabled: boolean
   defaultValue: string
+  inherited?: boolean
   isBrandSpecific: boolean
+  default?: { enabled: boolean; defaultValue: string }
 }
 
 interface FeatureFlag {
@@ -45,8 +41,11 @@ interface FeatureFlag {
   environments: FlagEnvironment[]
 }
 
+const isInherited = (env: FlagEnvironment) =>
+  env.inherited ?? !env.isBrandSpecific
+
 export default function BrandFlags() {
-  const { t: _t } = useTranslation()
+  const { t } = useTranslation()
   const { projectId = '', brandId } = useParams<{
     projectId: string
     brandId: string
@@ -56,13 +55,13 @@ export default function BrandFlags() {
   const [brand, setBrand] = useState<Brand | null>(null)
   const [flags, setFlags] = useState<FeatureFlag[]>([])
   const [isLoading, setIsLoading] = useState(true)
-  const [togglingFlags, setTogglingFlags] = useState<Set<string>>(new Set())
+  const [busyRows, setBusyRows] = useState<Set<string>>(new Set())
 
-  // Edit value dialog
-  const [editingFlag, setEditingFlag] = useState<FeatureFlag | null>(null)
-  const [editingEnv, setEditingEnv] = useState<FlagEnvironment | null>(null)
-  const [editValue, setEditValue] = useState('')
-  const [isSavingValue, setIsSavingValue] = useState(false)
+  // Value editor
+  const [editing, setEditing] = useState<{
+    flag: FeatureFlag
+    env: FlagEnvironment
+  } | null>(null)
 
   useEffect(() => {
     if (!brandId) return
@@ -83,73 +82,111 @@ export default function BrandFlags() {
     fetchData()
   }, [brandId])
 
-  const handleToggle = async (flag: FeatureFlag, env: FlagEnvironment) => {
-    if (!brandId) return
-
-    const toggleKey = `${flag.id}-${env.environmentId}`
-    setTogglingFlags((prev) => new Set(prev).add(toggleKey))
-
+  const refresh = async () => {
     try {
-      await api.post(`/brands/${brandId}/flags/${flag.id}/toggle`, {
-        environmentId: env.environmentId,
-        enabled: !env.enabled,
-      })
-
-      // Refresh data
       const response = await api.get(`/brands/${brandId}/flags`)
       setFlags(response.data.flags)
     } catch (error) {
-      console.error('Failed to toggle flag:', error)
+      console.error('Failed to refresh brand flags:', error)
+    }
+  }
+
+  const patchEnv = (
+    flagId: string,
+    environmentId: string,
+    patch: (env: FlagEnvironment) => FlagEnvironment
+  ) =>
+    setFlags((prev) =>
+      prev.map((f) =>
+        f.id === flagId
+          ? {
+              ...f,
+              environments: f.environments.map((e) =>
+                e.environmentId === environmentId ? patch(e) : e
+              ),
+            }
+          : f
+      )
+    )
+
+  /** Optimistic update → request → refetch; rollback + toast on error. */
+  const mutate = async (
+    rowKey: string,
+    optimistic: () => void,
+    request: () => Promise<unknown>
+  ) => {
+    const previous = flags
+    optimistic()
+    setBusyRows((prev) => new Set(prev).add(rowKey))
+    try {
+      await request()
+      await refresh()
+    } catch (error) {
+      setFlags(previous)
+      toast.error(getErrorMessage(error))
     } finally {
-      setTogglingFlags((prev) => {
+      setBusyRows((prev) => {
         const next = new Set(prev)
-        next.delete(toggleKey)
+        next.delete(rowKey)
         return next
       })
     }
   }
 
-  const openEditValue = (flag: FeatureFlag, env: FlagEnvironment) => {
-    setEditingFlag(flag)
-    setEditingEnv(env)
-    setEditValue(env.defaultValue)
+  /** Toggling an inheriting brand creates its override. */
+  const handleToggle = (
+    flag: FeatureFlag,
+    env: FlagEnvironment,
+    enabled: boolean
+  ) => {
+    if (!brandId) return
+    mutate(
+      `${flag.id}-${env.environmentId}`,
+      () =>
+        patchEnv(flag.id, env.environmentId, (e) => ({
+          ...e,
+          enabled,
+          inherited: false,
+          isBrandSpecific: true,
+          ...(flag.flagType === 'BOOLEAN' && {
+            defaultValue: String(enabled),
+          }),
+        })),
+      () =>
+        api.post(`/brands/${brandId}/flags/${flag.id}/toggle`, {
+          environmentId: env.environmentId,
+          enabled,
+        })
+    )
   }
 
-  const handleSaveValue = async () => {
-    if (!brandId || !editingFlag || !editingEnv) return
-
-    setIsSavingValue(true)
-    try {
-      await api.patch(
-        `/feature-flags/${editingFlag.id}/environments/${editingEnv.environmentId}/value`,
-        { value: editValue, brandId }
-      )
-
-      // Refresh data
-      const response = await api.get(`/brands/${brandId}/flags`)
-      setFlags(response.data.flags)
-      setEditingFlag(null)
-      setEditingEnv(null)
-    } catch (error) {
-      console.error('Failed to save flag value:', error)
-    } finally {
-      setIsSavingValue(false)
-    }
+  /** Removes the override: the brand inherits the default again. */
+  const handleReset = (flag: FeatureFlag, env: FlagEnvironment) => {
+    if (!brandId) return
+    mutate(
+      `${flag.id}-${env.environmentId}`,
+      () =>
+        patchEnv(flag.id, env.environmentId, (e) => ({
+          ...e,
+          enabled: e.default?.enabled ?? e.enabled,
+          defaultValue: e.default?.defaultValue ?? e.defaultValue,
+          inherited: true,
+          isBrandSpecific: false,
+        })),
+      () =>
+        api.delete(
+          `/brands/${brandId}/flags/${flag.id}/environments/${env.environmentId}`
+        )
+    )
   }
 
-  const getTypeColor = (type: string) => {
-    switch (type) {
-      case 'BOOLEAN':
-        return 'bg-blue-100 text-blue-800'
-      case 'STRING':
-        return 'bg-green-100 text-green-800'
-      case 'NUMBER':
-        return 'bg-purple-100 text-purple-800'
-      case 'JSON':
-        return 'bg-orange-100 text-orange-800'
-      default:
-        return 'bg-gray-100 text-gray-800'
-    }
+  const handleSaveValue = async (value: string) => {
+    if (!brandId || !editing) return
+    await api.patch(
+      `/feature-flags/${editing.flag.id}/environments/${editing.env.environmentId}/value`,
+      { value, brandId }
+    )
+    await refresh()
   }
 
   if (isLoading) {
@@ -206,7 +243,7 @@ export default function BrandFlags() {
             <ArrowLeft className="h-4 w-4" />
           </Button>
           <div className="flex items-center gap-3">
-            <div className="w-12 h-12 rounded-xl bg-gradient-to-br from-purple-500 to-purple-600 flex items-center justify-center text-white font-bold text-xl">
+            <div className="w-12 h-12 rounded-xl bg-primary flex items-center justify-center text-primary-foreground">
               <Building2 className="w-6 h-6" />
             </div>
             <div>
@@ -242,15 +279,13 @@ export default function BrandFlags() {
               <CardHeader className="pb-3">
                 <div className="flex items-start justify-between">
                   <div className="flex items-center gap-3">
-                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold">
+                    <div className="w-10 h-10 rounded-lg bg-muted flex items-center justify-center text-foreground">
                       <Flag className="w-5 h-5" />
                     </div>
                     <div>
                       <div className="flex items-center gap-2">
                         <CardTitle className="text-lg">{flag.name}</CardTitle>
-                        <Badge className={getTypeColor(flag.flagType)}>
-                          {flag.flagType}
-                        </Badge>
+                        <Badge variant="outline">{flag.flagType}</Badge>
                       </div>
                       <p className="text-sm text-muted-foreground font-mono">
                         {flag.key}
@@ -267,60 +302,27 @@ export default function BrandFlags() {
               <CardContent>
                 <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
                   {flag.environments.map((env) => {
-                    const toggleKey = `${flag.id}-${env.environmentId}`
-                    const isToggling = togglingFlags.has(toggleKey)
-
+                    const inherited = isInherited(env)
                     return (
-                      <div
+                      <FlagValueRow
                         key={env.environmentId}
-                        className={clsx(
-                          'p-4 rounded-lg border transition-colors',
-                          env.enabled
-                            ? 'bg-green-50 border-green-200 dark:bg-green-900/20 dark:border-green-800'
-                            : 'bg-gray-50 border-gray-200 dark:bg-gray-900/20 dark:border-gray-800'
-                        )}
-                      >
-                        <div className="flex items-center justify-between">
-                          <div className="flex items-center gap-2">
-                            <span className="font-medium">
-                              {env.environmentName}
-                            </span>
-                            {env.isBrandSpecific && (
-                              <Badge variant="outline" className="text-xs">
-                                Custom
-                              </Badge>
-                            )}
-                          </div>
-                          <button
-                            onClick={() => handleToggle(flag, env)}
-                            disabled={isToggling}
-                            className={clsx(
-                              'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
-                              env.enabled ? 'bg-green-500' : 'bg-gray-300'
-                            )}
-                          >
-                            <span
-                              className={clsx(
-                                'inline-block h-4 w-4 transform rounded-full bg-white transition-transform',
-                                env.enabled ? 'translate-x-6' : 'translate-x-1'
-                              )}
-                            />
-                          </button>
-                        </div>
-                        <div className="mt-2 text-sm text-muted-foreground flex items-center gap-2">
-                          Value:{' '}
-                          <code className="bg-background px-1 rounded">
-                            {env.defaultValue}
-                          </code>
-                          <button
-                            onClick={() => openEditValue(flag, env)}
-                            className="text-xs text-primary hover:underline flex items-center gap-1"
-                          >
-                            <Edit2 className="w-3 h-3" />
-                            Edit
-                          </button>
-                        </div>
-                      </div>
+                        primary
+                        label={env.environmentName}
+                        name={`${env.environmentName} ${brand.name}`}
+                        flagType={flag.flagType}
+                        enabled={env.enabled}
+                        value={env.defaultValue}
+                        inherited={inherited}
+                        overridden={!inherited}
+                        busy={busyRows.has(`${flag.id}-${env.environmentId}`)}
+                        onToggle={(next) => handleToggle(flag, env, next)}
+                        onEdit={
+                          flag.flagType !== 'BOOLEAN'
+                            ? () => setEditing({ flag, env })
+                            : undefined
+                        }
+                        onReset={() => handleReset(flag, env)}
+                      />
                     )
                   })}
                 </div>
@@ -330,82 +332,21 @@ export default function BrandFlags() {
         )}
       </div>
 
-      {/* Edit Value Dialog */}
-      <Dialog open={!!editingFlag} onOpenChange={() => setEditingFlag(null)}>
-        <DialogContent aria-describedby="dialog-description">
-          <DialogHeader>
-            <DialogTitle>Edit Brand Flag Value</DialogTitle>
-            <DialogDescription id="dialog-description">
-              Update the value for <strong>{editingFlag?.name}</strong> in{' '}
-              {editingEnv?.environmentName} for brand{' '}
-              <strong>{brand.name}</strong>
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="flagValue">Value ({editingFlag?.flagType})</Label>
-              {editingFlag?.flagType === 'BOOLEAN' ? (
-                <div className="flex items-center gap-4 py-2">
-                  <button
-                    type="button"
-                    onClick={() => setEditValue('true')}
-                    className={clsx(
-                      'flex-1 py-2 px-4 rounded-md border text-sm font-medium transition-colors',
-                      editValue === 'true'
-                        ? 'bg-primary text-primary-foreground border-primary'
-                        : 'bg-background text-foreground border-input hover:bg-accent'
-                    )}
-                  >
-                    true
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => setEditValue('false')}
-                    className={clsx(
-                      'flex-1 py-2 px-4 rounded-md border text-sm font-medium transition-colors',
-                      editValue === 'false'
-                        ? 'bg-primary text-primary-foreground border-primary'
-                        : 'bg-background text-foreground border-input hover:bg-accent'
-                    )}
-                  >
-                    false
-                  </button>
-                </div>
-              ) : editingFlag?.flagType === 'JSON' ? (
-                <textarea
-                  id="flagValue"
-                  value={editValue}
-                  onChange={(e) => setEditValue(e.target.value)}
-                  className="w-full min-h-[100px] rounded-md border border-input bg-background px-3 py-2 font-mono text-sm"
-                  placeholder='{"enabled": true}'
-                />
-              ) : editingFlag?.flagType === 'NUMBER' ? (
-                <Input
-                  id="flagValue"
-                  type="number"
-                  value={editValue}
-                  onChange={(e) => setEditValue(e.target.value)}
-                />
-              ) : (
-                <Input
-                  id="flagValue"
-                  type="text"
-                  value={editValue}
-                  onChange={(e) => setEditValue(e.target.value)}
-                />
-              )}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button variant="outline" onClick={() => setEditingFlag(null)}>
-              Cancel
-            </Button>
-            <Button onClick={handleSaveValue} disabled={isSavingValue}>
-              {isSavingValue ? 'Saving...' : 'Save Value'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      <FlagValueDialog
+        open={!!editing}
+        onOpenChange={(open) => !open && setEditing(null)}
+        flagType={editing?.flag.flagType ?? 'STRING'}
+        flagName={editing?.flag.name ?? ''}
+        environmentName={editing?.env.environmentName ?? ''}
+        targetName={brand.name}
+        initialValue={editing?.env.defaultValue ?? ''}
+        hint={
+          editing && isInherited(editing.env)
+            ? t('brand-values.edit-creates-override')
+            : undefined
+        }
+        onSave={handleSaveValue}
+      />
     </div>
   )
 }

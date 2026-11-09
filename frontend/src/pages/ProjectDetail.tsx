@@ -6,10 +6,12 @@ import {
   PlusIcon,
   TrashIcon,
 } from '@heroicons/react/24/outline'
-import clsx from 'clsx'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
+import { toast } from 'sonner'
+import { FlagValueDialog } from '@/components/flags/FlagValueDialog'
+import { FlagValueRow } from '@/components/flags/FlagValueRow'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -26,6 +28,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import api from '@/lib/axios'
+import { getErrorMessage } from '@/lib/errors'
 import { flagPath, orgPath, projectPath, ROUTES } from '@/lib/routes'
 
 // Helper to validate MongoDB ObjectID format (24-char hex)
@@ -53,12 +56,17 @@ interface Environment {
   key: string
 }
 
+/**
+ * A brand's value in one environment. Without an own row (`inherited`) the
+ * brand carries the environment default's effective values.
+ */
 interface BrandFlagValue {
   brandId: string
   brandName: string
   enabled: boolean
   defaultValue: string
-  isCustom: boolean
+  inherited?: boolean
+  isBrandSpecific?: boolean
 }
 
 interface FlagEnvironment {
@@ -70,15 +78,24 @@ interface FlagEnvironment {
   brandValues?: BrandFlagValue[] // Brand values per environment
 }
 
+type FlagType = 'BOOLEAN' | 'STRING' | 'NUMBER' | 'JSON'
+
 interface FeatureFlag {
   id: string
   name: string
   key: string
   description: string | null
-  flagType: 'BOOLEAN' | 'STRING' | 'NUMBER' | 'JSON'
+  flagType: FlagType
   environments: FlagEnvironment[]
   createdAt: string
   updatedAt: string
+}
+
+/** Target of the value editor: the environment default or one brand. */
+interface EditingValue {
+  flag: FeatureFlag
+  env: FlagEnvironment
+  brand?: BrandFlagValue
 }
 
 export default function ProjectDetail() {
@@ -108,28 +125,19 @@ export default function ProjectDetail() {
   }, [searchParams, setSearchParams])
   const [newFlagName, setNewFlagName] = useState('')
   const [newFlagKey, setNewFlagKey] = useState('')
-  const [newFlagType, setNewFlagType] = useState<
-    'BOOLEAN' | 'STRING' | 'NUMBER' | 'JSON'
-  >('BOOLEAN')
+  const [newFlagType, setNewFlagType] = useState<FlagType>('BOOLEAN')
   const [isCreatingFlag, setIsCreatingFlag] = useState(false)
 
   // Delete flag dialog state
   const [flagToDelete, setFlagToDelete] = useState<FeatureFlag | null>(null)
   const [isDeletingFlag, setIsDeletingFlag] = useState(false)
 
-  // Edit flag value dialog state
-  const [editingFlagEnv, setEditingFlagEnv] = useState<{
-    flag: FeatureFlag
-    env: FlagEnvironment
-  } | null>(null)
-  const [editValue, setEditValue] = useState('')
-  const [isSavingValue, setIsSavingValue] = useState(false)
+  // Value editor (default, brand or single-project environment)
+  const [editing, setEditing] = useState<EditingValue | null>(null)
 
   // Brand management
   const [isMultiTenant, setIsMultiTenant] = useState(false)
-  const [togglingBrandFlags, setTogglingBrandFlags] = useState<Set<string>>(
-    new Set()
-  )
+  const [busyRows, setBusyRows] = useState<Set<string>>(new Set())
 
   // Validate IDs early
   const validProjectId = isValidObjectId(projectId) ? projectId : null
@@ -162,6 +170,24 @@ export default function ProjectDetail() {
       console.error('Failed to fetch project data:', error)
     } finally {
       if (!skipLoading) setIsLoading(false)
+    }
+  }
+
+  /** Reloads only the flags (after a mutation), keeping the page mounted. */
+  const refreshFlags = async () => {
+    if (!validProjectId) return
+    try {
+      if (isMultiTenant) {
+        const res = await api.get(
+          `/projects/${validProjectId}/flags-with-brands`
+        )
+        setFeatureFlags(res.data.flags || [])
+      } else {
+        const res = await api.get(`/feature-flags/project/${validProjectId}`)
+        setFeatureFlags(res.data.featureFlags || [])
+      }
+    } catch (error) {
+      console.error('Failed to refresh flags:', error)
     }
   }
 
@@ -227,111 +253,159 @@ export default function ProjectDetail() {
     }
   }
 
-  const handleToggleFlag = async (
+  /** Optimistically patches one environment of one flag. */
+  const patchEnvironment = (
     flagId: string,
     environmentId: string,
-    enabled: boolean,
-    flagType?: string
+    patch: (env: FlagEnvironment) => FlagEnvironment
   ) => {
-    const newEnabled = !enabled
-    const newValue = flagType === 'BOOLEAN' ? String(newEnabled) : undefined
-
-    // Optimistic UI update
-    const previousFlags = [...featureFlags]
     setFeatureFlags((prev) =>
-      prev.map((f) => {
-        if (f.id === flagId) {
-          return {
-            ...f,
-            environments: f.environments.map((e) =>
-              e.environmentId === environmentId
-                ? {
-                    ...e,
-                    enabled: newEnabled,
-                    ...(newValue && { defaultValue: newValue }),
-                  }
-                : e
-            ),
-          }
-        }
-        return f
-      })
+      prev.map((f) =>
+        f.id === flagId
+          ? {
+              ...f,
+              environments: f.environments.map((e) =>
+                e.environmentId === environmentId ? patch(e) : e
+              ),
+            }
+          : f
+      )
     )
-
-    try {
-      await api.post(`/feature-flags/${flagId}/toggle`, {
-        environmentId,
-        enabled: newEnabled,
-      })
-    } catch (error) {
-      console.error('Failed to toggle flag:', error)
-      // Rollback on error
-      setFeatureFlags(previousFlags)
-    }
   }
 
-  const handleToggleBrandFlag = async (
-    brandId: string,
-    flagId: string,
-    environmentId: string,
-    enabled: boolean,
-    flagType?: string
+  /**
+   * Runs a mutation with optimistic update, refetch on success and rollback
+   * plus toast on error. `rowKey` marks the row busy meanwhile.
+   */
+  const mutate = async (
+    rowKey: string,
+    optimistic: () => void,
+    request: () => Promise<unknown>
   ) => {
-    const newEnabled = !enabled
-    const newValue = flagType === 'BOOLEAN' ? String(newEnabled) : undefined
-
-    // Optimistic UI update
-    const previousFlags = [...featureFlags]
-    setFeatureFlags((prev) =>
-      prev.map((f) => {
-        if (f.id === flagId) {
-          return {
-            ...f,
-            environments: f.environments.map((e) => {
-              if (e.environmentId === environmentId) {
-                return {
-                  ...e,
-                  brandValues: e.brandValues?.map((bv) =>
-                    bv.brandId === brandId
-                      ? {
-                          ...bv,
-                          enabled: newEnabled,
-                          ...(newValue && { defaultValue: newValue }),
-                        }
-                      : bv
-                  ),
-                }
-              }
-              return e
-            }),
-          }
-        }
-        return f
-      })
-    )
-
-    const toggleKey = `${flagId}-${environmentId}-${brandId}`
-    setTogglingBrandFlags((prev) => new Set(prev).add(toggleKey))
-
+    const previousFlags = featureFlags
+    optimistic()
+    setBusyRows((prev) => new Set(prev).add(rowKey))
     try {
-      await api.post(`/brands/${brandId}/flags/${flagId}/toggle`, {
-        environmentId,
-        enabled: newEnabled,
-      })
+      await request()
+      await refreshFlags()
     } catch (error) {
-      console.error('Failed to toggle brand flag:', error)
-      // Rollback on error
       setFeatureFlags(previousFlags)
+      toast.error(getErrorMessage(error))
     } finally {
-      setTogglingBrandFlags((prev) => {
+      setBusyRows((prev) => {
         const next = new Set(prev)
-        next.delete(toggleKey)
+        next.delete(rowKey)
         return next
       })
     }
   }
 
-  /* Lines 260-316 omitted */
+  /** Toggles the environment default (brandId null); inheriting brands follow. */
+  const handleToggleDefault = (
+    flag: FeatureFlag,
+    env: FlagEnvironment,
+    newEnabled: boolean
+  ) => {
+    const syncValue =
+      flag.flagType === 'BOOLEAN' ? String(newEnabled) : undefined
+    return mutate(
+      `${flag.id}-${env.environmentId}-default`,
+      () =>
+        patchEnvironment(flag.id, env.environmentId, (e) => ({
+          ...e,
+          enabled: newEnabled,
+          ...(syncValue !== undefined && { defaultValue: syncValue }),
+          brandValues: e.brandValues?.map((bv) =>
+            bv.inherited
+              ? {
+                  ...bv,
+                  enabled: newEnabled,
+                  ...(syncValue !== undefined && { defaultValue: syncValue }),
+                }
+              : bv
+          ),
+        })),
+      () =>
+        api.post(`/feature-flags/${flag.id}/toggle`, {
+          environmentId: env.environmentId,
+          enabled: newEnabled,
+        })
+    )
+  }
+
+  /** Toggles a brand; an inheriting brand gets its own override row. */
+  const handleToggleBrand = (
+    flag: FeatureFlag,
+    env: FlagEnvironment,
+    brand: BrandFlagValue,
+    newEnabled: boolean
+  ) => {
+    const syncValue =
+      flag.flagType === 'BOOLEAN' ? String(newEnabled) : undefined
+    return mutate(
+      `${flag.id}-${env.environmentId}-${brand.brandId}`,
+      () =>
+        patchEnvironment(flag.id, env.environmentId, (e) => ({
+          ...e,
+          brandValues: e.brandValues?.map((bv) =>
+            bv.brandId === brand.brandId
+              ? {
+                  ...bv,
+                  enabled: newEnabled,
+                  inherited: false,
+                  isBrandSpecific: true,
+                  ...(syncValue !== undefined && { defaultValue: syncValue }),
+                }
+              : bv
+          ),
+        })),
+      () =>
+        api.post(`/brands/${brand.brandId}/flags/${flag.id}/toggle`, {
+          environmentId: env.environmentId,
+          enabled: newEnabled,
+        })
+    )
+  }
+
+  /** Deletes the brand override: the brand inherits the default again. */
+  const handleResetBrand = (
+    flag: FeatureFlag,
+    env: FlagEnvironment,
+    brand: BrandFlagValue
+  ) =>
+    mutate(
+      `${flag.id}-${env.environmentId}-${brand.brandId}`,
+      () =>
+        patchEnvironment(flag.id, env.environmentId, (e) => ({
+          ...e,
+          brandValues: e.brandValues?.map((bv) =>
+            bv.brandId === brand.brandId
+              ? {
+                  ...bv,
+                  enabled: e.enabled,
+                  defaultValue: e.defaultValue,
+                  inherited: true,
+                  isBrandSpecific: false,
+                }
+              : bv
+          ),
+        })),
+      () =>
+        api.delete(
+          `/brands/${brand.brandId}/flags/${flag.id}/environments/${env.environmentId}`
+        )
+    )
+
+  /** Saves the edited value; with a brand this creates/updates its override. */
+  const handleSaveValue = async (value: string) => {
+    if (!editing) return
+    const { flag, env, brand } = editing
+    await api.patch(
+      `/feature-flags/${flag.id}/environments/${env.environmentId}/value`,
+      brand ? { value, brandId: brand.brandId } : { value }
+    )
+    await refreshFlags()
+  }
 
   const openDeleteDialog = (flag: FeatureFlag) => {
     setFlagToDelete(flag)
@@ -348,58 +422,6 @@ export default function ProjectDetail() {
       console.error('Failed to delete flag:', error)
     } finally {
       setIsDeletingFlag(false)
-    }
-  }
-
-  const openEditValueDialog = (
-    flag: FeatureFlag,
-    env: FeatureFlag['environments'][0]
-  ) => {
-    setEditingFlagEnv({ flag, env })
-    setEditValue(env.defaultValue || '')
-  }
-
-  const handleSaveValue = async () => {
-    if (!editingFlagEnv || !validProjectId) return
-    setIsSavingValue(true)
-    try {
-      // Use correct endpoints for both single and multi-tenant
-      if (project?.type === 'MULTI') {
-        // For multi-tenant, save as default value (affects all brands without override)
-        await api.patch(
-          `/feature-flags/${editingFlagEnv.flag.id}/environments/${editingFlagEnv.env.environmentId}`,
-          {
-            defaultValue: editValue,
-          }
-        )
-      } else {
-        // For single-tenant, use standard endpoint
-        await api.patch(
-          `/feature-flags/${editingFlagEnv.flag.id}/environments/${editingFlagEnv.env.environmentId}`,
-          {
-            defaultValue: editValue,
-          }
-        )
-      }
-
-      // Refresh flags using the same logic as initial load
-      if (project?.type === 'MULTI') {
-        const flagsWithBrandsRes = await api.get(
-          `/projects/${validProjectId}/flags-with-brands`
-        )
-        setFeatureFlags(flagsWithBrandsRes.data.flags || [])
-      } else {
-        const flagsRes = await api.get(
-          `/feature-flags/project/${validProjectId}`
-        )
-        setFeatureFlags(flagsRes.data.featureFlags || [])
-      }
-
-      setEditingFlagEnv(null)
-    } catch (error) {
-      console.error('Failed to save flag value:', error)
-    } finally {
-      setIsSavingValue(false)
     }
   }
 
@@ -554,7 +576,9 @@ export default function ProjectDetail() {
                     <select
                       id="flagType"
                       value={newFlagType}
-                      onChange={(e) => setNewFlagType(e.target.value as any)}
+                      onChange={(e) =>
+                        setNewFlagType(e.target.value as FlagType)
+                      }
                       className="w-full rounded-md border border-input bg-background px-3 py-2"
                     >
                       <option value="BOOLEAN">Boolean (true/false)</option>
@@ -619,226 +643,152 @@ export default function ProjectDetail() {
         </Card>
       ) : (
         <div className="space-y-4">
-          {filteredFlags.map((flag) => (
-            <Card key={flag.id} className="hover:shadow-md transition-shadow">
-              <CardContent className="p-6">
-                <div className="flex items-start justify-between">
-                  <div className="flex items-center gap-4">
-                    <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold">
-                      <FlagIcon className="w-5 h-5" />
-                    </div>
-                    <div>
-                      <h3 className="font-semibold text-lg">
-                        <Link
-                          to={flagPath(projectId, flag.id)}
-                          className="hover:underline"
-                        >
-                          {flag.name}
-                        </Link>
-                      </h3>
-                      <p className="text-sm text-muted-foreground font-mono">
-                        {flag.key}
-                      </p>
-                      <div className="flex items-center gap-2 mt-1">
-                        <Badge variant="outline">{flag.flagType}</Badge>
+          {filteredFlags.map((flag) => {
+            const editable = flag.flagType !== 'BOOLEAN'
+            return (
+              <Card key={flag.id} className="hover:shadow-md transition-shadow">
+                <CardContent className="p-6">
+                  <div className="flex items-start justify-between">
+                    <div className="flex items-center gap-4">
+                      <div className="w-10 h-10 rounded-lg bg-gradient-to-br from-blue-500 to-blue-600 flex items-center justify-center text-white font-bold">
+                        <FlagIcon className="w-5 h-5" />
                       </div>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={() => openDeleteDialog(flag)}
-                      className="p-2 text-muted-foreground hover:text-destructive transition-colors"
-                    >
-                      <TrashIcon className="w-5 h-5" />
-                    </button>
-                  </div>
-                </div>
-
-                {/* For Multi-Tenant: One card per environment with brand toggles only */}
-                {isMultiTenant ? (
-                  <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {!flag.environments || flag.environments.length === 0 ? (
-                      <div className="col-span-3 text-sm text-muted-foreground p-4 border border-dashed rounded-lg">
-                        No environments found.
-                      </div>
-                    ) : (
-                      flag.environments.map((env) => (
-                        <div
-                          key={env.id}
-                          className="p-4 rounded-lg border bg-muted border-border"
-                        >
-                          <h4 className="font-semibold text-foreground mb-3 pb-2 border-b border-border">
-                            {env.environmentName}
-                          </h4>
-                          <div className="space-y-3">
-                            {/* List all brands with their toggles */}
-                            {env.brandValues?.map((brand) => {
-                              const toggleKey = `${flag.id}-${env.environmentId}-${brand.brandId}`
-                              const isToggling =
-                                togglingBrandFlags.has(toggleKey)
-
-                              return (
-                                <div
-                                  key={brand.brandId}
-                                  className="flex items-center justify-between p-2 rounded bg-card border border-border"
-                                >
-                                  <div className="flex items-center gap-2">
-                                    <Badge
-                                      variant="outline"
-                                      className="text-xs bg-card text-foreground"
-                                    >
-                                      {brand.brandName}
-                                    </Badge>
-                                  </div>
-                                  <button
-                                    onClick={() =>
-                                      handleToggleBrandFlag(
-                                        brand.brandId,
-                                        flag.id,
-                                        env.environmentId,
-                                        brand.enabled,
-                                        flag.flagType
-                                      )
-                                    }
-                                    disabled={isToggling}
-                                    className={clsx(
-                                      'relative inline-flex h-5 w-9 items-center rounded-full transition-colors',
-                                      brand.enabled
-                                        ? 'bg-green-500 dark:bg-green-600'
-                                        : 'bg-gray-300 dark:bg-gray-600'
-                                    )}
-                                  >
-                                    <span
-                                      className={clsx(
-                                        'inline-block h-3.5 w-3.5 transform rounded-full bg-background transition-transform',
-                                        brand.enabled
-                                          ? 'translate-x-5'
-                                          : 'translate-x-0.5'
-                                      )}
-                                    />
-                                  </button>
-                                </div>
-                              )
-                            })}
-                          </div>
-                          {flag.flagType !== 'BOOLEAN' && (
-                            <div className="mt-3 pt-2 border-t border-border text-xs flex items-center gap-2">
-                              <span
-                                className={
-                                  env.enabled
-                                    ? 'text-green-800 dark:text-green-200'
-                                    : 'text-muted-foreground'
-                                }
-                              >
-                                Value:
-                              </span>{' '}
-                              <code
-                                className={clsx(
-                                  'px-1.5 py-0.5 rounded font-mono text-xs',
-                                  env.enabled
-                                    ? 'bg-green-100 dark:bg-green-900/50 text-green-900 dark:text-green-100'
-                                    : 'bg-card text-foreground'
-                                )}
-                              >
-                                {env.defaultValue}
-                              </code>
-                              <button
-                                onClick={() => openEditValueDialog(flag, env)}
-                                className="text-xs text-primary hover:text-primary/80 underline"
-                              >
-                                Edit
-                              </button>
-                            </div>
-                          )}
+                      <div>
+                        <h3 className="font-semibold text-lg">
+                          <Link
+                            to={flagPath(projectId, flag.id)}
+                            className="hover:underline"
+                          >
+                            {flag.name}
+                          </Link>
+                        </h3>
+                        <p className="text-sm text-muted-foreground font-mono">
+                          {flag.key}
+                        </p>
+                        <div className="flex items-center gap-2 mt-1">
+                          <Badge variant="outline">{flag.flagType}</Badge>
                         </div>
-                      ))
-                    )}
-                  </div>
-                ) : (
-                  /* For Single-Tenant: Simple environment toggles */
-                  <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-                    {!flag.environments || flag.environments.length === 0 ? (
-                      <div className="col-span-3 text-sm text-muted-foreground p-4 border border-dashed rounded-lg">
-                        No environments found. Please refresh the page.
                       </div>
-                    ) : (
-                      flag.environments.map((env) => (
-                        <div
-                          key={env.id}
-                          className={clsx(
-                            'p-4 rounded-lg border transition-colors',
-                            env.enabled
-                              ? 'bg-green-50 border-green-200 dark:bg-green-950/30 dark:border-green-900/50'
-                              : 'bg-muted border-border'
-                          )}
-                        >
-                          <div className="flex items-center justify-between">
-                            <span className="font-medium text-foreground">
+                    </div>
+                    <div className="flex items-center gap-2">
+                      <button
+                        onClick={() => openDeleteDialog(flag)}
+                        className="p-2 text-muted-foreground hover:text-destructive transition-colors"
+                      >
+                        <TrashIcon className="w-5 h-5" />
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Multi-brand: one card per environment, default first,
+                      then every brand (inheriting or overridden) */}
+                  {isMultiTenant ? (
+                    <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {!flag.environments || flag.environments.length === 0 ? (
+                        <div className="col-span-3 text-sm text-muted-foreground p-4 border border-dashed rounded-lg">
+                          No environments found.
+                        </div>
+                      ) : (
+                        flag.environments.map((env) => (
+                          <div
+                            key={env.id}
+                            data-testid={`env-card-${env.environmentId}`}
+                            className="p-4 rounded-lg border bg-muted border-border"
+                          >
+                            <h4 className="font-semibold text-foreground mb-3 pb-2 border-b border-border">
                               {env.environmentName}
-                            </span>
-                            <button
-                              onClick={() =>
-                                handleToggleFlag(
-                                  flag.id,
-                                  env.environmentId,
-                                  env.enabled,
-                                  flag.flagType
-                                )
-                              }
-                              className={clsx(
-                                'relative inline-flex h-6 w-11 items-center rounded-full transition-colors',
-                                env.enabled
-                                  ? 'bg-green-500 dark:bg-green-600'
-                                  : 'bg-gray-300 dark:bg-gray-600'
-                              )}
-                            >
-                              <span
-                                className={clsx(
-                                  'inline-block h-4 w-4 transform rounded-full bg-background transition-transform',
-                                  env.enabled
-                                    ? 'translate-x-6'
-                                    : 'translate-x-1'
+                            </h4>
+                            <div className="space-y-2">
+                              <FlagValueRow
+                                primary
+                                label={t('brand-values.default-all')}
+                                name={`${env.environmentName} ${t('brand-values.default-all')}`}
+                                flagType={flag.flagType}
+                                enabled={env.enabled}
+                                value={env.defaultValue}
+                                busy={busyRows.has(
+                                  `${flag.id}-${env.environmentId}-default`
                                 )}
-                              />
-                            </button>
-                          </div>
-                          {flag.flagType !== 'BOOLEAN' && (
-                            <div className="mt-2 text-sm flex items-center gap-2">
-                              <span
-                                className={
-                                  env.enabled
-                                    ? 'text-green-800 dark:text-green-200'
-                                    : 'text-muted-foreground'
+                                onToggle={(next) =>
+                                  handleToggleDefault(flag, env, next)
                                 }
-                              >
-                                Value:
-                              </span>{' '}
-                              <code
-                                className={clsx(
-                                  'px-1.5 py-0.5 rounded font-mono text-xs',
-                                  env.enabled
-                                    ? 'bg-green-100 dark:bg-green-900/50 text-green-900 dark:text-green-100'
-                                    : 'bg-card text-foreground'
-                                )}
-                              >
-                                {env.defaultValue}
-                              </code>
-                              <button
-                                onClick={() => openEditValueDialog(flag, env)}
-                                className="text-xs text-primary hover:text-primary/80 underline"
-                              >
-                                Edit
-                              </button>
+                                onEdit={
+                                  editable
+                                    ? () => setEditing({ flag, env })
+                                    : undefined
+                                }
+                              />
+                              {env.brandValues?.map((brand) => {
+                                const inherited = brand.inherited ?? false
+                                return (
+                                  <FlagValueRow
+                                    key={brand.brandId}
+                                    label={brand.brandName}
+                                    name={`${env.environmentName} ${brand.brandName}`}
+                                    flagType={flag.flagType}
+                                    enabled={brand.enabled}
+                                    value={brand.defaultValue}
+                                    inherited={inherited}
+                                    overridden={!inherited}
+                                    busy={busyRows.has(
+                                      `${flag.id}-${env.environmentId}-${brand.brandId}`
+                                    )}
+                                    onToggle={(next) =>
+                                      handleToggleBrand(flag, env, brand, next)
+                                    }
+                                    onEdit={
+                                      editable
+                                        ? () => setEditing({ flag, env, brand })
+                                        : undefined
+                                    }
+                                    onReset={() =>
+                                      handleResetBrand(flag, env, brand)
+                                    }
+                                  />
+                                )
+                              })}
                             </div>
-                          )}
+                          </div>
+                        ))
+                      )}
+                    </div>
+                  ) : (
+                    /* For Single-Tenant: one row per environment */
+                    <div className="mt-6 grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
+                      {!flag.environments || flag.environments.length === 0 ? (
+                        <div className="col-span-3 text-sm text-muted-foreground p-4 border border-dashed rounded-lg">
+                          No environments found. Please refresh the page.
                         </div>
-                      ))
-                    )}
-                  </div>
-                )}
-              </CardContent>
-            </Card>
-          ))}
+                      ) : (
+                        flag.environments.map((env) => (
+                          <FlagValueRow
+                            key={env.id}
+                            primary
+                            label={env.environmentName}
+                            name={env.environmentName}
+                            flagType={flag.flagType}
+                            enabled={env.enabled}
+                            value={env.defaultValue}
+                            busy={busyRows.has(
+                              `${flag.id}-${env.environmentId}-default`
+                            )}
+                            onToggle={(next) =>
+                              handleToggleDefault(flag, env, next)
+                            }
+                            onEdit={
+                              editable
+                                ? () => setEditing({ flag, env })
+                                : undefined
+                            }
+                          />
+                        ))
+                      )}
+                    </div>
+                  )}
+                </CardContent>
+              </Card>
+            )
+          })}
         </div>
       )}
 
@@ -872,65 +822,32 @@ export default function ProjectDetail() {
         </DialogContent>
       </Dialog>
 
-      {/* Edit Flag Value Dialog */}
-      <Dialog
-        open={!!editingFlagEnv}
-        onOpenChange={() => setEditingFlagEnv(null)}
-      >
-        <DialogContent>
-          <DialogHeader>
-            <DialogTitle>Edit Flag Value</DialogTitle>
-            <DialogDescription>
-              Update the value for <strong>{editingFlagEnv?.flag.name}</strong>{' '}
-              in {editingFlagEnv?.env.environmentName}
-            </DialogDescription>
-          </DialogHeader>
-          <div className="space-y-4 py-4">
-            <div className="space-y-2">
-              <Label htmlFor="flagValue">
-                Value ({editingFlagEnv?.flag.flagType})
-              </Label>
-              {editingFlagEnv?.flag.flagType === 'JSON' ? (
-                <textarea
-                  id="flagValue"
-                  value={editValue}
-                  onChange={(e) => setEditValue(e.target.value)}
-                  className="w-full min-h-[100px] rounded-md border border-input bg-background px-3 py-2 font-mono text-sm"
-                  placeholder='{"enabled": true}'
-                />
-              ) : editingFlagEnv?.flag.flagType === 'NUMBER' ? (
-                <Input
-                  id="flagValue"
-                  type="number"
-                  value={editValue}
-                  onChange={(e) => setEditValue(e.target.value)}
-                  placeholder="0"
-                />
-              ) : (
-                <Input
-                  id="flagValue"
-                  type="text"
-                  value={editValue}
-                  onChange={(e) => setEditValue(e.target.value)}
-                  placeholder="Enter value"
-                />
-              )}
-            </div>
-          </div>
-          <DialogFooter>
-            <Button
-              variant="outline"
-              onClick={() => setEditingFlagEnv(null)}
-              disabled={isSavingValue}
-            >
-              Cancel
-            </Button>
-            <Button onClick={handleSaveValue} disabled={isSavingValue}>
-              {isSavingValue ? 'Saving...' : 'Save Value'}
-            </Button>
-          </DialogFooter>
-        </DialogContent>
-      </Dialog>
+      {/* Edit Flag Value Dialog (default, brand or environment) */}
+      <FlagValueDialog
+        open={!!editing}
+        onOpenChange={(open) => !open && setEditing(null)}
+        flagType={editing?.flag.flagType ?? 'STRING'}
+        flagName={editing?.flag.name ?? ''}
+        environmentName={editing?.env.environmentName ?? ''}
+        targetName={
+          !isMultiTenant
+            ? undefined
+            : editing?.brand
+              ? editing.brand.brandName
+              : t('brand-values.default-all')
+        }
+        initialValue={
+          editing?.brand
+            ? editing.brand.defaultValue
+            : (editing?.env.defaultValue ?? '')
+        }
+        hint={
+          editing?.brand?.inherited
+            ? t('brand-values.edit-creates-override')
+            : undefined
+        }
+        onSave={handleSaveValue}
+      />
     </div>
   )
 }
