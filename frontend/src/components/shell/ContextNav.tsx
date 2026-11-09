@@ -13,13 +13,22 @@ interface NavItem {
   href: string
 }
 
-function NavList({ items, activeKey }: { items: NavItem[]; activeKey: string }) {
+function NavList({
+  items,
+  activeKey,
+  onNavigate,
+}: {
+  items: NavItem[]
+  activeKey: string
+  onNavigate?: () => void
+}) {
   return (
     <ul className="space-y-0.5">
       {items.map((item) => (
         <li key={item.key}>
           <Link
             to={item.href}
+            onClick={onNavigate}
             aria-current={item.key === activeKey ? 'page' : undefined}
             className={cn(
               'block rounded-md px-2.5 py-1.5 text-sm text-muted-foreground transition-colors hover:bg-sidebar-accent hover:text-foreground',
@@ -42,8 +51,11 @@ function SectionLabel({ children }: { children: ReactNode }) {
   )
 }
 
-/** Second navigation column; content depends on the active area. */
-export function ContextNav() {
+/**
+ * Second navigation column; content depends on the active area.
+ * `onNavigate` fires on every link click (also for the current page), e.g. to close the mobile drawer.
+ */
+export function ContextNav({ onNavigate }: { onNavigate?: () => void } = {}) {
   const { t } = useTranslation()
   const { pathname, hash } = useLocation()
   const area = getArea(pathname)
@@ -86,9 +98,9 @@ export function ContextNav() {
       <>
         <WorkspaceSwitcher kind="project" currentId={area.id} />
         <div className="mt-4" />
-        <NavList items={main} activeKey={area.section} />
+        <NavList items={main} activeKey={area.section} onNavigate={onNavigate} />
         <SectionLabel>{t('nav.develop')}</SectionLabel>
-        <NavList items={develop} activeKey={area.section} />
+        <NavList items={develop} activeKey={area.section} onNavigate={onNavigate} />
       </>
     )
   } else if (area.area === 'org') {
@@ -105,7 +117,7 @@ export function ContextNav() {
       <>
         <WorkspaceSwitcher kind="org" currentId={area.id} />
         <div className="mt-4" />
-        <NavList items={items} activeKey={area.section ?? ''} />
+        <NavList items={items} activeKey={area.section ?? ''} onNavigate={onNavigate} />
       </>
     )
   } else {
@@ -117,7 +129,7 @@ export function ContextNav() {
     content = (
       <>
         <div className="px-2.5 pb-3 text-sm font-semibold">{t('nav.account')}</div>
-        <NavList items={items} activeKey={hash} />
+        <NavList items={items} activeKey={hash} onNavigate={onNavigate} />
       </>
     )
   }

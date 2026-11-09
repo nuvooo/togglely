@@ -58,6 +58,14 @@ export default function SDKTester() {
     fetchProjects()
   }, [])
 
+  // The route stays mounted when switching projects; drop the previous project's state.
+  useEffect(() => {
+    setSelectedProject(projectId ?? '')
+    setSelectedEnvironment('')
+    setTestResults([])
+    setError(null)
+  }, [projectId])
+
   const fetchProjects = async () => {
     try {
       const response = await api.get('/projects')

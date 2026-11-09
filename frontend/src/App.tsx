@@ -3,7 +3,12 @@ import { Navigate, Route, Routes } from 'react-router-dom'
 import { Toaster } from 'sonner'
 import ErrorBoundary from './components/ErrorBoundary'
 import ProtectedRoute from './components/ProtectedRoute'
-import { LegacyFlagRedirect, ParamRedirect } from './components/routing/LegacyRedirects'
+import {
+  LegacyExperimentRedirect,
+  LegacyExperimentsRedirect,
+  LegacyFlagRedirect,
+  ParamRedirect,
+} from './components/routing/LegacyRedirects'
 import { ProjectQueryBridge } from './components/routing/ProjectQueryBridge'
 import AppShell from './components/shell/AppShell'
 import { useAuthStore } from './store/authStore'
@@ -119,7 +124,9 @@ function App() {
         <Route path="projects/:projectId/brands/:brandId/flags" element={<ParamRedirect to="/projects/:projectId/brands/:brandId" />} />
         <Route path="feature-flags" element={<Navigate to="/overview" replace />} />
         <Route path="feature-flags/:id" element={<LegacyFlagRedirect />} />
-        <Route path="experiments" element={<Navigate to="/overview" replace />} />
+        <Route path="experiments" element={<LegacyExperimentsRedirect />} />
+        <Route path="experiments/new" element={<LegacyExperimentsRedirect create />} />
+        <Route path="experiments/:id" element={<LegacyExperimentRedirect />} />
         <Route path="api-keys" element={<Navigate to="/orgs" replace />} />
         <Route path="sdk-tester" element={<Navigate to="/overview" replace />} />
         <Route path="settings" element={<Navigate to="/account" replace />} />

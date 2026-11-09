@@ -37,6 +37,17 @@ export default function AppShell() {
   // biome-ignore lint/correctness/useExhaustiveDependencies: pathname and hash are the triggers
   useEffect(() => setDrawerOpen(false), [pathname, hash])
 
+  // The drawer is mobile-only; close it once the viewport reaches the md breakpoint.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.matchMedia) return
+    const mq = window.matchMedia('(min-width: 768px)')
+    const onChange = (e: MediaQueryListEvent) => {
+      if (e.matches) setDrawerOpen(false)
+    }
+    mq.addEventListener('change', onChange)
+    return () => mq.removeEventListener('change', onChange)
+  }, [])
+
   return (
     <TooltipProvider delayDuration={300}>
       <div className="flex h-dvh overflow-hidden bg-background text-foreground">
@@ -57,7 +68,7 @@ export default function AppShell() {
               className="fixed inset-y-0 left-0 z-50 shadow-xl duration-200 data-[state=open]:animate-in data-[state=open]:slide-in-from-left data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left md:hidden"
             >
               <DialogPrimitive.Title className="sr-only">{t('nav.menu')}</DialogPrimitive.Title>
-              <ContextNav />
+              <ContextNav onNavigate={() => setDrawerOpen(false)} />
             </DialogPrimitive.Content>
           </DialogPrimitive.Portal>
         </DialogPrimitive.Root>
@@ -110,7 +121,9 @@ export default function AppShell() {
           <PendingInvitesBanner />
 
           <main className="min-h-0 flex-1 overflow-y-auto">
-            <Outlet />
+            <div className="mx-auto w-full max-w-7xl px-4 py-5 md:px-8 md:py-6">
+              <Outlet />
+            </div>
           </main>
 
           <div className="md:hidden">

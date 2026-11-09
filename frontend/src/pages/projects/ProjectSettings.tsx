@@ -52,6 +52,7 @@ import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import api from '@/lib/axios'
 import { orgPath, projectPath } from '@/lib/routes'
+import { useWorkspaceStore } from '@/store/workspaceStore'
 
 interface Project {
   id: string
@@ -237,6 +238,8 @@ export default function ProjectSettings() {
     setIsDeleting(true)
     try {
       await api.delete(`/projects/${projectId}`)
+      // The rail must not point at the deleted project.
+      useWorkspaceStore.getState().forgetProject(projectId)
       // Keep the workspace switcher in sync.
       refreshWorkspace().catch(() => {})
       navigate(project?.organizationId ? orgPath(project.organizationId) : '/orgs')
@@ -445,6 +448,9 @@ export default function ProjectSettings() {
     )
   }
 
+  // Brands only exist for MULTI projects; otherwise /brands falls back to the general tab.
+  const activeTab = routeTab === 'brands' && projectType !== 'MULTI' ? 'general' : routeTab
+
   return (
     <div className="space-y-6">
       {/* Header */}
@@ -478,7 +484,7 @@ export default function ProjectSettings() {
         </div>
       )}
 
-      <Tabs key={routeTab} defaultValue={routeTab} className="space-y-6">
+      <Tabs key={activeTab} defaultValue={activeTab} className="space-y-6">
         <TabsList>
           <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="environments">Environments</TabsTrigger>

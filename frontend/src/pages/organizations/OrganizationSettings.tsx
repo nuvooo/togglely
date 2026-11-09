@@ -2,7 +2,7 @@ import { AlertTriangle, ArrowLeft, Settings, Trash2, Users } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams } from 'react-router-dom'
-import { refreshWorkspace } from '@/lib/workspace'
+import { refreshWorkspace, useWorkspace } from '@/lib/workspace'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -25,6 +25,7 @@ import { Separator } from '@/components/ui/separator'
 import api from '@/lib/axios'
 import { orgPath } from '@/lib/routes'
 import { useOrganizationStore } from '@/store/organizationStore'
+import { useWorkspaceStore } from '@/store/workspaceStore'
 
 interface Organization {
   id: string
@@ -45,6 +46,8 @@ export default function OrganizationSettings() {
   const { orgId = '' } = useParams<{ orgId: string }>()
   const navigate = useNavigate()
   const { deleteOrganization } = useOrganizationStore()
+  const { projectsByOrg } = useWorkspace()
+  const forgetOrg = useWorkspaceStore((s) => s.forgetOrg)
 
   const [organization, setOrganization] = useState<Organization | null>(null)
   const [currentUserRole, setCurrentUserRole] = useState<string | null>(null)
@@ -126,6 +129,8 @@ export default function OrganizationSettings() {
     setIsDeleting(true)
     try {
       await deleteOrganization(orgId)
+      // The rail must not point at the deleted org or one of its projects.
+      forgetOrg(orgId, projectsByOrg(orgId).map((p) => p.id))
       // Keep the workspace switcher in sync.
       refreshWorkspace().catch(() => {})
       navigate('/orgs')
