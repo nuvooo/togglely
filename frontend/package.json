@@ -8,6 +8,7 @@
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx",
     "lint:colors": "node scripts/check-raw-colors.mjs src/pages src/components src/lib",
+    "i18n:unused": "node scripts/prune-i18n.mjs",
     "test": "vitest run",
     "test:unit:watch": "vitest",
     "test:e2e": "cypress run",
