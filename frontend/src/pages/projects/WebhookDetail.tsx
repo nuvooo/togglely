@@ -7,6 +7,8 @@ import { DeliveriesTable } from '@/components/webhooks/DeliveriesTable'
 import { useCanManageWebhooks } from '@/components/webhooks/useCanManageWebhooks'
 import { WebhookActions } from '@/components/webhooks/WebhookActions'
 import { WebhookEnvironments, WebhookStatus } from '@/components/webhooks/WebhookStatus'
+import { EmptyState } from '@/components/feedback/EmptyState'
+import { ErrorState } from '@/components/feedback/ErrorState'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import { getErrorStatus } from '@/lib/errors'
@@ -20,7 +22,6 @@ import {
   writeErrorMessage,
   webhooksApi,
 } from '@/lib/webhooks'
-import { WebhooksNotice } from './Webhooks'
 
 type LoadError = 'forbidden' | 'not-found' | 'failed' | null
 
@@ -140,19 +141,15 @@ export default function WebhookDetail() {
       <div className="mx-auto max-w-5xl space-y-6">
         {back}
         {loadError === 'forbidden' ? (
-          <WebhooksNotice
+          <EmptyState
             icon={<Lock className="h-5 w-5" />}
             title={t('webhooks.forbidden-title')}
-            text={t('webhooks.forbidden-text')}
+            description={t('webhooks.forbidden-text')}
           />
         ) : loadError === 'failed' ? (
-          <WebhooksNotice icon={<WebhookIcon className="h-5 w-5" />} title={t('webhooks.load-error')}>
-            <Button variant="outline" onClick={load}>
-              {t('webhooks.retry')}
-            </Button>
-          </WebhooksNotice>
+          <ErrorState message={t('webhooks.load-error')} onRetry={load} retryLabel={t('webhooks.retry')} />
         ) : (
-          <WebhooksNotice icon={<WebhookIcon className="h-5 w-5" />} title={t('webhooks.not-found')} />
+          <EmptyState icon={<WebhookIcon className="h-5 w-5" />} title={t('webhooks.not-found')} />
         )}
       </div>
     )

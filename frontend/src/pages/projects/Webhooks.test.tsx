@@ -109,7 +109,7 @@ describe('Webhooks page', () => {
       }),
     ]
     renderPage()
-    const table = await screen.findByRole('table')
+    const table = await screen.findByRole('table', { name: 'Webhooks' })
     const rows = within(table).getAllByRole('row')
     expect(within(rows[1]).getByRole('link', { name: 'https://hooks.example.com/togglely' })).toHaveAttribute(
       'href',
@@ -272,7 +272,9 @@ describe('Webhooks page', () => {
     expect(screen.getByRole('status')).toBeInTheDocument()
     await waitFor(() => expect(mocks.get).toHaveBeenCalled())
     expect(screen.queryByText(/Nur Lesen/)).toBeNull()
-    expect(screen.queryByRole('table')).toBeNull()
+    // Only skeleton rows: no webhooks, no actions
+    expect(screen.queryByRole('link')).toBeNull()
+    expect(screen.queryByRole('button', { name: /Aktionen für/ })).toBeNull()
     expect(screen.queryByRole('button', { name: 'Webhook hinzufügen' })).toBeNull()
   })
 
@@ -313,6 +315,6 @@ describe('Webhooks page', () => {
     expect(await screen.findByText('Die Webhooks konnten nicht geladen werden.')).toBeInTheDocument()
     mocks.listError = null
     await user.click(screen.getByRole('button', { name: 'Erneut versuchen' }))
-    expect(await screen.findByRole('table')).toBeInTheDocument()
+    expect(await screen.findByRole('table', { name: 'Webhooks' })).toBeInTheDocument()
   })
 })
