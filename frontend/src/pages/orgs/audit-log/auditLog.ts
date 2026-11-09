@@ -202,3 +202,27 @@ export function auditUserOptions(
   }
   return [...options.values()].sort((a, b) => a.label.localeCompare(b.label))
 }
+
+/**
+ * Whether an entry matches the free-text search (case-insensitive): the
+ * translated and raw action, the object and its type, the user and the
+ * project. An empty query matches everything.
+ */
+export function matchesAuditSearch(
+  log: OrgAuditLogEntry,
+  query: string,
+  t: TFunction
+): boolean {
+  const needle = query.trim().toLowerCase()
+  if (!needle) return true
+  return [
+    formatAction(log.action, t),
+    log.action,
+    describeEntity(log),
+    log.entityType,
+    formatAuditUser(log.user),
+    log.user?.email,
+    log.project?.name,
+    log.project?.key,
+  ].some((value) => value?.toLowerCase().includes(needle))
+}

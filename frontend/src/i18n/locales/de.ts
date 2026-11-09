@@ -406,6 +406,9 @@ export const de = {
   'org-pages.audit.all-projects': 'Alle Projekte',
   'org-pages.audit.all-users': 'Alle Nutzer',
   'org-pages.audit.former-user': '{{name}} (ehemaliges Mitglied)',
+  'org-pages.audit.search': 'Aktion, Objekt, Nutzer, Projekt suchen',
+  'org-pages.audit.search-no-results-text':
+    'Die Suche durchsucht nur die bisher geladenen Einträge. Lade weitere Einträge oder ändere die Suche.',
   'org-pages.audit.all-actions': 'Alle Aktionen',
   'org-pages.audit.reset-filters': 'Filter zurücksetzen',
   'org-pages.audit.col-details': 'Details',

@@ -13,6 +13,7 @@ import {
   formatAuditUser,
   formatValues,
   KNOWN_ACTIONS,
+  matchesAuditSearch,
   type OrgAuditLogEntry,
 } from './auditLog'
 
@@ -153,5 +154,35 @@ describe('auditUserOptions', () => {
       { id: 'u2', label: 'bob@x.io', former: true },
       { id: 'u3', label: 'Cy', former: false },
     ])
+  })
+})
+
+describe('matchesAuditSearch', () => {
+  beforeEach(async () => {
+    await i18n.changeLanguage('en')
+  })
+
+  const log = entry('a', {
+    action: 'flag.toggled',
+    entityType: 'FeatureFlag',
+    newValues: { key: 'new-checkout' },
+    user: { id: 'u1', email: 'ada@x.io', firstName: 'Ada', lastName: 'L' },
+    project: { id: 'p1', name: 'Shop', key: 'shop' },
+  })
+  const t = i18n.t.bind(i18n)
+
+  it.each([
+    ['', true],
+    ['  ', true],
+    ['toggled', true],
+    ['flag.TOGGLED', true],
+    ['checkout', true],
+    ['featureflag', true],
+    ['ada l', true],
+    ['ada@x', true],
+    ['shop', true],
+    ['webhook', false],
+  ])('%j matches: %s', (query, expected) => {
+    expect(matchesAuditSearch(log, query, t)).toBe(expected)
   })
 })

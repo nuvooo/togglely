@@ -200,6 +200,26 @@ describe('AuditLogPage', () => {
     )
   })
 
+  it('searches the loaded entries by action, object, user and project', async () => {
+    const user = userEvent.setup()
+    renderPage()
+    const table = await screen.findByRole('table', { name: 'Audit log' })
+    const search = screen.getByRole('searchbox', { name: /search/i })
+    await user.type(search, 'secret')
+    await waitFor(() => expect(within(table).queryByText('Flag a')).toBeNull())
+    expect(within(table).getByText('Webhook secret rotated')).toBeInTheDocument()
+
+    await user.clear(search)
+    await user.type(search, 'nothing-like-this')
+    expect(
+      await screen.findByText(/only covers the entries loaded so far/i)
+    ).toBeInTheDocument()
+    // more entries can still be loaded into the search
+    expect(screen.getByRole('button', { name: 'Load more' })).toBeInTheDocument()
+    // search is client-side: no extra request
+    expect(auditCalls()).toHaveLength(1)
+  })
+
   it('shows an empty state for filters without results', async () => {
     const user = userEvent.setup()
     renderPage()

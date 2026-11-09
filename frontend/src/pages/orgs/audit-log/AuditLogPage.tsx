@@ -6,6 +6,7 @@ import { DataTable, type DataTableColumn } from '@/components/data/DataTable'
 import { EmptyState } from '@/components/feedback/EmptyState'
 import { ErrorState } from '@/components/feedback/ErrorState'
 import { PageHeader } from '@/components/page/PageHeader'
+import { PageToolbar } from '@/components/page/PageToolbar'
 import { Button } from '@/components/ui/button'
 import api from '@/lib/axios'
 import { projectPath } from '@/lib/routes'
@@ -23,6 +24,7 @@ import {
   formatActionFilter,
   formatAuditUser,
   formatValues,
+  matchesAuditSearch,
   type OrgAuditLogEntry,
   type OrgAuditLogPage,
 } from './auditLog'
@@ -68,6 +70,7 @@ export default function AuditLogPage() {
   const [loadingMore, setLoadingMore] = useState(false)
   const [moreError, setMoreError] = useState(false)
   const [expanded, setExpanded] = useState<Set<string>>(new Set())
+  const [search, setSearch] = useState('')
   const loadId = useRef(0)
 
   const fetchPage = useCallback(
@@ -135,6 +138,12 @@ export default function AuditLogPage() {
       if (id === loadId.current) setLoadingMore(false)
     }
   }
+
+  // Free-text search runs over the entries loaded so far (no request).
+  const visibleLogs = useMemo(
+    () => logs.filter((log) => matchesAuditSearch(log, search, t)),
+    [logs, search, t]
+  )
 
   const userOptions = useMemo(
     () => auditUserOptions(users, logs),
@@ -314,31 +323,39 @@ export default function AuditLogPage() {
   } else {
     content = (
       <div className="space-y-3">
-        <DataTable
-          columns={columns}
-          rows={logs}
-          getRowId={(l) => l.id}
-          label={t('org-pages.audit.title')}
-          renderExpanded={(log) => (
-            <div className="grid gap-3 md:grid-cols-2">
-              <ValuesBlock
-                title={t('org-pages.audit.old-values')}
-                value={log.oldValues}
-              />
-              <ValuesBlock
-                title={t('org-pages.audit.new-values')}
-                value={log.newValues}
-              />
-              <p className="text-xs text-muted-foreground md:col-span-2">
-                <code className="font-mono">{log.action}</code> ·{' '}
-                {log.entityType}{' '}
-                <code className="font-mono">{log.entityId}</code>
-              </p>
-            </div>
-          )}
-          isExpanded={(log) => expanded.has(log.id)}
-          getExpandedId={detailId}
-        />
+        {visibleLogs.length === 0 ? (
+          <EmptyState
+            icon={<History className="h-5 w-5" />}
+            title={t('org-pages.audit.no-results')}
+            description={t('org-pages.audit.search-no-results-text')}
+          />
+        ) : (
+          <DataTable
+            columns={columns}
+            rows={visibleLogs}
+            getRowId={(l) => l.id}
+            label={t('org-pages.audit.title')}
+            renderExpanded={(log) => (
+              <div className="grid gap-3 md:grid-cols-2">
+                <ValuesBlock
+                  title={t('org-pages.audit.old-values')}
+                  value={log.oldValues}
+                />
+                <ValuesBlock
+                  title={t('org-pages.audit.new-values')}
+                  value={log.newValues}
+                />
+                <p className="text-xs text-muted-foreground md:col-span-2">
+                  <code className="font-mono">{log.action}</code> ·{' '}
+                  {log.entityType}{' '}
+                  <code className="font-mono">{log.entityId}</code>
+                </p>
+              </div>
+            )}
+            isExpanded={(log) => expanded.has(log.id)}
+            getExpandedId={detailId}
+          />
+        )}
         {moreError && (
           <p role="alert" className="text-center text-sm text-destructive">
             {t('org-pages.audit.more-error')}
@@ -367,59 +384,65 @@ export default function AuditLogPage() {
         title={t('org-pages.audit.title')}
         description={t('org-pages.audit.subtitle')}
       />
-      <fieldset className="flex flex-col gap-2 sm:flex-row sm:flex-wrap sm:items-center">
-        <legend className="sr-only">{t('org-pages.audit.filters')}</legend>
-        <select
-          aria-label={t('org-pages.audit.filter-project')}
-          value={filters.projectId}
-          onChange={(e) => setFilter('projectId', e.target.value)}
-          className={SELECT_CLASS}
-        >
-          <option value="">{t('org-pages.audit.all-projects')}</option>
-          {projects.map((p) => (
-            <option key={p.id} value={p.id}>
-              {p.name}
-            </option>
-          ))}
-        </select>
-        <select
-          aria-label={t('org-pages.audit.filter-user')}
-          value={filters.userId}
-          onChange={(e) => setFilter('userId', e.target.value)}
-          className={SELECT_CLASS}
-        >
-          <option value="">{t('org-pages.audit.all-users')}</option>
-          {userOptions.map((u) => (
-            <option key={u.id} value={u.id}>
-              {u.former
-                ? t('org-pages.audit.former-user', { name: u.label })
-                : u.label}
-            </option>
-          ))}
-        </select>
-        <select
-          aria-label={t('org-pages.audit.filter-action')}
-          value={filters.action}
-          onChange={(e) => setFilter('action', e.target.value)}
-          className={SELECT_CLASS}
-        >
-          <option value="">{t('org-pages.audit.all-actions')}</option>
-          {ACTION_FILTERS.map((prefix) => (
-            <option key={prefix} value={prefix}>
-              {formatActionFilter(prefix, t)}
-            </option>
-          ))}
-        </select>
-        {filtered && (
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setFilters(NO_FILTERS)}
-          >
-            {t('org-pages.audit.reset-filters')}
-          </Button>
-        )}
-      </fieldset>
+      <PageToolbar
+        onSearch={setSearch}
+        searchPlaceholder={t('org-pages.audit.search')}
+        actions={
+          <fieldset className="flex w-full flex-col gap-2 sm:w-auto sm:flex-row sm:flex-wrap sm:items-center">
+            <legend className="sr-only">{t('org-pages.audit.filters')}</legend>
+            <select
+              aria-label={t('org-pages.audit.filter-project')}
+              value={filters.projectId}
+              onChange={(e) => setFilter('projectId', e.target.value)}
+              className={SELECT_CLASS}
+            >
+              <option value="">{t('org-pages.audit.all-projects')}</option>
+              {projects.map((p) => (
+                <option key={p.id} value={p.id}>
+                  {p.name}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label={t('org-pages.audit.filter-user')}
+              value={filters.userId}
+              onChange={(e) => setFilter('userId', e.target.value)}
+              className={SELECT_CLASS}
+            >
+              <option value="">{t('org-pages.audit.all-users')}</option>
+              {userOptions.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {u.former
+                    ? t('org-pages.audit.former-user', { name: u.label })
+                    : u.label}
+                </option>
+              ))}
+            </select>
+            <select
+              aria-label={t('org-pages.audit.filter-action')}
+              value={filters.action}
+              onChange={(e) => setFilter('action', e.target.value)}
+              className={SELECT_CLASS}
+            >
+              <option value="">{t('org-pages.audit.all-actions')}</option>
+              {ACTION_FILTERS.map((prefix) => (
+                <option key={prefix} value={prefix}>
+                  {formatActionFilter(prefix, t)}
+                </option>
+              ))}
+            </select>
+            {filtered && (
+              <Button
+                variant="ghost"
+                size="sm"
+                onClick={() => setFilters(NO_FILTERS)}
+              >
+                {t('org-pages.audit.reset-filters')}
+              </Button>
+            )}
+          </fieldset>
+        }
+      />
       {content}
     </div>
   )
