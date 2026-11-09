@@ -181,7 +181,7 @@ export default function OrganizationDetail() {
     if (!confirm('Are you sure you want to remove this member?')) return
     try {
       await api.delete(`/organizations/${orgId}/members/${memberId}`)
-      setMembers(members.filter((m) => m.id !== memberId))
+      setMembers(members.filter((m) => m.userId !== memberId))
     } catch (error) {
       console.error('Failed to remove member:', error)
     }
@@ -577,7 +577,7 @@ export default function OrganizationDetail() {
                         </span>
                         {member.role !== 'OWNER' && (
                           <button
-                            onClick={() => handleRemoveMember(member.id)}
+                            onClick={() => handleRemoveMember(member.userId)}
                             className="text-gray-400 hover:text-red-600"
                             title="Remove member"
                           >

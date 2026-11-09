@@ -26,8 +26,18 @@ describe('EnvironmentsService', () => {
     it('returns environments for a project', async () => {
       const { service, prisma } = createService()
       const mockEnvs = [
-        { id: 'env-1', name: 'Development', key: 'development', projectId: 'proj-1' },
-        { id: 'env-2', name: 'Production', key: 'production', projectId: 'proj-1' },
+        {
+          id: 'env-1',
+          name: 'Development',
+          key: 'development',
+          projectId: 'proj-1',
+        },
+        {
+          id: 'env-2',
+          name: 'Production',
+          key: 'production',
+          projectId: 'proj-1',
+        },
       ]
       prisma.environment.findMany.mockResolvedValue(mockEnvs)
 
@@ -61,10 +71,9 @@ describe('EnvironmentsService', () => {
       }
       prisma.environment.create.mockResolvedValue(mockEnv)
 
-      const result = await service.create('proj-1', {
+      const result = await service.create('proj-1', 'org-1', {
         name: 'Staging',
         key: 'staging',
-        organizationId: 'org-1',
       })
 
       expect(result.name).toBe('Staging')
@@ -93,6 +102,22 @@ describe('EnvironmentsService', () => {
       expect(prisma.environment.update).toHaveBeenCalledWith({
         where: { id: 'env-1' },
         data: { name: 'Staging Updated' },
+      })
+    })
+
+    it('only forwards whitelisted fields to prisma', async () => {
+      const { service, prisma } = createService()
+      prisma.environment.update.mockResolvedValue({ id: 'env-1' })
+
+      await service.update('env-1', {
+        name: 'Renamed',
+        projectId: 'other-project',
+        organizationId: 'other-org',
+      } as any)
+
+      expect(prisma.environment.update).toHaveBeenCalledWith({
+        where: { id: 'env-1' },
+        data: { name: 'Renamed' },
       })
     })
   })

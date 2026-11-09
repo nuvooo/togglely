@@ -253,6 +253,32 @@ describe('ProjectsService', () => {
         include: { environments: true },
       })
     })
+
+    it('ignores organizationId, key and other non-whitelisted fields', async () => {
+      const { service, prisma } = createService()
+      prisma.project.update.mockResolvedValue(mockProject)
+
+      await service.update('proj-1', {
+        name: 'Renamed',
+        description: 'desc',
+        type: 'MULTI',
+        allowedOrigins: ['https://example.com'],
+        organizationId: 'attacker-org',
+        key: 'hijacked',
+        id: 'other-id',
+      } as any)
+
+      expect(prisma.project.update).toHaveBeenCalledWith({
+        where: { id: 'proj-1' },
+        data: {
+          name: 'Renamed',
+          description: 'desc',
+          type: 'MULTI',
+          allowedOrigins: ['https://example.com'],
+        },
+        include: { environments: true },
+      })
+    })
   })
 
   describe('delete', () => {
@@ -287,9 +313,9 @@ describe('ProjectsService', () => {
       prisma.project.findUnique.mockResolvedValue(mockProject)
       prisma.organizationMember.findFirst.mockResolvedValue(null)
 
-      await expect(
-        service.delete('proj-1', 'user-1')
-      ).rejects.toBeInstanceOf(ForbiddenException)
+      await expect(service.delete('proj-1', 'user-1')).rejects.toBeInstanceOf(
+        ForbiddenException
+      )
     })
   })
 
@@ -302,7 +328,7 @@ describe('ProjectsService', () => {
           key: 'flag-1',
           name: 'Flag One',
           description: 'Test flag',
-          flagType: 'BOOLEAN',
+          flagType: 'BOOLEAN' as const,
           flagEnvironments: [
             {
               brandId: null,
@@ -351,9 +377,13 @@ describe('ProjectsService', () => {
           key: 'new-flag',
           name: 'New Flag',
           description: 'Imported',
-          flagType: 'BOOLEAN',
+          flagType: 'BOOLEAN' as const,
           environments: [
-            { environmentKey: 'development', enabled: true, defaultValue: 'true' },
+            {
+              environmentKey: 'development',
+              enabled: true,
+              defaultValue: 'true',
+            },
           ],
         },
       ]
@@ -375,7 +405,7 @@ describe('ProjectsService', () => {
       prisma.featureFlag.findFirst.mockResolvedValue({ id: 'existing-flag' })
 
       const flags = [
-        { key: 'existing', name: 'Existing', flagType: 'BOOLEAN' },
+        { key: 'existing', name: 'Existing', flagType: 'BOOLEAN' as const },
       ]
 
       const result = await service.importFlags('proj-1', 'user-1', flags, {

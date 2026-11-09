@@ -131,10 +131,14 @@ export default function Settings() {
     setIsChangingPassword(true)
 
     try {
-      await api.post('/auth/change-password', {
+      const response = await api.post('/auth/change-password', {
         currentPassword,
         newPassword,
       })
+      // Old sessions are revoked on password change; keep this one alive
+      if (response.data?.token) {
+        useAuthStore.getState().setToken(response.data.token)
+      }
 
       setCurrentPassword('')
       setNewPassword('')
@@ -163,10 +167,10 @@ export default function Settings() {
     <div className="max-w-2xl mx-auto space-y-8">
       {/* Header */}
       <div>
-        <h1 className="text-3xl font-bold tracking-tight">{t('settings.title')}</h1>
-        <p className="text-muted-foreground mt-1">
-          {t('settings.subtitle')}
-        </p>
+        <h1 className="text-3xl font-bold tracking-tight">
+          {t('settings.title')}
+        </h1>
+        <p className="text-muted-foreground mt-1">{t('settings.subtitle')}</p>
       </div>
 
       {message && (
@@ -203,7 +207,9 @@ export default function Settings() {
           <form onSubmit={handleProfileSubmit} className="space-y-4">
             <div className="grid grid-cols-2 gap-4">
               <div className="space-y-2">
-                <Label htmlFor="firstName">{t('settings.profile.first-name')}</Label>
+                <Label htmlFor="firstName">
+                  {t('settings.profile.first-name')}
+                </Label>
                 <Input
                   id="firstName"
                   value={firstName}
@@ -212,7 +218,9 @@ export default function Settings() {
                 />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="lastName">{t('settings.profile.last-name')}</Label>
+                <Label htmlFor="lastName">
+                  {t('settings.profile.last-name')}
+                </Label>
                 <Input
                   id="lastName"
                   value={lastName}
@@ -236,7 +244,9 @@ export default function Settings() {
             </div>
             <div className="flex justify-end">
               <Button type="submit" disabled={isSaving}>
-                {isSaving ? t('settings.profile.saving') : t('settings.profile.save')}
+                {isSaving
+                  ? t('settings.profile.saving')
+                  : t('settings.profile.save')}
               </Button>
             </div>
           </form>
@@ -261,7 +271,9 @@ export default function Settings() {
         <CardContent>
           <form onSubmit={handlePasswordSubmit} className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="currentPassword">{t('settings.password.current')}</Label>
+              <Label htmlFor="currentPassword">
+                {t('settings.password.current')}
+              </Label>
               <Input
                 id="currentPassword"
                 type="password"
@@ -284,7 +296,9 @@ export default function Settings() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="confirmPassword">{t('settings.password.confirm')}</Label>
+              <Label htmlFor="confirmPassword">
+                {t('settings.password.confirm')}
+              </Label>
               <Input
                 id="confirmPassword"
                 type="password"
@@ -296,7 +310,9 @@ export default function Settings() {
             </div>
             <div className="flex justify-end">
               <Button type="submit" disabled={isChangingPassword}>
-                {isChangingPassword ? t('settings.password.changing') : t('settings.password.submit')}
+                {isChangingPassword
+                  ? t('settings.password.changing')
+                  : t('settings.password.submit')}
               </Button>
             </div>
           </form>

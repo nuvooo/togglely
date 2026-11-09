@@ -52,6 +52,7 @@ function createService() {
     },
     organizationMember: {
       findFirst: jest.fn(),
+      findMany: jest.fn(),
     },
     featureFlag: {
       findUnique: jest.fn(),
@@ -64,6 +65,8 @@ function createService() {
       create: jest.fn(),
       deleteMany: jest.fn(),
       findMany: jest.fn(),
+      findFirst: jest.fn(),
+      update: jest.fn(),
     },
     $transaction: jest.fn().mockImplementation((cb: any) => cb(txMock)),
   } as any
@@ -190,6 +193,16 @@ describe('FlagsService', () => {
       )
     })
 
+    it('throws NotFoundException when the flag does not exist', async () => {
+      const { service, prisma } = createService()
+      prisma.featureFlag.findUnique.mockResolvedValue(null)
+
+      await expect(service.delete('missing', 'user-1')).rejects.toBeInstanceOf(
+        NotFoundException
+      )
+      expect(prisma.$transaction).not.toHaveBeenCalled()
+    })
+
     it('skips audit log when no userId is provided', async () => {
       const { service, prisma, auditLogs } = createService()
       prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
@@ -198,6 +211,87 @@ describe('FlagsService', () => {
 
       expect(prisma.$transaction).toHaveBeenCalledTimes(1)
       expect(auditLogs.create).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('findAll', () => {
+    it('scopes to the project when projectId is given', async () => {
+      const { service, prisma } = createService()
+      prisma.project.findUnique.mockResolvedValue(mockProject)
+      prisma.organizationMember.findFirst.mockResolvedValue({ role: 'VIEWER' })
+      prisma.featureFlag.findMany.mockResolvedValue([mockFlag])
+
+      const result = await service.findAll('user-1', 'proj-1')
+
+      expect(prisma.featureFlag.findMany).toHaveBeenCalledWith({
+        where: { projectId: 'proj-1' },
+      })
+      expect(result).toHaveLength(1)
+    })
+
+    it("restricts to the user's organizations when projectId is missing", async () => {
+      const { service, prisma } = createService()
+      prisma.organizationMember.findMany.mockResolvedValue([
+        { organizationId: 'org-1' },
+        { organizationId: 'org-2' },
+      ])
+      prisma.featureFlag.findMany.mockResolvedValue([mockFlag])
+
+      await service.findAll('user-1')
+
+      expect(prisma.organizationMember.findMany).toHaveBeenCalledWith({
+        where: { userId: 'user-1' },
+        select: { organizationId: true },
+      })
+      expect(prisma.featureFlag.findMany).toHaveBeenCalledWith({
+        where: { organizationId: { in: ['org-1', 'org-2'] } },
+      })
+    })
+
+    it('returns nothing (and never queries all flags) for users without orgs', async () => {
+      const { service, prisma } = createService()
+      prisma.organizationMember.findMany.mockResolvedValue([])
+
+      const result = await service.findAll('user-1')
+
+      expect(result).toEqual([])
+      expect(prisma.featureFlag.findMany).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('updateEnvironment', () => {
+    it('scopes the FlagEnvironment-id lookup to the flag', async () => {
+      const { service, prisma } = createService()
+      prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+      prisma.flagEnvironment.findFirst.mockResolvedValueOnce({
+        id: 'fe-1',
+        flagId: 'flag-1',
+      })
+      prisma.flagEnvironment.update.mockResolvedValue({ id: 'fe-1' })
+
+      await service.updateEnvironment('flag-1', 'fe-1', { isEnabled: true })
+
+      expect(prisma.flagEnvironment.findFirst).toHaveBeenNthCalledWith(1, {
+        where: { id: 'fe-1', flagId: 'flag-1' },
+      })
+      expect(prisma.flagEnvironment.update).toHaveBeenCalledWith({
+        where: { id: 'fe-1' },
+        data: { enabled: true, defaultValue: 'true' },
+      })
+    })
+
+    it("does not modify another flag's FlagEnvironment", async () => {
+      const { service, prisma } = createService()
+      prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+      // FlagEnvironment 'fe-foreign' belongs to another flag: every
+      // flagId-scoped lookup misses.
+      prisma.flagEnvironment.findFirst.mockResolvedValue(null)
+      prisma.flagEnvironment.findMany.mockResolvedValue([])
+
+      await expect(
+        service.updateEnvironment('flag-1', 'fe-foreign', { isEnabled: true })
+      ).rejects.toBeInstanceOf(NotFoundException)
+      expect(prisma.flagEnvironment.update).not.toHaveBeenCalled()
     })
   })
 })

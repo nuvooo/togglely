@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { MailerService } from '@nestjs-modules/mailer'
+import { escapeHtml } from './utils'
 
 @Injectable()
 export class MailService {
@@ -34,10 +35,10 @@ export class MailService {
         text: `Welcome to Togglely! Please verify your email by visiting: ${verificationUrl}`,
       })
 
-      this.logger.log(`Verification email sent to ${email}`)
+      this.logger.log(`Verification email sent`)
       return true
     } catch (error) {
-      this.logger.error(`Failed to send verification email to ${email}:`, error)
+      this.logger.error(`Failed to send verification email:`, error)
       return false
     }
   }
@@ -49,15 +50,16 @@ export class MailService {
     baseUrl: string
   ) {
     const inviteUrl = `${baseUrl}/invite/${token}`
+    const safeOrganizationName = escapeHtml(organizationName)
 
     try {
       await this.mailerService.sendMail({
         to: email,
-        subject: `You've been invited to join ${organizationName} on Togglely`,
+        subject: `You've been invited to join ${organizationName.replace(/[\r\n]+/g, ' ')} on Togglely`,
         html: `
           <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto; padding: 20px;">
             <h2 style="color: #4F46E5;">You're Invited!</h2>
-            <p>You've been invited to join <strong>${organizationName}</strong> on Togglely.</p>
+            <p>You've been invited to join <strong>${safeOrganizationName}</strong> on Togglely.</p>
             <p>Click the button below to create your account and join the organization:</p>
             <a href="${inviteUrl}" 
                style="display: inline-block; background-color: #4F46E5; color: white; padding: 12px 24px; 
@@ -75,10 +77,10 @@ export class MailService {
         text: `You've been invited to join ${organizationName} on Togglely. Visit: ${inviteUrl}`,
       })
 
-      this.logger.log(`Invite email sent to ${email}`)
+      this.logger.log(`Invite email sent`)
       return true
     } catch (error) {
-      this.logger.error(`Failed to send invite email to ${email}:`, error)
+      this.logger.error(`Failed to send invite email:`, error)
       return false
     }
   }
@@ -111,13 +113,10 @@ export class MailService {
         text: `Reset your Togglely password: ${resetUrl}`,
       })
 
-      this.logger.log(`Password reset email sent to ${email}`)
+      this.logger.log(`Password reset email sent`)
       return true
     } catch (error) {
-      this.logger.error(
-        `Failed to send password reset email to ${email}:`,
-        error
-      )
+      this.logger.error(`Failed to send password reset email:`, error)
       return false
     }
   }

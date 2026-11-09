@@ -1,4 +1,5 @@
-import { IsBoolean, IsOptional, IsString } from 'class-validator'
+import { IsBoolean, IsOptional, IsString, MaxLength } from 'class-validator'
+import { FLAG_VALUE_MAX_LENGTH } from './limits'
 
 export class UpdateFlagEnvironmentDto {
   @IsBoolean()
@@ -7,5 +8,6 @@ export class UpdateFlagEnvironmentDto {
 
   @IsString()
   @IsOptional()
+  @MaxLength(FLAG_VALUE_MAX_LENGTH)
   defaultValue?: string
 }

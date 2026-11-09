@@ -20,6 +20,7 @@ import { MailService } from './shared/mail.service'
 import { MailerModule } from './shared/mailer.module'
 import { MetricsModule } from './shared/metrics/metrics.module'
 import { PrismaModule } from './shared/prisma.module'
+import { AccessModule } from './shared/access/access.module'
 
 @Module({
   imports: [
@@ -27,6 +28,7 @@ import { PrismaModule } from './shared/prisma.module'
     ThrottlerModule.forRoot([{ name: 'default', ttl: 60000, limit: 100 }]),
     winstonConfig,
     PrismaModule,
+    AccessModule,
     MailerModule,
     MetricsModule,
     HealthModule,
@@ -43,10 +45,7 @@ import { PrismaModule } from './shared/prisma.module'
     ExperimentsModule,
     EventsModule,
   ],
-  providers: [
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
-    MailService,
-  ],
+  providers: [{ provide: APP_GUARD, useClass: ThrottlerGuard }, MailService],
   exports: [MailService],
 })
 export class AppModule {}

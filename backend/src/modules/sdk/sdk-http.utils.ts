@@ -51,23 +51,24 @@ export function mapSdkError(error: { status?: number; message?: string }): {
   status: number
   body: { error: string; code: string }
 } {
-  const message = error.message || 'Internal error'
+  // Only known SDK error conditions are mapped to specific responses. Their
+  // client-facing messages are fixed strings: raw error messages (e.g. from
+  // Prisma) must never be reflected to SDK clients.
+  const message = typeof error?.message === 'string' ? error.message : ''
+  const status = error?.status
 
-  if (error.status === 401 || message.includes('Invalid API key')) {
+  if (status === 401 || message.includes('Invalid API key')) {
     return {
       status: 401,
-      body: {
-        error: message || 'Invalid API key',
-        code: SDK_ERROR_CODES.invalidApiKey,
-      },
+      body: { error: 'Invalid API key', code: SDK_ERROR_CODES.invalidApiKey },
     }
   }
 
-  if (error.status === 403 || message.includes('Origin not allowed')) {
+  if (status === 403 || message.includes('Origin not allowed')) {
     return {
       status: 403,
       body: {
-        error: message || 'Origin not allowed',
+        error: 'Origin not allowed',
         code: SDK_ERROR_CODES.originNotAllowed,
       },
     }
@@ -95,7 +96,7 @@ export function mapSdkError(error: { status?: number; message?: string }): {
 
   return {
     status: 500,
-    body: { error: message, code: SDK_ERROR_CODES.internalError },
+    body: { error: 'Internal error', code: SDK_ERROR_CODES.internalError },
   }
 }
 

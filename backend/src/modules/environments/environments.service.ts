@@ -1,4 +1,4 @@
-import { Injectable, NotFoundException } from '@nestjs/common'
+import { Injectable } from '@nestjs/common'
 import { PrismaService } from '../../shared/prisma.service'
 
 @Injectable()
@@ -11,24 +11,31 @@ export class EnvironmentsService {
     })
   }
 
+  /**
+   * Creates an environment. `organizationId` must be the owning organization
+   * of the project as resolved server-side (never taken from the request).
+   */
   async create(
     projectId: string,
-    data: { name: string; key: string; organizationId: string }
+    organizationId: string,
+    data: { name: string; key: string }
   ) {
     return this.prisma.environment.create({
       data: {
         name: data.name,
         key: data.key,
         projectId,
-        organizationId: data.organizationId,
+        organizationId,
       },
     })
   }
 
   async update(envId: string, data: { name?: string }) {
+    const updateData: { name?: string } = {}
+    if (data.name !== undefined) updateData.name = data.name
     return this.prisma.environment.update({
       where: { id: envId },
-      data,
+      data: updateData,
     })
   }
 

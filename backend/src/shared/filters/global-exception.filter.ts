@@ -43,18 +43,23 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       status = prismaResult.status
       message = prismaResult.message
       error = prismaResult.error
-    } else if (exception instanceof Error) {
-      message = exception.message
     }
 
+    // Never expose internal error details (Prisma queries, stack info, ...)
+    // to clients; they are logged below.
+    const internalMessage =
+      exception instanceof Error ? exception.message : String(exception)
+    const logPath = request.path ?? request.url
+
     if (status >= 500) {
+      message = 'Internal server error'
       this.logger.error(
-        `${request.method} ${request.url} ${status} - ${JSON.stringify(message)}`,
+        `${request.method} ${logPath} ${status} - ${JSON.stringify(internalMessage)}`,
         exception instanceof Error ? exception.stack : undefined
       )
     } else {
       this.logger.warn(
-        `${request.method} ${request.url} ${status} - ${JSON.stringify(message)}`
+        `${request.method} ${logPath} ${status} - ${JSON.stringify(message)}`
       )
     }
 
@@ -63,7 +68,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       message,
       error,
       timestamp: new Date().toISOString(),
-      path: request.url,
+      path: logPath,
     })
   }
 
@@ -99,6 +104,12 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           status: HttpStatus.NOT_FOUND,
           message: 'Record not found',
           error: 'Not Found',
+        }
+      case 'P2023':
+        return {
+          status: HttpStatus.BAD_REQUEST,
+          message: 'Invalid identifier',
+          error: 'Bad Request',
         }
       case 'P2003':
         return {

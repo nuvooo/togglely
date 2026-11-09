@@ -32,6 +32,7 @@ function createService() {
       findMany: jest.fn(),
       findFirst: jest.fn(),
       create: jest.fn(),
+      update: jest.fn(),
       delete: jest.fn(),
       count: jest.fn(),
       deleteMany: jest.fn(),
@@ -399,6 +400,76 @@ describe('OrganizationsService', () => {
       expect(result.totalOrganizations).toBe(0)
       expect(result.totalProjects).toBe(0)
       expect(result.totalFlags).toBe(0)
+    })
+  })
+
+  describe('create (slug conflict)', () => {
+    it('maps a duplicate slug to ConflictException', async () => {
+      const { service, prisma } = createService()
+      prisma.organization.create.mockRejectedValue({ code: 'P2002' })
+
+      await expect(
+        service.create('Test Org', 'taken', 'user-1')
+      ).rejects.toBeInstanceOf(ConflictException)
+      expect(prisma.organizationMember.create).not.toHaveBeenCalled()
+    })
+  })
+
+  describe('addMember (VIEWER role)', () => {
+    it('accepts the VIEWER role', async () => {
+      const { service, prisma } = createService()
+      prisma.organization.findUnique.mockResolvedValue(mockOrg)
+      prisma.user.findUnique.mockResolvedValue(mockUser)
+      prisma.organizationMember.findFirst.mockResolvedValue(null)
+      prisma.organizationMember.create.mockResolvedValue({})
+
+      await service.addMember('org-1', 'test@example.com', 'VIEWER')
+
+      expect(prisma.organizationMember.create.mock.calls[0][0].data.role).toBe(
+        'VIEWER'
+      )
+    })
+  })
+
+  describe('countOwners', () => {
+    it('counts only OWNER memberships of the organization', async () => {
+      const { service, prisma } = createService()
+      prisma.organizationMember.count.mockResolvedValue(2)
+
+      await expect(service.countOwners('org-1')).resolves.toBe(2)
+      expect(prisma.organizationMember.count).toHaveBeenCalledWith({
+        where: { organizationId: 'org-1', role: 'OWNER' },
+      })
+    })
+  })
+
+  describe('updateMemberRole', () => {
+    it('updates the role and returns a formatted member', async () => {
+      const { service, prisma } = createService()
+      prisma.organizationMember.update.mockResolvedValue({
+        id: 'member-1',
+        userId: 'user-1',
+        role: 'VIEWER',
+        user: mockUser,
+      })
+
+      const result = await service.updateMemberRole('member-1', 'VIEWER')
+
+      expect(prisma.organizationMember.update.mock.calls[0][0]).toMatchObject({
+        where: { id: 'member-1' },
+        data: { role: 'VIEWER' },
+      })
+      expect(result.name).toBe('John Doe')
+      expect(result.role).toBe('VIEWER')
+    })
+
+    it('rejects invalid roles', async () => {
+      const { service, prisma } = createService()
+
+      await expect(
+        service.updateMemberRole('member-1', 'SUPERADMIN')
+      ).rejects.toBeInstanceOf(BadRequestException)
+      expect(prisma.organizationMember.update).not.toHaveBeenCalled()
     })
   })
 })

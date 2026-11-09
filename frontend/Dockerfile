@@ -23,6 +23,7 @@ COPY --from=builder /app/dist /usr/share/nginx/html
 
 # Copy nginx configuration template
 COPY nginx.conf /etc/nginx/conf.d/default.conf.template
+COPY security-headers.conf /etc/nginx/snippets/security-headers.conf
 
 # Create startup script - use sed instead of envsubst for better control
 RUN printf '%s\n' '#!/bin/sh' \

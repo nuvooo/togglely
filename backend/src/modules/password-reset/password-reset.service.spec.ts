@@ -1,5 +1,6 @@
 import { NotFoundException } from '@nestjs/common'
 import * as bcrypt from 'bcryptjs'
+import { hashToken } from '../../shared/utils'
 import { PasswordResetService } from './password-reset.service'
 
 jest.mock('bcryptjs')
@@ -64,6 +65,19 @@ describe('PasswordResetService', () => {
       )
     })
 
+    it('stores only the hash of the emailed token', async () => {
+      const { service, prisma, mailService } = createService()
+      prisma.user.findUnique.mockResolvedValue(mockUser)
+      prisma.user.update.mockResolvedValue({})
+
+      await service.requestReset('test@example.com')
+
+      const emailedToken = mailService.sendPasswordResetEmail.mock.calls[0][1]
+      const stored = prisma.user.update.mock.calls[0][0].data.resetToken
+      expect(stored).toBe(hashToken(emailedToken))
+      expect(stored).not.toBe(emailedToken)
+    })
+
     it('silently returns for unknown email (no information leak)', async () => {
       const { service, prisma, mailService } = createService()
       prisma.user.findUnique.mockResolvedValue(null)
@@ -102,12 +116,20 @@ describe('PasswordResetService', () => {
 
       await service.resetPassword('valid-token', 'newPassword123')
 
+      expect(prisma.user.findFirst).toHaveBeenCalledWith({
+        where: {
+          resetToken: hashToken('valid-token'),
+          resetTokenExpiry: { gt: expect.any(Date) },
+        },
+      })
       expect(prisma.user.update).toHaveBeenCalledWith({
         where: { id: 'user-1' },
         data: {
           password: 'new-hashed-password',
           resetToken: null,
           resetTokenExpiry: null,
+          // revokes existing sessions
+          passwordChangedAt: expect.any(Date),
         },
       })
     })

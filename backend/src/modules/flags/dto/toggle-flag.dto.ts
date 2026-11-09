@@ -1,7 +1,7 @@
-import { IsBoolean, IsOptional, IsString } from 'class-validator'
+import { IsBoolean, IsMongoId, IsOptional } from 'class-validator'
 
 export class ToggleFlagDto {
-  @IsString()
+  @IsMongoId()
   environmentId: string
 
   @IsBoolean()

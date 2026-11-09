@@ -149,7 +149,7 @@ describe('GlobalExceptionFilter', () => {
       expect(status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR)
       expect(json).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: 'Database error',
+          message: 'Internal server error',
         })
       )
     })
@@ -166,7 +166,8 @@ describe('GlobalExceptionFilter', () => {
       expect(json).toHaveBeenCalledWith(
         expect.objectContaining({
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          message: 'Something broke',
+          // internal details must not leak to the client
+          message: 'Internal server error',
         })
       )
     })

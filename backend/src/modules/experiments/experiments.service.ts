@@ -8,7 +8,12 @@ import {
 import { ExperimentStatus } from '@prisma/client'
 import { PrismaService } from '../../shared/prisma.service'
 import { AuditLogsService } from '../audit-logs/audit-logs.service'
-import { CreateExperimentDto, CreateVariantDto } from './dto/create-experiment.dto'
+import { isObjectId } from '../../shared/access/access.service'
+import {
+  CreateExperimentDto,
+  CreateVariantDto,
+  UpdateVariantDto,
+} from './dto/create-experiment.dto'
 import { UpdateExperimentDto } from './dto/update-experiment.dto'
 
 @Injectable()
@@ -17,7 +22,7 @@ export class ExperimentsService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly auditLogs: AuditLogsService,
+    private readonly auditLogs: AuditLogsService
   ) {}
 
   async create(userId: string, dto: CreateExperimentDto) {
@@ -27,11 +32,14 @@ export class ExperimentsService {
     })
     if (!flag) throw new NotFoundException('Feature flag not found')
 
-    // Verify environment exists
+    // Verify environment exists AND belongs to the flag's project, so an
+    // experiment can never link a flag to another tenant's environment.
     const environment = await this.prisma.environment.findUnique({
       where: { id: dto.environmentId },
     })
-    if (!environment) throw new NotFoundException('Environment not found')
+    if (!environment || environment.projectId !== flag.projectId) {
+      throw new NotFoundException('Environment not found')
+    }
 
     // Check no RUNNING experiment for this flag+environment
     const existing = await this.prisma.experiment.findFirst({
@@ -43,7 +51,7 @@ export class ExperimentsService {
     })
     if (existing) {
       throw new ConflictException(
-        'An active experiment already exists for this flag and environment',
+        'An active experiment already exists for this flag and environment'
       )
     }
 
@@ -99,6 +107,10 @@ export class ExperimentsService {
   }
 
   async findAll(projectId: string, status?: ExperimentStatus) {
+    // Prisma drops `undefined` filters, which would list every tenant's
+    // experiments. Refuse to query without a project scope.
+    if (!projectId) throw new BadRequestException('projectId is required')
+
     const where: Record<string, unknown> = { projectId }
     if (status) where.status = status
 
@@ -121,7 +133,9 @@ export class ExperimentsService {
         variants: true,
         flag: true,
         environment: true,
-        createdBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+        createdBy: {
+          select: { id: true, firstName: true, lastName: true, email: true },
+        },
       },
     })
 
@@ -130,12 +144,14 @@ export class ExperimentsService {
   }
 
   async update(id: string, dto: UpdateExperimentDto) {
-    const experiment = await this.prisma.experiment.findUnique({ where: { id } })
+    const experiment = await this.prisma.experiment.findUnique({
+      where: { id },
+    })
     if (!experiment) throw new NotFoundException('Experiment not found')
 
     if (experiment.status !== 'DRAFT' && experiment.status !== 'PAUSED') {
       throw new BadRequestException(
-        'Can only update experiments in DRAFT or PAUSED status',
+        'Can only update experiments in DRAFT or PAUSED status'
       )
     }
 
@@ -147,11 +163,15 @@ export class ExperimentsService {
   }
 
   async delete(id: string, userId: string) {
-    const experiment = await this.prisma.experiment.findUnique({ where: { id } })
+    const experiment = await this.prisma.experiment.findUnique({
+      where: { id },
+    })
     if (!experiment) throw new NotFoundException('Experiment not found')
 
     if (experiment.status !== 'DRAFT') {
-      throw new BadRequestException('Can only delete experiments in DRAFT status')
+      throw new BadRequestException(
+        'Can only delete experiments in DRAFT status'
+      )
     }
 
     await this.prisma.$transaction(async (tx) => {
@@ -180,7 +200,7 @@ export class ExperimentsService {
 
     if (experiment.status !== 'DRAFT' && experiment.status !== 'PAUSED') {
       throw new BadRequestException(
-        'Can only start experiments in DRAFT or PAUSED status',
+        'Can only start experiments in DRAFT or PAUSED status'
       )
     }
 
@@ -192,14 +212,19 @@ export class ExperimentsService {
     // Validate: exactly 1 control
     const controls = experiment.variants.filter((v) => v.isControl)
     if (controls.length !== 1) {
-      throw new BadRequestException('Experiment must have exactly 1 control variant')
+      throw new BadRequestException(
+        'Experiment must have exactly 1 control variant'
+      )
     }
 
     // Validate: weights sum to 100
-    const totalWeight = experiment.variants.reduce((sum, v) => sum + v.weight, 0)
+    const totalWeight = experiment.variants.reduce(
+      (sum, v) => sum + v.weight,
+      0
+    )
     if (totalWeight !== 100) {
       throw new BadRequestException(
-        `Variant weights must sum to 100, currently ${totalWeight}`,
+        `Variant weights must sum to 100, currently ${totalWeight}`
       )
     }
 
@@ -214,7 +239,7 @@ export class ExperimentsService {
     })
     if (running) {
       throw new ConflictException(
-        'Another experiment is already running for this flag and environment',
+        'Another experiment is already running for this flag and environment'
       )
     }
 
@@ -242,7 +267,9 @@ export class ExperimentsService {
   }
 
   async pause(id: string, userId: string) {
-    const experiment = await this.prisma.experiment.findUnique({ where: { id } })
+    const experiment = await this.prisma.experiment.findUnique({
+      where: { id },
+    })
     if (!experiment) throw new NotFoundException('Experiment not found')
 
     if (experiment.status !== 'RUNNING') {
@@ -268,12 +295,14 @@ export class ExperimentsService {
   }
 
   async complete(id: string, userId: string) {
-    const experiment = await this.prisma.experiment.findUnique({ where: { id } })
+    const experiment = await this.prisma.experiment.findUnique({
+      where: { id },
+    })
     if (!experiment) throw new NotFoundException('Experiment not found')
 
     if (experiment.status !== 'RUNNING' && experiment.status !== 'PAUSED') {
       throw new BadRequestException(
-        'Can only complete RUNNING or PAUSED experiments',
+        'Can only complete RUNNING or PAUSED experiments'
       )
     }
 
@@ -307,7 +336,9 @@ export class ExperimentsService {
     if (!experiment) throw new NotFoundException('Experiment not found')
 
     if (experiment.status !== 'DRAFT') {
-      throw new BadRequestException('Can only add variants to DRAFT experiments')
+      throw new BadRequestException(
+        'Can only add variants to DRAFT experiments'
+      )
     }
 
     return this.prisma.experimentVariant.create({
@@ -326,7 +357,7 @@ export class ExperimentsService {
   async updateVariant(
     experimentId: string,
     variantId: string,
-    data: Partial<CreateVariantDto>,
+    data: UpdateVariantDto
   ) {
     const experiment = await this.prisma.experiment.findUnique({
       where: { id: experimentId },
@@ -335,9 +366,11 @@ export class ExperimentsService {
 
     if (experiment.status !== 'DRAFT' && experiment.status !== 'PAUSED') {
       throw new BadRequestException(
-        'Can only update variants in DRAFT or PAUSED experiments',
+        'Can only update variants in DRAFT or PAUSED experiments'
       )
     }
+
+    if (!isObjectId(variantId)) throw new NotFoundException('Variant not found')
 
     const variant = await this.prisma.experimentVariant.findFirst({
       where: { id: variantId, experimentId },
@@ -365,9 +398,11 @@ export class ExperimentsService {
 
     if (experiment.status !== 'DRAFT') {
       throw new BadRequestException(
-        'Can only delete variants from DRAFT experiments',
+        'Can only delete variants from DRAFT experiments'
       )
     }
+
+    if (!isObjectId(variantId)) throw new NotFoundException('Variant not found')
 
     const variant = await this.prisma.experimentVariant.findFirst({
       where: { id: variantId, experimentId },

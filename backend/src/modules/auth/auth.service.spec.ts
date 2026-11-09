@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common'
+import { ConflictException, UnauthorizedException } from '@nestjs/common'
 import * as bcrypt from 'bcryptjs'
 import { AuthService } from './auth.service'
 
@@ -112,7 +112,7 @@ describe('AuthService', () => {
 
       await expect(
         service.register('test@example.com', 'password123', 'John Doe')
-      ).rejects.toBeInstanceOf(UnauthorizedException)
+      ).rejects.toBeInstanceOf(ConflictException)
     })
   })
 })

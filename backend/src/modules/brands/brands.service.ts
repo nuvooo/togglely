@@ -85,9 +85,15 @@ export class BrandsService {
   }
 
   async update(brandId: string, data: { name?: string; description?: string }) {
+    // Copy only whitelisted fields (never projectId/key from the request).
+    const updateData: { name?: string; description?: string } = {}
+    if (data.name !== undefined) updateData.name = data.name
+    if (data.description !== undefined) {
+      updateData.description = data.description
+    }
     return this.prisma.brand.update({
       where: { id: brandId },
-      data,
+      data: updateData,
     })
   }
 

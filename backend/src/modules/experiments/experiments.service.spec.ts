@@ -17,6 +17,7 @@ const mockEnvironment = {
   id: 'env-1',
   key: 'production',
   name: 'Production',
+  projectId: 'proj-1',
 }
 
 const mockExperiment = {
@@ -39,7 +40,7 @@ const mockExperiment = {
 }
 
 const mockVariant = {
-  id: 'var-1',
+  id: '6650000000000000000000a1',
   experimentId: 'exp-1',
   key: 'control',
   name: 'Control',
@@ -50,7 +51,7 @@ const mockVariant = {
 }
 
 const mockVariantB = {
-  id: 'var-2',
+  id: '6650000000000000000000a2',
   experimentId: 'exp-1',
   key: 'treatment',
   name: 'Treatment',
@@ -222,9 +223,9 @@ describe('ExperimentsService', () => {
       const { service, prisma } = createService()
       prisma.featureFlag.findUnique.mockResolvedValue(null)
 
-      await expect(
-        service.create('user-1', createDto)
-      ).rejects.toBeInstanceOf(NotFoundException)
+      await expect(service.create('user-1', createDto)).rejects.toBeInstanceOf(
+        NotFoundException
+      )
     })
 
     it('throws NotFoundException when environment does not exist', async () => {
@@ -232,9 +233,45 @@ describe('ExperimentsService', () => {
       prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
       prisma.environment.findUnique.mockResolvedValue(null)
 
-      await expect(
-        service.create('user-1', createDto)
-      ).rejects.toBeInstanceOf(NotFoundException)
+      await expect(service.create('user-1', createDto)).rejects.toBeInstanceOf(
+        NotFoundException
+      )
+    })
+
+    it('throws NotFoundException when environment belongs to another project', async () => {
+      const { service, prisma } = createService()
+      prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+      prisma.environment.findUnique.mockResolvedValue({
+        ...mockEnvironment,
+        projectId: 'other-proj',
+      })
+
+      await expect(service.create('user-1', createDto)).rejects.toBeInstanceOf(
+        NotFoundException
+      )
+      expect(prisma.experiment.create).not.toHaveBeenCalled()
+    })
+
+    it('derives projectId/organizationId from the flag and attributes createdBy', async () => {
+      const { service, prisma } = createService()
+      prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+      prisma.environment.findUnique.mockResolvedValue(mockEnvironment)
+      prisma.experiment.findFirst.mockResolvedValue(null)
+      prisma.experiment.create.mockResolvedValue(mockExperiment)
+      prisma.experiment.findUnique.mockResolvedValue(mockExperiment)
+
+      await service.create('user-1', {
+        ...createDto,
+        // Extra fields would be stripped by the ValidationPipe whitelist;
+        // even if present, the service must ignore them.
+        projectId: 'evil-proj',
+        organizationId: 'evil-org',
+      } as any)
+
+      const createData = prisma.experiment.create.mock.calls[0][0].data
+      expect(createData.project).toEqual({ connect: { id: 'proj-1' } })
+      expect(createData.organization).toEqual({ connect: { id: 'org-1' } })
+      expect(createData.createdBy).toEqual({ connect: { id: 'user-1' } })
     })
 
     it('throws ConflictException when active experiment exists for flag+environment', async () => {
@@ -243,9 +280,9 @@ describe('ExperimentsService', () => {
       prisma.environment.findUnique.mockResolvedValue(mockEnvironment)
       prisma.experiment.findFirst.mockResolvedValue(mockExperiment)
 
-      await expect(
-        service.create('user-1', createDto)
-      ).rejects.toBeInstanceOf(ConflictException)
+      await expect(service.create('user-1', createDto)).rejects.toBeInstanceOf(
+        ConflictException
+      )
 
       expect(prisma.experiment.findFirst).toHaveBeenCalledWith({
         where: {
@@ -334,6 +371,15 @@ describe('ExperimentsService', () => {
 
       expect(result).toEqual([])
     })
+
+    it('refuses to query without a projectId (no cross-tenant listing)', async () => {
+      const { service, prisma } = createService()
+
+      await expect(service.findAll(undefined as any)).rejects.toBeInstanceOf(
+        BadRequestException
+      )
+      expect(prisma.experiment.findMany).not.toHaveBeenCalled()
+    })
   })
 
   describe('findOne', () => {
@@ -349,7 +395,9 @@ describe('ExperimentsService', () => {
           variants: true,
           flag: true,
           environment: true,
-          createdBy: { select: { id: true, firstName: true, lastName: true, email: true } },
+          createdBy: {
+            select: { id: true, firstName: true, lastName: true, email: true },
+          },
         },
       })
       expect(result).toBeDefined()
@@ -393,9 +441,9 @@ describe('ExperimentsService', () => {
       const { service, prisma } = createService()
       prisma.experiment.findUnique.mockResolvedValue(null)
 
-      await expect(
-        service.update('missing', updateDto)
-      ).rejects.toBeInstanceOf(NotFoundException)
+      await expect(service.update('missing', updateDto)).rejects.toBeInstanceOf(
+        NotFoundException
+      )
     })
 
     it('throws BadRequestException when experiment is RUNNING', async () => {
@@ -405,9 +453,9 @@ describe('ExperimentsService', () => {
         status: 'RUNNING',
       })
 
-      await expect(
-        service.update('exp-1', updateDto)
-      ).rejects.toBeInstanceOf(BadRequestException)
+      await expect(service.update('exp-1', updateDto)).rejects.toBeInstanceOf(
+        BadRequestException
+      )
     })
 
     it('throws BadRequestException when experiment is COMPLETED', async () => {
@@ -417,9 +465,9 @@ describe('ExperimentsService', () => {
         status: 'COMPLETED',
       })
 
-      await expect(
-        service.update('exp-1', updateDto)
-      ).rejects.toBeInstanceOf(BadRequestException)
+      await expect(service.update('exp-1', updateDto)).rejects.toBeInstanceOf(
+        BadRequestException
+      )
     })
 
     it('allows updating PAUSED experiments', async () => {
@@ -483,9 +531,9 @@ describe('ExperimentsService', () => {
         status: 'RUNNING',
       })
 
-      await expect(
-        service.delete('exp-1', 'user-1')
-      ).rejects.toBeInstanceOf(BadRequestException)
+      await expect(service.delete('exp-1', 'user-1')).rejects.toBeInstanceOf(
+        BadRequestException
+      )
     })
   })
 
@@ -550,9 +598,9 @@ describe('ExperimentsService', () => {
         variants: [mockVariant, mockVariantB],
       })
 
-      await expect(
-        service.start('exp-1', 'user-1')
-      ).rejects.toBeInstanceOf(BadRequestException)
+      await expect(service.start('exp-1', 'user-1')).rejects.toBeInstanceOf(
+        BadRequestException
+      )
     })
 
     it('throws BadRequestException when fewer than 2 variants', async () => {
@@ -563,9 +611,9 @@ describe('ExperimentsService', () => {
         variants: [mockVariant],
       })
 
-      await expect(
-        service.start('exp-1', 'user-1')
-      ).rejects.toBeInstanceOf(BadRequestException)
+      await expect(service.start('exp-1', 'user-1')).rejects.toBeInstanceOf(
+        BadRequestException
+      )
     })
 
     it('throws BadRequestException when no control variant', async () => {
@@ -573,15 +621,12 @@ describe('ExperimentsService', () => {
       prisma.experiment.findUnique.mockResolvedValue({
         ...mockExperiment,
         status: 'DRAFT',
-        variants: [
-          { ...mockVariant, isControl: false },
-          mockVariantB,
-        ],
+        variants: [{ ...mockVariant, isControl: false }, mockVariantB],
       })
 
-      await expect(
-        service.start('exp-1', 'user-1')
-      ).rejects.toBeInstanceOf(BadRequestException)
+      await expect(service.start('exp-1', 'user-1')).rejects.toBeInstanceOf(
+        BadRequestException
+      )
     })
 
     it('throws BadRequestException when multiple controls', async () => {
@@ -589,15 +634,12 @@ describe('ExperimentsService', () => {
       prisma.experiment.findUnique.mockResolvedValue({
         ...mockExperiment,
         status: 'DRAFT',
-        variants: [
-          mockVariant,
-          { ...mockVariantB, isControl: true },
-        ],
+        variants: [mockVariant, { ...mockVariantB, isControl: true }],
       })
 
-      await expect(
-        service.start('exp-1', 'user-1')
-      ).rejects.toBeInstanceOf(BadRequestException)
+      await expect(service.start('exp-1', 'user-1')).rejects.toBeInstanceOf(
+        BadRequestException
+      )
     })
 
     it('throws BadRequestException when weights do not sum to 100', async () => {
@@ -611,9 +653,9 @@ describe('ExperimentsService', () => {
         ],
       })
 
-      await expect(
-        service.start('exp-1', 'user-1')
-      ).rejects.toBeInstanceOf(BadRequestException)
+      await expect(service.start('exp-1', 'user-1')).rejects.toBeInstanceOf(
+        BadRequestException
+      )
     })
 
     it('throws ConflictException when another experiment is running for same flag+environment', async () => {
@@ -628,9 +670,9 @@ describe('ExperimentsService', () => {
         status: 'RUNNING',
       })
 
-      await expect(
-        service.start('exp-1', 'user-1')
-      ).rejects.toBeInstanceOf(ConflictException)
+      await expect(service.start('exp-1', 'user-1')).rejects.toBeInstanceOf(
+        ConflictException
+      )
     })
 
     it('preserves existing startedAt when restarting', async () => {
@@ -693,9 +735,9 @@ describe('ExperimentsService', () => {
         status: 'DRAFT',
       })
 
-      await expect(
-        service.pause('exp-1', 'user-1')
-      ).rejects.toBeInstanceOf(BadRequestException)
+      await expect(service.pause('exp-1', 'user-1')).rejects.toBeInstanceOf(
+        BadRequestException
+      )
     })
   })
 
@@ -755,9 +797,9 @@ describe('ExperimentsService', () => {
         status: 'DRAFT',
       })
 
-      await expect(
-        service.complete('exp-1', 'user-1')
-      ).rejects.toBeInstanceOf(BadRequestException)
+      await expect(service.complete('exp-1', 'user-1')).rejects.toBeInstanceOf(
+        BadRequestException
+      )
     })
 
     it('sets endedAt when completing', async () => {
@@ -848,12 +890,16 @@ describe('ExperimentsService', () => {
         weight: 75,
       })
 
-      const result = await service.updateVariant('exp-1', 'var-1', {
-        weight: 75,
-      })
+      const result = await service.updateVariant(
+        'exp-1',
+        '6650000000000000000000a1',
+        {
+          weight: 75,
+        }
+      )
 
       expect(prisma.experimentVariant.update).toHaveBeenCalledWith({
-        where: { id: 'var-1' },
+        where: { id: '6650000000000000000000a1' },
         data: { weight: 75 },
       })
       expect(result.weight).toBe(75)
@@ -868,7 +914,9 @@ describe('ExperimentsService', () => {
       prisma.experimentVariant.findFirst.mockResolvedValue(mockVariant)
       prisma.experimentVariant.update.mockResolvedValue(mockVariant)
 
-      await service.updateVariant('exp-1', 'var-1', { name: 'Updated' })
+      await service.updateVariant('exp-1', '6650000000000000000000a1', {
+        name: 'Updated',
+      })
 
       expect(prisma.experimentVariant.update).toHaveBeenCalled()
     })
@@ -878,7 +926,9 @@ describe('ExperimentsService', () => {
       prisma.experiment.findUnique.mockResolvedValue(null)
 
       await expect(
-        service.updateVariant('missing', 'var-1', { name: 'New' })
+        service.updateVariant('missing', '6650000000000000000000a1', {
+          name: 'New',
+        })
       ).rejects.toBeInstanceOf(NotFoundException)
     })
 
@@ -890,7 +940,9 @@ describe('ExperimentsService', () => {
       })
 
       await expect(
-        service.updateVariant('exp-1', 'var-1', { name: 'New' })
+        service.updateVariant('exp-1', '6650000000000000000000a1', {
+          name: 'New',
+        })
       ).rejects.toBeInstanceOf(BadRequestException)
     })
 
@@ -903,8 +955,26 @@ describe('ExperimentsService', () => {
       prisma.experimentVariant.findFirst.mockResolvedValue(null)
 
       await expect(
-        service.updateVariant('exp-1', 'missing-var', { name: 'New' })
+        service.updateVariant('exp-1', '6650000000000000000000ff', {
+          name: 'New',
+        })
       ).rejects.toBeInstanceOf(NotFoundException)
+      expect(prisma.experimentVariant.findFirst).toHaveBeenCalledWith({
+        where: { id: '6650000000000000000000ff', experimentId: 'exp-1' },
+      })
+    })
+
+    it('throws NotFoundException for a malformed variant id without querying', async () => {
+      const { service, prisma } = createService()
+      prisma.experiment.findUnique.mockResolvedValue({
+        ...mockExperiment,
+        status: 'DRAFT',
+      })
+
+      await expect(
+        service.updateVariant('exp-1', 'not-an-id', { name: 'New' })
+      ).rejects.toBeInstanceOf(NotFoundException)
+      expect(prisma.experimentVariant.findFirst).not.toHaveBeenCalled()
     })
   })
 
@@ -917,10 +987,10 @@ describe('ExperimentsService', () => {
       })
       prisma.experimentVariant.findFirst.mockResolvedValue(mockVariant)
 
-      await service.deleteVariant('exp-1', 'var-1')
+      await service.deleteVariant('exp-1', '6650000000000000000000a1')
 
       expect(prisma.experimentVariant.delete).toHaveBeenCalledWith({
-        where: { id: 'var-1' },
+        where: { id: '6650000000000000000000a1' },
       })
     })
 
@@ -929,7 +999,7 @@ describe('ExperimentsService', () => {
       prisma.experiment.findUnique.mockResolvedValue(null)
 
       await expect(
-        service.deleteVariant('missing', 'var-1')
+        service.deleteVariant('missing', '6650000000000000000000a1')
       ).rejects.toBeInstanceOf(NotFoundException)
     })
 
@@ -941,7 +1011,7 @@ describe('ExperimentsService', () => {
       })
 
       await expect(
-        service.deleteVariant('exp-1', 'var-1')
+        service.deleteVariant('exp-1', '6650000000000000000000a1')
       ).rejects.toBeInstanceOf(BadRequestException)
     })
 

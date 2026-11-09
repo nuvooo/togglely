@@ -19,7 +19,7 @@ export class FlagsService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly auditLogs: AuditLogsService,
+    private readonly auditLogs: AuditLogsService
   ) {}
 
   async findAll(userId: string, projectId?: string, environmentId?: string) {
@@ -35,7 +35,19 @@ export class FlagsService {
       if (!membership) throw new ForbiddenException('Access denied')
     }
 
-    const where = projectId ? { projectId } : {}
+    let where: { projectId: string } | { organizationId: { in: string[] } }
+    if (projectId) {
+      where = { projectId }
+    } else {
+      // Never list flags across tenants: restrict to the user's organizations.
+      const memberships = await this.prisma.organizationMember.findMany({
+        where: { userId },
+        select: { organizationId: true },
+      })
+      const organizationIds = memberships.map((m) => m.organizationId)
+      if (organizationIds.length === 0) return []
+      where = { organizationId: { in: organizationIds } }
+    }
     const flags = await this.prisma.featureFlag.findMany({ where })
 
     // If environmentId is provided, get the actual enabled status
@@ -204,41 +216,46 @@ export class FlagsService {
       createdById: userId,
     })
 
-    const { created, envsWithNames } = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.featureFlag.create({
-        data: {
-          id: flag.id,
-          key: flag.key,
-          name: flag.name,
-          description: flag.description,
-          flagType: flag.type,
-          projectId: flag.projectId,
-          organizationId: flag.organizationId,
-          createdById: userId,
-        },
-      })
+    const { created, envsWithNames } = await this.prisma.$transaction(
+      async (tx) => {
+        const created = await tx.featureFlag.create({
+          data: {
+            id: flag.id,
+            key: flag.key,
+            name: flag.name,
+            description: flag.description,
+            flagType: flag.type,
+            projectId: flag.projectId,
+            organizationId: flag.organizationId,
+            createdById: userId,
+          },
+        })
 
-      await Promise.all(
-        project.environments.map((env) =>
-          tx.flagEnvironment.create({
-            data: {
-              flagId: created.id,
-              environmentId: env.id,
-              enabled: dto.initialValues?.[env.key]?.enabled ?? false,
-              defaultValue: dto.initialValues?.[env.key]?.value ?? 'false',
-            },
-          })
+        await Promise.all(
+          project.environments.map((env) =>
+            tx.flagEnvironment.create({
+              data: {
+                flagId: created.id,
+                environmentId: env.id,
+                // Must be explicit: on MongoDB a `brandId: null` filter does
+                // not match documents where the field is missing.
+                brandId: null,
+                enabled: dto.initialValues?.[env.key]?.enabled ?? false,
+                defaultValue: dto.initialValues?.[env.key]?.value ?? 'false',
+              },
+            })
+          )
         )
-      )
 
-      // Get environments with names for the response
-      const envsWithNames = await tx.flagEnvironment.findMany({
-        where: { flagId: created.id, brandId: null },
-        include: { environment: true },
-      })
+        // Get environments with names for the response
+        const envsWithNames = await tx.flagEnvironment.findMany({
+          where: { flagId: created.id, brandId: null },
+          include: { environment: true },
+        })
 
-      return { created, envsWithNames }
-    })
+        return { created, envsWithNames }
+      }
+    )
 
     await this.auditLogs.create({
       action: 'flag.created',
@@ -247,7 +264,11 @@ export class FlagsService {
       userId,
       organizationId: project.organizationId,
       projectId,
-      newValues: { key: created.key, name: created.name, flagType: created.flagType },
+      newValues: {
+        key: created.key,
+        name: created.name,
+        flagType: created.flagType,
+      },
     })
 
     return {
@@ -374,9 +395,11 @@ export class FlagsService {
 
     if (!flag) throw new NotFoundException('Flag not found')
 
-    // Try 1: Find by flagEnvironment.id directly (most likely case)
+    // Try 1: Find by flagEnvironment.id directly (most likely case).
+    // Always scoped to flagId so a FlagEnvironment of another flag/tenant can
+    // never be modified through this flag's route.
     let existing = await this.prisma.flagEnvironment.findFirst({
-      where: { id: envId },
+      where: { id: envId, flagId },
     })
     this.logger.debug(
       `[updateEnvironment] direct lookup result: ${existing ? 'found' : 'not found'}`
@@ -403,9 +426,9 @@ export class FlagsService {
       )
 
       // Find one matching the envId (either by environment.id or flagEnvironment.id)
-      existing = allEnvs.find(
-        (fe) => fe.id === envId || fe.environmentId === envId
-      ) ?? null
+      existing =
+        allEnvs.find((fe) => fe.id === envId || fe.environmentId === envId) ??
+        null
     }
 
     if (existing) {
@@ -501,13 +524,14 @@ export class FlagsService {
     const flag = await this.prisma.featureFlag.findUnique({
       where: { id: flagId },
     })
+    if (!flag) throw new NotFoundException('Flag not found')
 
     await this.prisma.$transaction(async (tx) => {
       await tx.flagEnvironment.deleteMany({ where: { flagId } })
       await tx.featureFlag.delete({ where: { id: flagId } })
     })
 
-    if (flag && userId) {
+    if (userId) {
       await this.auditLogs.create({
         action: 'flag.deleted',
         entityType: 'FeatureFlag',

@@ -4,7 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
-import { OrganizationRole } from '@prisma/client'
+import { Organization, OrganizationRole } from '@prisma/client'
 import { randomUUID } from 'crypto'
 import { PrismaService } from '../../shared/prisma.service'
 
@@ -14,6 +14,7 @@ export class OrganizationsService {
     'OWNER',
     'ADMIN',
     'MEMBER',
+    'VIEWER',
   ])
 
   constructor(private readonly prisma: PrismaService) {}
@@ -115,12 +116,20 @@ export class OrganizationsService {
     // Always use UUID as slug for uniqueness
     const finalSlug = slug || randomUUID()
 
-    const org = await this.prisma.organization.create({
-      data: {
-        name,
-        slug: finalSlug,
-      },
-    })
+    let org: Organization
+    try {
+      org = await this.prisma.organization.create({
+        data: {
+          name,
+          slug: finalSlug,
+        },
+      })
+    } catch (error: any) {
+      if (error?.code === 'P2002') {
+        throw new ConflictException('Organization slug is already taken')
+      }
+      throw error
+    }
 
     await this.prisma.organizationMember.create({
       data: {
@@ -252,6 +261,42 @@ export class OrganizationsService {
         },
       },
     })
+  }
+
+  async getMember(orgId: string, userId: string) {
+    return this.prisma.organizationMember.findFirst({
+      where: { organizationId: orgId, userId },
+    })
+  }
+
+  async countOwners(orgId: string) {
+    return this.prisma.organizationMember.count({
+      where: { organizationId: orgId, role: 'OWNER' },
+    })
+  }
+
+  async updateMemberRole(memberId: string, role: string) {
+    const updated = await this.prisma.organizationMember.update({
+      where: { id: memberId },
+      data: { role: this.parseOrganizationRole(role) },
+      include: {
+        user: {
+          select: { id: true, email: true, firstName: true, lastName: true },
+        },
+      },
+    })
+
+    return {
+      id: updated.id,
+      userId: updated.userId,
+      email: updated.user.email,
+      firstName: updated.user.firstName,
+      lastName: updated.user.lastName,
+      name:
+        `${updated.user.firstName ?? ''} ${updated.user.lastName ?? ''}`.trim() ||
+        updated.user.email,
+      role: updated.role,
+    }
   }
 
   async removeMember(orgId: string, userId: string) {

@@ -16,6 +16,8 @@ This starts:
 
 Make sure the Togglely backend is running on port 4000 and exposes a `/metrics` endpoint.
 
+**Security:** `/metrics` is protected by the backend env var `METRICS_TOKEN`. In production the endpoint is disabled (404) when no token is set. Configure the same token under `authorization` in `prometheus.yml`.
+
 ## Available Dashboards
 
 Both dashboards are provisioned automatically under the **Togglely** folder in Grafana.

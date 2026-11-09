@@ -1,4 +1,11 @@
-import { IsBoolean, IsOptional, IsString, IsUUID } from 'class-validator'
+import {
+  IsBoolean,
+  IsMongoId,
+  IsOptional,
+  IsString,
+  MaxLength,
+} from 'class-validator'
+import { FLAG_VALUE_MAX_LENGTH } from './limits'
 
 export class UpdateFlagValueDto {
   @IsBoolean()
@@ -7,9 +14,11 @@ export class UpdateFlagValueDto {
 
   @IsString()
   @IsOptional()
+  @MaxLength(FLAG_VALUE_MAX_LENGTH)
   value?: string
 
-  @IsUUID()
+  // Brand ids are MongoDB ObjectIds. null/undefined = environment default.
+  @IsMongoId()
   @IsOptional()
   brandId?: string | null
 }

@@ -22,8 +22,7 @@ environment:
     required: true
     
   - name: JWT_SECRET
-    default: change-this-secret-in-production
-    description: "JWT Secret for authentication"
+    description: "JWT Secret for authentication (min. 32 chars, e.g. openssl rand -hex 32). The backend refuses to start with a weak secret."
     required: true
     isSecret: true
     
@@ -35,8 +34,15 @@ environment:
     default: "3000"
     description: "Frontend server port"
     
+  - name: FRONTEND_URL
+    description: "Public URL of the dashboard, used for links in emails (e.g. https://app.togglely.de)"
+    required: true
+
+  - name: METRICS_TOKEN
+    description: "Bearer token for /metrics (disabled in production when unset)"
+    isSecret: true
+
   - name: CORS_ORIGINS
-    default: "*"
     description: "Comma-separated list of allowed CORS origins (e.g., https://app.togglely.de,https://www.mein-shop.de)"
     
   - name: VITE_API_URL
@@ -53,13 +59,6 @@ ports:
     port: 3000
     description: "Frontend web port"
     
-  - name: mongodb
-    port: 27017
-    description: "MongoDB port (internal)"
-    
-  - name: redis
-    port: 6379
-    description: "Redis port (internal)"
 
 # Health checks
 healthchecks:
@@ -94,8 +93,6 @@ services:
       MONGO_INITDB_DATABASE: togglely
     volumes:
       - mongodb_data:/data/db
-    ports:
-      - "27017:27017"
     healthcheck:
       test: echo "try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb:27017'}]}) }" | mongosh --port 27017 --quiet
       interval: 5s
@@ -106,8 +103,6 @@ services:
     image: redis:7-alpine
     volumes:
       - redis_data:/data
-    ports:
-      - "6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -124,8 +119,11 @@ services:
       - REDIS_URL=${REDIS_URL}
       - JWT_SECRET=${JWT_SECRET}
       - PORT=${PORT}
-    ports:
-      - "${PORT}:4000"
+      - FRONTEND_URL=${FRONTEND_URL}
+      - CORS_ORIGINS=${CORS_ORIGINS}
+      - METRICS_TOKEN=${METRICS_TOKEN}
+    expose:
+      - "4000"
     depends_on:
       mongodb:
         condition: service_healthy

@@ -9,6 +9,8 @@ import { PrismaService } from '../../shared/prisma.service'
 import { isPrismaUniqueConstraintError } from '../../shared/prisma-errors'
 import { getDefaultFlagValue } from '../sdk/sdk.helpers'
 import { CreateProjectDto } from './dto/create-project.dto'
+import { ImportFlagDto, ImportFlagsOptionsDto } from './dto/import-flags.dto'
+import { UpdateProjectDto } from './dto/update-project.dto'
 
 @Injectable()
 export class ProjectsService {
@@ -255,15 +257,22 @@ export class ProjectsService {
     })
   }
 
-  async update(
-    projectId: string,
-    data: {
+  async update(projectId: string, dto: UpdateProjectDto) {
+    // Copy only whitelisted fields. Never pass the request body straight to
+    // Prisma: that would allow changing organizationId/key (mass assignment).
+    const data: {
       name?: string
       description?: string
       type?: 'SINGLE' | 'MULTI'
       allowedOrigins?: string[]
+    } = {}
+    if (dto.name !== undefined) data.name = dto.name
+    if (dto.description !== undefined) data.description = dto.description
+    if (dto.type !== undefined) data.type = dto.type
+    if (dto.allowedOrigins !== undefined) {
+      data.allowedOrigins = [...dto.allowedOrigins]
     }
-  ) {
+
     const updated = await this.prisma.project.update({
       where: { id: projectId },
       data,
@@ -432,8 +441,8 @@ export class ProjectsService {
   async importFlags(
     projectId: string,
     userId: string,
-    flags: any[],
-    options: { overwrite?: boolean; skipExisting?: boolean } = {}
+    flags: ImportFlagDto[],
+    options: ImportFlagsOptionsDto = {}
   ) {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },

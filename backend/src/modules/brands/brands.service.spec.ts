@@ -94,9 +94,9 @@ describe('BrandsService', () => {
       const { service, prisma } = createService()
       prisma.brand.findUnique.mockResolvedValue(null)
 
-      await expect(
-        service.findFlagsForBrand('missing')
-      ).rejects.toBeInstanceOf(NotFoundException)
+      await expect(service.findFlagsForBrand('missing')).rejects.toBeInstanceOf(
+        NotFoundException
+      )
     })
 
     it('uses brand-specific override when available', async () => {
@@ -164,6 +164,22 @@ describe('BrandsService', () => {
       const result = await service.update('brand-1', { name: 'Updated Brand' })
 
       expect(result.name).toBe('Updated Brand')
+    })
+
+    it('only forwards whitelisted fields to prisma', async () => {
+      const { service, prisma } = createService()
+      prisma.brand.update.mockResolvedValue(mockBrand)
+
+      await service.update('brand-1', {
+        name: 'Renamed',
+        projectId: 'other-project',
+        key: 'hijacked',
+      } as any)
+
+      expect(prisma.brand.update).toHaveBeenCalledWith({
+        where: { id: 'brand-1' },
+        data: { name: 'Renamed' },
+      })
     })
   })
 

@@ -31,18 +31,18 @@ COPY --from=backend-builder /app/backend/package*.json ./backend/
 COPY --from=backend-builder /app/backend/prisma ./backend/prisma
 
 # Copy frontend build
-COPY --from=frontend-builder /app/dist /usr/share/nginx/html
+COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
 # Create startup script
 RUN echo '#!/bin/sh' > /app/start.sh && \
-    echo 'cd /app/backend && npx prisma generate && npx prisma db push --accept-data-loss && node dist/index.js & nginx -g "daemon off;"' >> /app/start.sh && \
+    echo 'cd /app/backend && npx prisma generate && npx prisma db push && node dist/main & nginx -g "daemon off;"' >> /app/start.sh && \
     chmod +x /app/start.sh
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD wget --quiet --tries=1 --spider http://localhost:4000/api/health || exit 1
 
-EXPOSE 80 4000
+EXPOSE 80
 
 CMD ["/app/start.sh"]

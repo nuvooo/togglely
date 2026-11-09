@@ -93,10 +93,44 @@ describe('sdk-http.utils', () => {
       })
     })
 
-    it('returns a safe fallback for unexpected errors', () => {
+    it('returns a generic message for unexpected errors', () => {
       expect(mapSdkError({ message: 'Boom' })).toEqual({
         status: 500,
-        body: { error: 'Boom', code: 'INTERNAL_ERROR' },
+        body: { error: 'Internal error', code: 'INTERNAL_ERROR' },
+      })
+      expect(
+        mapSdkError({
+          message:
+            'Invalid `prisma.brand.findFirst()` invocation: Malformed ObjectID',
+        })
+      ).toEqual({
+        status: 500,
+        body: { error: 'Internal error', code: 'INTERNAL_ERROR' },
+      })
+      expect(mapSdkError({} as any)).toEqual({
+        status: 500,
+        body: { error: 'Internal error', code: 'INTERNAL_ERROR' },
+      })
+    })
+
+    it('uses fixed messages for auth/origin errors', () => {
+      expect(
+        mapSdkError({
+          status: 401,
+          message: 'API key does not have access to this project',
+        })
+      ).toEqual({
+        status: 401,
+        body: { error: 'Invalid API key', code: 'INVALID_API_KEY' },
+      })
+      expect(
+        mapSdkError({
+          status: 401,
+          message: 'API key does not have access to this environment',
+        })
+      ).toEqual({
+        status: 401,
+        body: { error: 'Invalid API key', code: 'INVALID_API_KEY' },
       })
     })
   })
