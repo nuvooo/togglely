@@ -1,8 +1,8 @@
 import { AlertTriangle } from 'lucide-react'
-import { Component } from 'react'
 import type { ErrorInfo, ReactNode } from 'react'
-import { withTranslation } from 'react-i18next'
+import { Component } from 'react'
 import type { WithTranslation } from 'react-i18next'
+import { withTranslation } from 'react-i18next'
 import { Button } from '@/components/ui/button'
 
 interface ErrorBoundaryProps extends WithTranslation {

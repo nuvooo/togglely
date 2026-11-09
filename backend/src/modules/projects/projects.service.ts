@@ -4,6 +4,7 @@ import {
   Injectable,
   NotFoundException,
 } from '@nestjs/common'
+import { FeatureFlag } from '@prisma/client'
 import { Project } from '../../domain/project.entity'
 import { PrismaService } from '../../shared/prisma.service'
 import { isPrismaUniqueConstraintError } from '../../shared/prisma-errors'
@@ -13,11 +14,11 @@ import {
   ENVIRONMENT_ORDER_BY,
   sortByEnvironmentPosition,
 } from '../environments/environment-order'
+import { latestFlagUpdate } from '../flags/flag-timestamps'
 import { getDefaultFlagValue } from '../sdk/sdk.helpers'
 import { CreateProjectDto } from './dto/create-project.dto'
 import { ImportFlagDto, ImportFlagsOptionsDto } from './dto/import-flags.dto'
 import { UpdateProjectDto } from './dto/update-project.dto'
-import { latestFlagUpdate } from '../flags/flag-timestamps'
 
 @Injectable()
 export class ProjectsService {
@@ -522,7 +523,7 @@ export class ProjectsService {
         }
 
         // Create or update flag
-        let flag
+        let flag: FeatureFlag
         if (existingFlag && options.overwrite) {
           flag = await this.prisma.featureFlag.update({
             where: { id: existingFlag.id },

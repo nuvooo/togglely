@@ -20,17 +20,18 @@ import AppShell from './components/shell/AppShell'
 import { ROUTES } from './lib/routes'
 import { fetchSetupStatus } from './lib/setup'
 
-const ApiKeys = lazy(() => import('./pages/ApiKeys'))
-const AuditLogs = lazy(() => import('./pages/AuditLogs'))
-const Dashboard = lazy(() => import('./pages/Dashboard'))
-const ForgotPassword = lazy(() => import('./pages/ForgotPassword'))
-const InviteAccept = lazy(() => import('./pages/InviteAccept'))
-const Login = lazy(() => import('./pages/Login'))
-const CreateOrganization = lazy(() => import('./pages/organizations/CreateOrganization'))
-const OrganizationDetail = lazy(() => import('./pages/organizations/OrganizationDetail'))
-const OrganizationList = lazy(() => import('./pages/organizations/OrganizationList'))
-const OrganizationMembers = lazy(() => import('./pages/organizations/OrganizationMembers'))
-const OrganizationSettings = lazy(() => import('./pages/organizations/OrganizationSettings'))
+const AccountPage = lazy(() => import('./pages/account/AccountPage'))
+const ForgotPassword = lazy(() => import('./pages/auth/ForgotPasswordPage'))
+const InviteAccept = lazy(() => import('./pages/auth/InviteAcceptPage'))
+const Login = lazy(() => import('./pages/auth/LoginPage'))
+const OverviewPage = lazy(() => import('./pages/overview/OverviewPage'))
+const ApiKeysPage = lazy(() => import('./pages/orgs/api-keys/ApiKeysPage'))
+const AuditLogPage = lazy(() => import('./pages/orgs/audit-log/AuditLogPage'))
+const CreateOrgPage = lazy(() => import('./pages/orgs/new/CreateOrgPage'))
+const OrgListPage = lazy(() => import('./pages/orgs/list/OrgListPage'))
+const OrgMembersPage = lazy(() => import('./pages/orgs/members/OrgMembersPage'))
+const OrgProjectsPage = lazy(() => import('./pages/orgs/projects/OrgProjectsPage'))
+const OrgSettingsPage = lazy(() => import('./pages/orgs/settings/OrgSettingsPage'))
 const ProjectPicker = lazy(() => import('./pages/ProjectPicker'))
 const FlagsPage = lazy(() => import('./pages/projects/flags/FlagsPage'))
 const FlagDetailPage = lazy(() => import('./pages/projects/flags/detail/FlagDetailPage'))
@@ -41,14 +42,13 @@ const SdkTesterPage = lazy(() => import('./pages/projects/sdk/SdkTesterPage'))
 const ProjectSettingsPage = lazy(() => import('./pages/projects/settings/ProjectSettingsPage'))
 const Webhooks = lazy(() => import('./pages/projects/Webhooks'))
 const WebhookDetail = lazy(() => import('./pages/projects/WebhookDetail'))
-const ResendVerification = lazy(() => import('./pages/ResendVerification'))
-const ResetPassword = lazy(() => import('./pages/ResetPassword'))
+const ResendVerification = lazy(() => import('./pages/auth/ResendVerificationPage'))
+const ResetPassword = lazy(() => import('./pages/auth/ResetPasswordPage'))
 const ExperimentsList = lazy(() => import('./pages/experiments/ExperimentsList'))
 const CreateExperiment = lazy(() => import('./pages/experiments/CreateExperiment'))
 const ExperimentDetail = lazy(() => import('./pages/experiments/ExperimentDetail'))
-const Settings = lazy(() => import('./pages/Settings'))
-const Setup = lazy(() => import('./pages/Setup'))
-const VerifyEmail = lazy(() => import('./pages/VerifyEmail'))
+const Setup = lazy(() => import('./pages/auth/SetupPage'))
+const VerifyEmail = lazy(() => import('./pages/auth/VerifyEmailPage'))
 
 // Start loading the setup status in parallel with the first route chunk.
 fetchSetupStatus()
@@ -116,7 +116,7 @@ function App() {
         }
       >
         <Route index element={<Navigate to={ROUTES.overview} replace />} />
-        <Route path="overview" element={<Dashboard />} />
+        <Route path="overview" element={<OverviewPage />} />
         <Route path="projects" element={<ProjectPicker />} />
 
         {/* Project area */}
@@ -137,18 +137,18 @@ function App() {
         </Route>
 
         {/* Organization area */}
-        <Route path="orgs" element={<OrganizationList />} />
-        <Route path="orgs/new" element={<CreateOrganization />} />
+        <Route path="orgs" element={<OrgListPage />} />
+        <Route path="orgs/new" element={<CreateOrgPage />} />
         <Route path="orgs/:orgId">
           <Route index element={<ParamRedirect to="/orgs/:orgId/projects" />} />
-          <Route path="projects" element={<OrganizationDetail />} />
-          <Route path="members" element={<OrganizationMembers />} />
-          <Route path="api-keys" element={<ApiKeys />} />
-          <Route path="audit-log" element={<AuditLogs />} />
-          <Route path="settings" element={<OrganizationSettings />} />
+          <Route path="projects" element={<OrgProjectsPage />} />
+          <Route path="members" element={<OrgMembersPage />} />
+          <Route path="api-keys" element={<ApiKeysPage />} />
+          <Route path="audit-log" element={<AuditLogPage />} />
+          <Route path="settings" element={<OrgSettingsPage />} />
         </Route>
 
-        <Route path="account" element={<Settings />} />
+        <Route path="account" element={<AccountPage />} />
 
         {/* Legacy URLs (bookmarks, emails) */}
         <Route path="dashboard" element={<Navigate to={ROUTES.overview} replace />} />

@@ -2,6 +2,7 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import api from '@/lib/axios'
 import { getErrorMessage } from '@/lib/errors'
+import { AUTH_STORAGE_KEY, onSessionExpired } from '@/lib/session'
 
 export interface User {
   id: string
@@ -57,21 +58,16 @@ export const useAuthStore = create<AuthState>()(
 
       setSession: ({ token, user }) => {
         set({ token, user, error: null })
-        localStorage.setItem('token', token)
       },
 
       logout: () => {
         set({ token: null, user: null, error: null })
+        // Token key of older builds; the persisted store is the only source now.
         localStorage.removeItem('token')
       },
 
       setToken: (token) => {
         set({ token })
-        if (token) {
-          localStorage.setItem('token', token)
-        } else {
-          localStorage.removeItem('token')
-        }
       },
 
       setUser: (user) => {
@@ -89,8 +85,13 @@ export const useAuthStore = create<AuthState>()(
       },
     }),
     {
-      name: 'auth-storage',
+      // The persisted token is what the API client sends (lib/session).
+      name: AUTH_STORAGE_KEY,
       partialize: (state) => ({ token: state.token, user: state.user }),
     }
   )
 )
+
+// An expired session (401 from the API) also logs out in memory; otherwise the
+// store would keep the dead token and GuestOnly would bounce /login back.
+onSessionExpired(() => useAuthStore.getState().logout())

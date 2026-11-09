@@ -19,9 +19,9 @@ import { Kbd } from '@/components/ui/kbd'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { getArea, ROUTES } from '@/lib/routes'
 import { useAuthStore } from '@/store/authStore'
-import { openCommandPalette } from './commandPaletteEvents'
 import { CommandPaletteLauncher } from './CommandPaletteLauncher'
 import { ContextNav } from './ContextNav'
+import { openCommandPalette } from './commandPaletteEvents'
 import { shortcutLabel } from './platform'
 import { Rail } from './Rail'
 import { useLogout } from './useLogout'
@@ -54,6 +54,7 @@ export default function AppShell() {
 
   return (
     <TooltipProvider delayDuration={300}>
+      {/* biome-ignore lint/a11y/useValidAnchor: skip link keeps a real fragment href; onClick only moves focus without rewriting the router URL hash */}
       <a
         href="#main-content"
         className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[60] focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:shadow-md focus:ring-2 focus:ring-ring"

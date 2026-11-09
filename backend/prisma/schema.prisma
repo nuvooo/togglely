@@ -315,6 +315,8 @@ model AuditLog {
   @@index([projectId])
   @@index([userId])
   @@index([createdAt])
+  // Organization log pages: filter by org, newest first.
+  @@index([organizationId, createdAt])
   @@map("audit_logs")
 }
 

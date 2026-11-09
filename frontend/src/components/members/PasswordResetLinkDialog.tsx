@@ -11,7 +11,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog'
 import api from '@/lib/axios'
-import { getErrorCode, getErrorMessage } from '@/lib/errors'
+import { getErrorCode, getErrorMessage, getErrorStatus } from '@/lib/errors'
 import { shellQuote } from '@/lib/shell'
 import { CopyLinkField } from './CopyLinkField'
 import { type Member, memberName } from './types'
@@ -30,6 +30,8 @@ interface PasswordResetLinkDialogProps {
   /** The member to reset; `null` closes the dialog. */
   member: Member | null
   onClose: () => void
+  /** Called on a 403: the caller's role changed (e.g. to reload it). */
+  onForbidden?: () => void
 }
 
 /**
@@ -37,7 +39,12 @@ interface PasswordResetLinkDialogProps {
  * without a mail server). Accounts that also belong to organizations the
  * owner does not own can only be reset by the server administrator.
  */
-export function PasswordResetLinkDialog({ orgId, member, onClose }: PasswordResetLinkDialogProps) {
+export function PasswordResetLinkDialog({
+  orgId,
+  member,
+  onClose,
+  onForbidden,
+}: PasswordResetLinkDialogProps) {
   const { t, i18n } = useTranslation()
   const [state, setState] = useState<State>({ step: 'confirm' })
   const [error, setError] = useState<string | null>(null)
@@ -61,6 +68,7 @@ export function PasswordResetLinkDialog({ orgId, member, onClose }: PasswordRese
       )
       setState({ step: 'done', resetUrl: data.resetUrl, expiresAt: data.expiresAt })
     } catch (err: unknown) {
+      if (getErrorStatus(err) === 403) onForbidden?.()
       if (getErrorCode(err) === 'RESET_REQUIRES_SERVER_ADMIN') setState({ step: 'server-admin' })
       else setError(getErrorMessage(err))
     } finally {

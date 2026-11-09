@@ -14,7 +14,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select'
 import api from '@/lib/axios'
-import { getErrorMessage } from '@/lib/errors'
+import { getErrorMessage, getErrorStatus } from '@/lib/errors'
 import { useSetupStatus } from '@/lib/setup'
 import { CopyLinkField } from './CopyLinkField'
 import { type CreatedInvite, grantableRoles, type OrgRole } from './types'
@@ -27,13 +27,23 @@ interface InviteDialogProps {
   onOpenChange: (open: boolean) => void
   /** Called after an invite was created (e.g. to reload the invite list). */
   onCreated: () => void
+  /** Called on a 403: the caller's role changed (e.g. to reload it). */
+  onForbidden?: () => void
 }
 
 /**
  * Creates an invite link (optionally bound to an email) and shows it for
  * copying. The link works without a mail server; with SMTP it is also mailed.
  */
-export function InviteDialog({ orgId, orgName, actorRole, open, onOpenChange, onCreated }: InviteDialogProps) {
+export function InviteDialog({
+  orgId,
+  orgName,
+  actorRole,
+  open,
+  onOpenChange,
+  onCreated,
+  onForbidden,
+}: InviteDialogProps) {
   const { t, i18n } = useTranslation()
   const mailEnabled = useSetupStatus()?.mailEnabled === true
   const roles = grantableRoles(actorRole)
@@ -67,6 +77,7 @@ export function InviteDialog({ orgId, orgName, actorRole, open, onOpenChange, on
       setCreated(data)
       onCreated()
     } catch (err: unknown) {
+      if (getErrorStatus(err) === 403) onForbidden?.()
       setError(getErrorMessage(err))
     } finally {
       setIsCreating(false)

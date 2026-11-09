@@ -17,8 +17,8 @@ vi.mock('@/lib/axios', () => ({
   default: { get: vi.fn(() => Promise.resolve({ data: { featureFlags: [] } })) },
 }))
 
-import { openCommandPalette } from './commandPaletteEvents'
 import { CommandPaletteLauncher } from './CommandPaletteLauncher'
+import { openCommandPalette } from './commandPaletteEvents'
 
 const renderLauncher = () =>
   render(

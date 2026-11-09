@@ -2,13 +2,13 @@ import { Loader2, Plus, X } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
+import { SettingsSection } from '@/components/page/SettingsSection'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import api from '@/lib/axios'
 import { notifyWriteError } from '@/lib/permissions'
 import { apiMessage, type ProjectDetails } from './project'
-import { SettingsSection } from './SettingsSection'
 
 interface OriginsSectionProps {
   project: ProjectDetails
