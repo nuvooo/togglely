@@ -25,7 +25,6 @@ import { AuthService } from './auth.service'
 import { ChangePasswordDto } from './dto/change-password.dto'
 import { InviteRegisterDto } from './dto/invite-register.dto'
 import { LoginDto } from './dto/login.dto'
-import { RegisterDto } from './dto/register.dto'
 import { ResendVerificationDto } from './dto/resend-verification.dto'
 import { UpdateProfileDto } from './dto/update-profile.dto'
 
@@ -53,26 +52,19 @@ export class AuthController {
     return this.authService.login(dto.email, dto.password)
   }
 
+  /**
+   * Open registration is closed: new users join via invite links, the
+   * first user via the instance setup (POST /setup).
+   */
   @Post('register')
   @Throttle({ default: { ttl: 900000, limit: 5 } })
-  async register(@Body() dto: RegisterDto) {
-    const name = dto.name || `${dto.firstName} ${dto.lastName}`
-    const { emailVerifyToken, ...result } = await this.authService.register(
-      dto.email,
-      dto.password,
-      name
-    )
-
-    // Send verification email (the token itself is never returned)
-    if (emailVerifyToken) {
-      await this.mailService.sendVerificationEmail(
-        dto.email,
-        emailVerifyToken,
-        this.frontendUrl
+  async register(): Promise<never> {
+    if ((await this.prisma.user.count()) === 0) {
+      throw new ForbiddenException(
+        'Registration is invite-only. Set up this instance at /setup first.'
       )
     }
-
-    return result
+    throw new ForbiddenException('Registration is invite-only')
   }
 
   @Get('me')
