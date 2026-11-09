@@ -16,7 +16,17 @@ export const RESET_REQUIRES_SERVER_ADMIN = 'RESET_REQUIRES_SERVER_ADMIN'
  * server is configured. Accounts are global, so a link may only be created
  * if the actor owns every organization the target belongs to; otherwise an
  * owner of one tenant could take over an account used in another tenant.
+ * Other OWNERs are excluded as well (no co-owner takeover); resetting the
+ * actor's own account stays allowed.
  */
+function requiresServerAdmin(message: string) {
+  return new ForbiddenException({
+    message,
+    error: 'Forbidden',
+    code: RESET_REQUIRES_SERVER_ADMIN,
+  })
+}
+
 @Injectable()
 export class MemberPasswordResetService {
   constructor(
@@ -40,7 +50,7 @@ export class MemberPasswordResetService {
     const [targetOrgs, ownedOrgs] = await Promise.all([
       this.prisma.organizationMember.findMany({
         where: { userId: targetUserId },
-        select: { organizationId: true },
+        select: { organizationId: true, role: true },
       }),
       this.prisma.organizationMember.findMany({
         where: { userId: actorId, role: 'OWNER' },
@@ -49,12 +59,15 @@ export class MemberPasswordResetService {
     ])
     const owned = new Set(ownedOrgs.map((m) => m.organizationId))
     if (targetOrgs.some((m) => !owned.has(m.organizationId))) {
-      throw new ForbiddenException({
-        message:
-          'User also belongs to other organizations – ask the server administrator',
-        error: 'Forbidden',
-        code: RESET_REQUIRES_SERVER_ADMIN,
-      })
+      throw requiresServerAdmin(
+        'User also belongs to other organizations – ask the server administrator'
+      )
+    }
+    const isSelf = targetUserId === actorId
+    if (!isSelf && targetOrgs.some((m) => m.role === 'OWNER')) {
+      throw requiresServerAdmin(
+        'User is an organization owner – ask the server administrator'
+      )
     }
 
     const user = await this.prisma.user.findUnique({

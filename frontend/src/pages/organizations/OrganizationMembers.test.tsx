@@ -6,6 +6,7 @@ import i18n from '@/i18n'
 const mocks = vi.hoisted(() => ({
   role: 'OWNER',
   invites: [] as unknown[],
+  others: [] as unknown[],
   get: vi.fn(),
   del: vi.fn(() => Promise.resolve({ data: { success: true } })),
 }))
@@ -44,6 +45,7 @@ describe('OrganizationMembers', () => {
   beforeEach(async () => {
     await i18n.changeLanguage('en')
     mocks.role = 'OWNER'
+    mocks.others = []
     mocks.invites = [pending, { ...pending, id: 'inv2', email: 'bob@example.com', status: 'accepted' }]
     mocks.del.mockClear()
     mocks.get.mockReset()
@@ -54,6 +56,7 @@ describe('OrganizationMembers', () => {
           data: {
             members: [
               { id: 'm1', userId: 'u1', email: 'ada@example.com', firstName: 'Ada', lastName: 'L', role: mocks.role, joinedAt: '' },
+              ...mocks.others,
             ],
           },
         })
@@ -90,6 +93,17 @@ describe('OrganizationMembers', () => {
     renderPage()
     fireEvent.click(await screen.findByRole('button', { name: 'Create password reset link for Ada L' }))
     expect(await screen.findByText(/valid for 1 hour/i)).toBeInTheDocument()
+  })
+
+  it('offers no reset links for other owners (server administrator only)', async () => {
+    mocks.others = [
+      { id: 'm2', userId: 'u2', email: 'bob@example.com', firstName: 'Bob', lastName: 'B', role: 'OWNER', joinedAt: '' },
+      { id: 'm3', userId: 'u3', email: 'cy@example.com', firstName: 'Cy', lastName: 'C', role: 'MEMBER', joinedAt: '' },
+    ]
+    renderPage()
+    expect(await screen.findByRole('button', { name: 'Create password reset link for Cy C' })).toBeInTheDocument()
+    expect(screen.getByRole('button', { name: 'Create password reset link for Ada L' })).toBeInTheDocument()
+    expect(screen.queryByRole('button', { name: 'Create password reset link for Bob B' })).toBeNull()
   })
 
   it('offers no reset links to admins', async () => {

@@ -150,6 +150,43 @@ describe('MemberPasswordResetService.createLink', () => {
     expect(passwordReset.createResetLink).toHaveBeenCalledWith(MEMBER)
   })
 
+  it('refuses to reset a co-owner of the same organization (server admin only)', async () => {
+    const CO_OWNER = '000000000000000000000002'
+    const { service, passwordReset } = setup([
+      ...ORG_MEMBERS,
+      { userId: CO_OWNER, organizationId: ORG, role: 'OWNER' },
+    ])
+    const error = await service.createLink(ORG, OWNER, CO_OWNER).catch((e) => e)
+    expect(error).toBeInstanceOf(ForbiddenException)
+    expect(error.getResponse()).toEqual(
+      expect.objectContaining({ code: RESET_REQUIRES_SERVER_ADMIN })
+    )
+    expect(passwordReset.createResetLink).not.toHaveBeenCalled()
+  })
+
+  it('refuses when the target owns another organization the actor also owns', async () => {
+    const { service, passwordReset } = setup([
+      ...ORG_MEMBERS,
+      { userId: MEMBER, organizationId: OTHER_ORG, role: 'OWNER' },
+      { userId: OWNER, organizationId: OTHER_ORG, role: 'OWNER' },
+    ])
+    const error = await service.createLink(ORG, OWNER, MEMBER).catch((e) => e)
+    expect(error).toBeInstanceOf(ForbiddenException)
+    expect(error.getResponse()).toEqual(
+      expect.objectContaining({ code: RESET_REQUIRES_SERVER_ADMIN })
+    )
+    expect(passwordReset.createResetLink).not.toHaveBeenCalled()
+  })
+
+  it('still lets an OWNER reset their own account although they are an owner', async () => {
+    const { service, passwordReset } = setup([
+      ...ORG_MEMBERS,
+      { userId: OWNER, organizationId: OTHER_ORG, role: 'OWNER' },
+    ])
+    await service.createLink(ORG, OWNER, OWNER)
+    expect(passwordReset.createResetLink).toHaveBeenCalledWith(OWNER)
+  })
+
   it('rejects deactivated users', async () => {
     const { service, passwordReset } = setup(ORG_MEMBERS, [MEMBER])
     await expect(

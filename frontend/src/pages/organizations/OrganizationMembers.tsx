@@ -215,8 +215,9 @@ export default function OrganizationMembers() {
                   ) : (
                     <Badge variant={member.role === 'OWNER' ? 'default' : 'secondary'}>{t(`roles.${member.role}`)}</Badge>
                   )}
-                  {/* Owners may hand out reset links, also for themselves */}
-                  {canChangeRoles && (
+                  {/* Owners may hand out reset links for themselves and non-owners;
+                      other owners can only be reset by the server administrator */}
+                  {canChangeRoles && (isSelf || member.role !== 'OWNER') && (
                     <Button
                       variant="ghost"
                       size="icon"
