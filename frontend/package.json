@@ -7,6 +7,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx",
+    "lint:colors": "node scripts/check-raw-colors.mjs src/components/shell src/components/ui src/components/routing",
     "test": "vitest run",
     "test:unit:watch": "vitest",
     "test:e2e": "cypress run",
