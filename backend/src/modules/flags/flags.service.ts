@@ -179,6 +179,7 @@ export class FlagsService {
   async findOne(flagId: string) {
     const f = await this.prisma.featureFlag.findUnique({
       where: { id: flagId },
+      include: { flagEnvironments: { select: { updatedAt: true } } },
     })
 
     if (!f) throw new NotFoundException('Flag not found')
@@ -190,6 +191,8 @@ export class FlagsService {
       description: f.description,
       flagType: f.flagType,
       projectId: f.projectId,
+      createdAt: f.createdAt,
+      updatedAt: latestFlagUpdate(f),
     }
   }
 

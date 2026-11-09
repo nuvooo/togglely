@@ -21,6 +21,10 @@ export interface FlagDetail {
   description: string | null
   type: FlagType
   projectId: string
+  /** ISO timestamps; missing on older API versions. */
+  createdAt?: string
+  /** Last change of the flag or any of its values. */
+  updatedAt?: string
 }
 
 /** Default (brand-less) state of the flag in one environment. */
@@ -75,6 +79,8 @@ export const normalizeFlag = (raw: RawApi): FlagDetail => ({
   description: raw.description ?? null,
   type: raw.flagType ?? raw.type ?? 'BOOLEAN',
   projectId: raw.projectId,
+  createdAt: raw.createdAt ?? undefined,
+  updatedAt: raw.updatedAt ?? undefined,
 })
 
 // GET /feature-flags/:id/environments returns `enabled` + `defaultValue`.

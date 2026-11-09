@@ -1,10 +1,11 @@
 import { Copy, Flag, Pencil, Trash2 } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { EmptyState } from '@/components/feedback/EmptyState'
 import { ErrorState } from '@/components/feedback/ErrorState'
+import { RoleUnavailableNotice } from '@/components/feedback/RoleUnavailableNotice'
 import { PageHeader } from '@/components/page/PageHeader'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -13,12 +14,13 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import api from '@/lib/api'
 import { getErrorMessage, getErrorStatus } from '@/lib/errors'
+import { handleForbidden, useProjectRole } from '@/lib/permissions'
 import { projectPath, ROUTES } from '@/lib/routes'
-import { useWorkspace } from '@/lib/workspace'
 import { EditFlagDialog } from './EditFlagDialog'
 import { FlagBrandsTab } from './FlagBrandsTab'
 import { FlagEnvironmentsTab } from './FlagEnvironmentsTab'
 import { FlagHistoryTab } from './FlagHistoryTab'
+import { FlagMeta } from './FlagMeta'
 import { FlagTargetingTab } from './FlagTargetingTab'
 import {
   type BrandEnvironment,
@@ -38,6 +40,14 @@ type LoadError =
   | { kind: 'failed'; message: string }
   | null
 
+/** The parts of `GET /projects/:id` this page needs. */
+interface DetailProject {
+  id: string
+  key: string
+  type: 'SINGLE' | 'MULTI'
+  environments?: { id: string; key: string; name: string }[]
+}
+
 /** Flag detail: header with actions and the tabs environments · targeting · brands · history. */
 export default function FlagDetailPage() {
   const { t } = useTranslation()
@@ -51,8 +61,42 @@ export default function FlagDetailPage() {
     ? projectPath(projectId, 'flags')
     : ROUTES.overview
   const [searchParams, setSearchParams] = useSearchParams()
-  const { projects, isLoading: workspaceLoading } = useWorkspace()
-  const isMulti = projects.find((p) => p.id === projectId)?.type === 'MULTI'
+  // Backend: MEMBER+ edits values/details/rules, ADMIN+ deletes the flag.
+  const { canEdit, canManage, roleUnavailable } = useProjectRole(projectId)
+
+  // Type and key from GET /projects/:id (like the flags list): the workspace
+  // cache may be stale after a type change.
+  const [project, setProject] = useState<DetailProject | null>(null)
+  const validFlagId = flagId !== null
+  const [projectLoading, setProjectLoading] = useState(
+    Boolean(projectId) && validFlagId
+  )
+  useEffect(() => {
+    // An invalid flag id shows "not found" without any request.
+    if (!projectId || !validFlagId) {
+      setProjectLoading(false)
+      return
+    }
+    let cancelled = false
+    setProjectLoading(true)
+    api
+      .get(`/projects/${projectId}`)
+      .then((response) => {
+        if (cancelled) return
+        const data = response.data?.project ?? response.data
+        setProject(data?.id ? data : null)
+      })
+      .catch(() => {
+        if (!cancelled) setProject(null)
+      })
+      .finally(() => {
+        if (!cancelled) setProjectLoading(false)
+      })
+    return () => {
+      cancelled = true
+    }
+  }, [projectId, validFlagId])
+  const isMulti = project?.type === 'MULTI'
 
   const [flag, setFlag] = useState<FlagDetail | null>(null)
   const [environments, setEnvironments] = useState<EnvironmentState[]>([])
@@ -67,6 +111,16 @@ export default function FlagDetailPage() {
   const [brandError, setBrandError] = useState<string | null>(null)
   const [editOpen, setEditOpen] = useState(false)
   const [deleteOpen, setDeleteOpen] = useState(false)
+  /** Bumped per brand load; results for another flag/project are dropped. */
+  const brandLoadId = useRef(0)
+
+  // Brand values belong to one flag: drop them when the flag changes.
+  // biome-ignore lint/correctness/useExhaustiveDependencies: reset on flagId change only
+  useEffect(() => {
+    brandLoadId.current++
+    setBrandEnvironments(null)
+    setBrandError(null)
+  }, [flagId])
 
   // biome-ignore lint/correctness/useExhaustiveDependencies: reloadToken triggers a manual retry
   useEffect(() => {
@@ -108,15 +162,17 @@ export default function FlagDetailPage() {
 
   const loadBrandValues = useCallback(async () => {
     if (!flagId || !projectId) return
+    const id = ++brandLoadId.current
     setBrandError(null)
     try {
       const response = await api.get(`/projects/${projectId}/flags-with-brands`)
+      if (id !== brandLoadId.current) return
       const rawFlag = (response.data?.flags ?? []).find(
         (f: RawApi) => f.id === flagId
       )
       setBrandEnvironments(normalizeBrandEnvironments(rawFlag))
     } catch (error) {
-      setBrandError(getErrorMessage(error))
+      if (id === brandLoadId.current) setBrandError(getErrorMessage(error))
     }
   }, [flagId, projectId])
 
@@ -139,7 +195,7 @@ export default function FlagDetailPage() {
 
   // Tab from `?tab=`; "brands" only for MULTI projects (once that is known).
   const rawTab = searchParams.get('tab')
-  const brandsUnavailable = !isMulti && !workspaceLoading
+  const brandsUnavailable = !isMulti && !projectLoading
   const activeTab: FlagTab =
     isFlagTab(rawTab) && !(rawTab === 'brands' && brandsUnavailable)
       ? rawTab
@@ -157,19 +213,38 @@ export default function FlagDetailPage() {
     )
   }
 
-  const copyKey = async () => {
-    if (!flag) return
+  // Targeting keeps its state (form, environment) across tab switches: once
+  // visited it stays mounted and is only hidden.
+  const [targetingVisited, setTargetingVisited] = useState(
+    activeTab === 'targeting'
+  )
+  useEffect(() => {
+    if (activeTab === 'targeting') setTargetingVisited(true)
+  }, [activeTab])
+
+  const copy = async (text: string, success: string, failure: string) => {
     try {
-      await navigator.clipboard.writeText(flag.key)
-      toast.success(t('flag-detail.key-copied'))
+      await navigator.clipboard.writeText(text)
+      toast.success(success)
     } catch {
-      toast.error(t('flag-detail.key-copy-failed'))
+      toast.error(failure)
     }
   }
+  const copyKey = () =>
+    flag &&
+    copy(flag.key, t('flag-detail.key-copied'), t('flag-detail.key-copy-failed'))
+  const copyId = () =>
+    flag &&
+    copy(flag.id, t('flag-detail.meta.id-copied'), t('flag-detail.meta.id-copy-failed'))
 
   const saveDetails = async (values: { name: string; description: string }) => {
     if (!flag) return
-    await api.patch(`/feature-flags/${flag.id}`, values)
+    try {
+      await api.patch(`/feature-flags/${flag.id}`, values)
+    } catch (error) {
+      handleForbidden(error, t) // the dialog shows the message
+      throw error
+    }
     setFlag((prev) =>
       prev
         ? {
@@ -182,15 +257,17 @@ export default function FlagDetailPage() {
     toast.success(t('flag-detail.edit.saved'))
   }
 
+  /** Rejects on failure: the confirm dialog stays open with the error. */
   const deleteFlag = async () => {
     if (!flag) return
     try {
       await api.delete(`/feature-flags/${flag.id}`)
-      toast.success(t('flag-detail.delete.deleted', { name: flag.name }))
-      navigate(flagsHref)
     } catch (error) {
-      toast.error(getErrorMessage(error))
+      handleForbidden(error, t)
+      throw error
     }
+    toast.success(t('flag-detail.delete.deleted', { name: flag.name }))
+    navigate(flagsHref)
   }
 
   const breadcrumb = (name?: string) => [
@@ -275,25 +352,33 @@ export default function FlagDetailPage() {
               </Button>
             </span>
             {flag.description && <span>{flag.description}</span>}
+            <FlagMeta flag={flag} onCopyId={() => void copyId()} />
           </span>
         }
         actions={
-          <>
-            <Button
-              variant="outline"
-              onClick={() => setDeleteOpen(true)}
-              className="text-destructive hover:text-destructive"
-            >
-              <Trash2 className="mr-1.5 h-4 w-4" />
-              {t('common.delete')}
-            </Button>
-            <Button variant="outline" onClick={() => setEditOpen(true)}>
-              <Pencil className="mr-1.5 h-4 w-4" />
-              {t('common.edit')}
-            </Button>
-          </>
+          canEdit || canManage ? (
+            <>
+              {canManage && (
+                <Button
+                  variant="outline"
+                  onClick={() => setDeleteOpen(true)}
+                  className="text-destructive hover:text-destructive"
+                >
+                  <Trash2 className="mr-1.5 h-4 w-4" />
+                  {t('common.delete')}
+                </Button>
+              )}
+              {canEdit && (
+                <Button variant="outline" onClick={() => setEditOpen(true)}>
+                  <Pencil className="mr-1.5 h-4 w-4" />
+                  {t('common.edit')}
+                </Button>
+              )}
+            </>
+          ) : undefined
         }
       />
+      <RoleUnavailableNotice show={roleUnavailable} />
 
       <Tabs value={activeTab} onValueChange={changeTab}>
         <TabsList className="max-w-full justify-start overflow-x-auto">
@@ -303,7 +388,7 @@ export default function FlagDetailPage() {
           <TabsTrigger value="targeting">
             {t('flag-detail.tabs.targeting')}
           </TabsTrigger>
-          {(isMulti || (workspaceLoading && activeTab === 'brands')) && (
+          {(isMulti || (projectLoading && activeTab === 'brands')) && (
             <TabsTrigger value="brands">
               {t('flag-detail.tabs.brands')}
             </TabsTrigger>
@@ -322,13 +407,29 @@ export default function FlagDetailPage() {
             brandEnvironments={brandEnvironments}
             brandError={brandError}
             onRefresh={refreshValues}
+            readOnly={!canEdit}
+            sdk={
+              project
+                ? {
+                    projectKey: project.key,
+                    environmentKey:
+                      project.environments?.[0]?.key ?? 'development',
+                  }
+                : null
+            }
           />
         </TabsContent>
-        <TabsContent value="targeting" className="mt-4">
+        <TabsContent
+          value="targeting"
+          className="mt-4"
+          forceMount={targetingVisited || undefined}
+          hidden={activeTab !== 'targeting'}
+        >
           <FlagTargetingTab
             flagId={flag.id}
             flagType={flag.type}
             environments={environments}
+            readOnly={!canEdit}
           />
         </TabsContent>
         {isMulti && (

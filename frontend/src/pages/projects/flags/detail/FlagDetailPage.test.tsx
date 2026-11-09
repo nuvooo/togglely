@@ -1,6 +1,12 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
+import {
+  MemoryRouter,
+  Route,
+  Routes,
+  useLocation,
+  useNavigate,
+} from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n from '@/i18n'
 
@@ -11,6 +17,8 @@ const ENV_PROD = '64b0000000000000000000f1'
 
 const mocks = vi.hoisted(() => ({
   projectType: 'SINGLE' as 'SINGLE' | 'MULTI',
+  role: 'ADMIN',
+  refreshWorkspace: vi.fn(() => Promise.resolve()),
   get: vi.fn(),
   post: vi.fn(),
   patch: vi.fn(),
@@ -28,17 +36,19 @@ vi.mock('@/lib/api', () => ({
 }))
 vi.mock('sonner', () => ({ toast }))
 vi.mock('@/lib/workspace', () => ({
+  refreshWorkspace: mocks.refreshWorkspace,
   useWorkspace: () => ({
     projects: [
       {
         id: PROJECT,
         name: 'Shop',
         key: 'shop',
-        type: mocks.projectType,
+        // Deliberately stale: the page must read the type from GET /projects/:id
+        type: 'SINGLE',
         organizationId: 'o1',
       },
     ],
-    organizations: [{ id: 'o1', name: 'Acme', role: 'ADMIN' }],
+    organizations: [{ id: 'o1', name: 'Acme', role: mocks.role }],
     isLoading: false,
     error: null,
     projectsByOrg: () => [],
@@ -125,6 +135,7 @@ describe('Flag detail page', () => {
     await i18n.changeLanguage('en')
     vi.clearAllMocks()
     mocks.projectType = 'SINGLE'
+    mocks.role = 'ADMIN'
     state.flag = flag()
     state.flagError = null
     state.rules = []
@@ -142,6 +153,21 @@ describe('Flag detail page', () => {
         return Promise.resolve({ data: { rules: state.rules } })
       if (url === `/audit-logs/project/${PROJECT}`)
         return Promise.resolve({ data: { auditLogs: state.auditLogs } })
+      if (url === `/projects/${PROJECT}`) {
+        return Promise.resolve({
+          data: {
+            project: {
+              id: PROJECT,
+              key: 'shop',
+              type: mocks.projectType,
+              environments: [
+                { id: ENV_DEV, name: 'Development', key: 'development' },
+                { id: ENV_PROD, name: 'Production', key: 'production' },
+              ],
+            },
+          },
+        })
+      }
       if (url === `/projects/${PROJECT}/flags-with-brands`) {
         return Promise.resolve({ data: { flags: state.flagsWithBrands } })
       }
@@ -199,9 +225,66 @@ describe('Flag detail page', () => {
     })
     await user.click(dev)
     await waitFor(() =>
-      expect(toast.error).toHaveBeenCalledWith('Forbidden resource')
+      expect(toast.error).toHaveBeenCalledWith('No permission')
     )
+    expect(mocks.refreshWorkspace).toHaveBeenCalled()
     expect(dev).toBeChecked()
+  })
+
+  it('shows created, updated and the copyable flag id', async () => {
+    state.flag = flag({
+      createdAt: '2026-01-15T10:00:00.000Z',
+      updatedAt: new Date(Date.now() - 3 * 3600 * 1000).toISOString(),
+    })
+    const writeText = vi.fn(() => Promise.resolve())
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { writeText },
+      configurable: true,
+    })
+    const user = userEvent.setup()
+    renderPage()
+    const meta = await screen.findByTestId('flag-meta')
+    expect(meta).toHaveTextContent('Created Jan 15, 2026')
+    expect(meta).toHaveTextContent('Updated 3 hours ago')
+    expect(meta).toHaveTextContent(FLAG)
+    await user.click(within(meta).getByRole('button', { name: 'Copy flag ID' }))
+    await waitFor(() =>
+      expect(toast.success).toHaveBeenCalledWith('Flag ID copied')
+    )
+  })
+
+  it('shows SDK usage for the first environment with a client-key hint', async () => {
+    state.flag = flag({ flagType: 'STRING' })
+    renderPage()
+    const code = await screen.findByRole('figure', { name: 'SDK example code' })
+    expect(code).toHaveTextContent("project: 'shop'")
+    expect(code).toHaveTextContent("environment: 'development'")
+    expect(code).toHaveTextContent("client.getString('new-checkout', '')")
+    expect(code).toHaveTextContent('YOUR_CLIENT_API_KEY')
+    expect(screen.getByText(/client key/)).toBeInTheDocument()
+  })
+
+  it('takes the project type from GET /projects/:id, not the workspace cache', async () => {
+    mocks.projectType = 'MULTI'
+    renderPage()
+    expect(await screen.findByRole('tab', { name: 'Brands' })).toBeInTheDocument()
+  })
+
+  it('is read only for viewers', async () => {
+    mocks.role = 'VIEWER'
+    renderPage()
+    const dev = await screen.findByRole('switch', { name: 'Development enabled' })
+    expect(dev).toBeDisabled()
+    expect(screen.queryByRole('button', { name: 'Edit' })).toBeNull()
+    expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull()
+  })
+
+  it('members edit but only admins delete the flag', async () => {
+    mocks.role = 'MEMBER'
+    renderPage()
+    expect(await screen.findByRole('button', { name: 'Edit' })).toBeInTheDocument()
+    expect(screen.getByRole('switch', { name: 'Development enabled' })).toBeEnabled()
+    expect(screen.queryByRole('button', { name: 'Delete' })).toBeNull()
   })
 
   it('edits a string value per environment', async () => {
@@ -440,6 +523,32 @@ describe('Flag detail page', () => {
       expect(screen.getByText('No targeting rules')).toBeInTheDocument()
     })
 
+    it('keeps the rule form across tab switches', async () => {
+      const user = userEvent.setup()
+      renderPage('?tab=targeting')
+      await user.click(await screen.findByRole('button', { name: 'Add rule' }))
+      await user.type(screen.getByLabelText(/Rule name/), 'Beta testers')
+
+      await user.click(screen.getByRole('tab', { name: 'History' }))
+      await user.click(screen.getByRole('tab', { name: 'Targeting' }))
+
+      expect(screen.getByLabelText(/Rule name/)).toHaveValue('Beta testers')
+    })
+
+    it('viewers cannot add, toggle or delete rules', async () => {
+      mocks.role = 'VIEWER'
+      state.rules = [rule()]
+      renderPage('?tab=targeting')
+      const toggle = await screen.findByRole('switch', {
+        name: 'Rule "German users" enabled',
+      })
+      expect(toggle).toBeDisabled()
+      expect(screen.queryByRole('button', { name: 'Add rule' })).toBeNull()
+      expect(
+        screen.queryByRole('button', { name: 'Delete rule "German users"' })
+      ).toBeNull()
+    })
+
     it('shows a load error for rules with retry', async () => {
       let fail = true
       const base = mocks.get.getMockImplementation()
@@ -493,6 +602,19 @@ describe('Flag detail page', () => {
         expect(mocks.del).toHaveBeenCalledWith(`/feature-flags/${FLAG}`)
       )
       expect(await screen.findByText('flags list')).toBeInTheDocument()
+    })
+
+    it('keeps the delete dialog open with the error when deleting fails', async () => {
+      mocks.del.mockRejectedValueOnce(axiosError(500, 'Database down'))
+      const user = userEvent.setup()
+      renderPage()
+      await user.click(await screen.findByRole('button', { name: 'Delete' }))
+      const dialog = await screen.findByRole('dialog')
+      await user.click(within(dialog).getByRole('button', { name: 'Delete' }))
+      expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+        'Database down'
+      )
+      expect(screen.queryByText('flags list')).toBeNull()
     })
 
     it('copies the key', async () => {
@@ -628,6 +750,50 @@ describe('Flag detail page', () => {
           }
         )
       )
+    })
+
+    it('drops the brand values of the previous flag when the flag changes', async () => {
+      const FLAG2 = '64b000000000000000000002'
+      let resolveSecond: (value: unknown) => void = () => {}
+      let brandCalls = 0
+      const base = mocks.get.getMockImplementation()
+      mocks.get.mockImplementation((url: string, config?: unknown) => {
+        if (url === `/feature-flags/${FLAG2}`)
+          return Promise.resolve({ data: { featureFlag: flag({ id: FLAG2, name: 'Second', flagType: 'STRING' }) } })
+        if (url === `/feature-flags/${FLAG2}/environments`)
+          return Promise.resolve({ data: { environments: envs() } })
+        if (url === `/projects/${PROJECT}/flags-with-brands` && ++brandCalls > 1)
+          return new Promise((resolve) => {
+            resolveSecond = resolve
+          })
+        return base?.(url, config)
+      })
+      function Next() {
+        const navigate = useNavigate()
+        return (
+          <button type="button" onClick={() => navigate(`/projects/${PROJECT}/flags/${FLAG2}`)}>
+            next flag
+          </button>
+        )
+      }
+      const user = userEvent.setup()
+      render(
+        <MemoryRouter initialEntries={[`/projects/${PROJECT}/flags/${FLAG}`]}>
+          <Next />
+          <Routes>
+            <Route path="/projects/:projectId/flags/:flagId" element={<FlagDetailPage />} />
+          </Routes>
+        </MemoryRouter>
+      )
+      expect(await screen.findByText('Globex')).toBeInTheDocument()
+
+      await user.click(screen.getByRole('button', { name: 'next flag' }))
+      expect(
+        await screen.findByRole('heading', { level: 1, name: 'Second' })
+      ).toBeInTheDocument()
+      // The first flag's brands must not show for the second flag
+      expect(screen.queryByText('Globex')).toBeNull()
+      resolveSecond({ data: { flags: [] } })
     })
 
     it('shows the brand × environment overview', async () => {

@@ -1,5 +1,5 @@
 import { Info, Plus, Trash2, Users, X } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { EmptyState } from '@/components/feedback/EmptyState'
@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Switch } from '@/components/ui/switch'
 import api from '@/lib/api'
 import { getErrorMessage } from '@/lib/errors'
+import { handleForbidden, notifyWriteError } from '@/lib/permissions'
 import {
   CONDITION_OPERATORS,
   type ConditionOperator,
@@ -50,6 +51,8 @@ interface FlagTargetingTabProps {
   flagId: string
   flagType: FlagType
   environments: EnvironmentState[]
+  /** No write permission (VIEWER): rules can be read only. */
+  readOnly?: boolean
 }
 
 /** Targeting rules of one flag, per environment (list, create, toggle, delete). */
@@ -57,8 +60,12 @@ export function FlagTargetingTab({
   flagId,
   flagType,
   environments,
+  readOnly = false,
 }: FlagTargetingTabProps) {
   const { t } = useTranslation()
+  const readOnlyTitle = readOnly ? t('common.read-only') : undefined
+  /** Bumped per load; rules of another flag/environment arriving late are dropped. */
+  const loadId = useRef(0)
   const [environmentId, setEnvironmentId] = useState(environments[0]?.id ?? '')
   const [rules, setRules] = useState<TargetingRule[]>([])
   const [loading, setLoading] = useState(false)
@@ -86,6 +93,8 @@ export function FlagTargetingTab({
   }, [environments])
 
   const loadRules = useCallback(async () => {
+    const id = ++loadId.current
+    const current = () => id === loadId.current
     if (!environmentId) {
       setRules([])
       return
@@ -99,12 +108,14 @@ export function FlagTargetingTab({
           params: { environmentId },
         }
       )
+      if (!current()) return
       setRules(response.data.rules ?? [])
     } catch (err) {
+      if (!current()) return
       setRules([])
       setError(getErrorMessage(err))
     } finally {
-      setLoading(false)
+      if (current()) setLoading(false)
     }
   }, [flagId, environmentId])
 
@@ -168,6 +179,7 @@ export function FlagTargetingTab({
       setShowForm(false)
       toast.success(t('flag-detail.targeting.created'))
     } catch (err) {
+      handleForbidden(err, t)
       setFormError(getErrorMessage(err))
     } finally {
       setSaving(false)
@@ -182,7 +194,9 @@ export function FlagTargetingTab({
       setRules((prev) => prev.filter((r) => r.id !== ruleId))
       toast.success(t('flag-detail.targeting.deleted'))
     } catch (err) {
-      toast.error(getErrorMessage(err))
+      // The confirm dialog stays open and shows the message.
+      handleForbidden(err, t)
+      throw err
     }
   }
 
@@ -201,7 +215,7 @@ export function FlagTargetingTab({
         )
       )
     } catch (err) {
-      toast.error(getErrorMessage(err))
+      notifyWriteError(err, t)
     }
   }
 
@@ -286,20 +300,29 @@ export function FlagTargetingTab({
                 </div>
               </div>
               <div className="flex shrink-0 items-center gap-2">
-                <Switch
-                  checked={rule.enabled}
-                  onCheckedChange={() => void handleToggleRule(rule)}
-                  aria-label={t('flag-detail.targeting.toggle-label', { name })}
-                />
-                <Button
-                  variant="ghost"
-                  size="icon"
-                  className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                  onClick={() => setRuleToDelete(rule)}
-                  aria-label={t('flag-detail.targeting.delete-label', { name })}
-                >
-                  <Trash2 className="h-4 w-4" />
-                </Button>
+                <span title={readOnlyTitle} className="inline-flex">
+                  <Switch
+                    checked={rule.enabled}
+                    disabled={readOnly}
+                    onCheckedChange={() => void handleToggleRule(rule)}
+                    aria-label={t('flag-detail.targeting.toggle-label', {
+                      name,
+                    })}
+                  />
+                </span>
+                {!readOnly && (
+                  <Button
+                    variant="ghost"
+                    size="icon"
+                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                    onClick={() => setRuleToDelete(rule)}
+                    aria-label={t('flag-detail.targeting.delete-label', {
+                      name,
+                    })}
+                  >
+                    <Trash2 className="h-4 w-4" />
+                  </Button>
+                )}
               </div>
             </li>
           )
@@ -344,16 +367,18 @@ export function FlagTargetingTab({
               ))}
             </select>
           </div>
-          <Button
-            onClick={() => {
-              if (showForm) resetForm()
-              setShowForm(!showForm)
-            }}
-            disabled={!environmentId}
-          >
-            <Plus className="mr-1.5 h-4 w-4" />
-            {t('flag-detail.targeting.add')}
-          </Button>
+          {!readOnly && (
+            <Button
+              onClick={() => {
+                if (showForm) resetForm()
+                setShowForm(!showForm)
+              }}
+              disabled={!environmentId}
+            >
+              <Plus className="mr-1.5 h-4 w-4" />
+              {t('flag-detail.targeting.add')}
+            </Button>
+          )}
         </div>
       </div>
 
@@ -370,7 +395,7 @@ export function FlagTargetingTab({
         </div>
       </div>
 
-      {showForm && (
+      {showForm && !readOnly && (
         <form
           onSubmit={handleAddRule}
           className="space-y-4 rounded-lg border bg-card p-4"

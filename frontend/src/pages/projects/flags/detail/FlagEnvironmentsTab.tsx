@@ -7,8 +7,10 @@ import { ErrorState } from '@/components/feedback/ErrorState'
 import { FlagValueDialog } from '@/components/flags/FlagValueDialog'
 import { FlagValueRow, LinkLegend } from '@/components/flags/FlagValueRow'
 import { Skeleton } from '@/components/ui/skeleton'
+import { CodeBlock } from '@/components/webhooks/CodeBlock'
 import api from '@/lib/api'
-import { getErrorMessage } from '@/lib/errors'
+import { handleForbidden, notifyWriteError } from '@/lib/permissions'
+import { buildSdkSnippet } from '@/lib/sdk-tester'
 import type {
   BrandEnvironment,
   BrandValue,
@@ -36,6 +38,10 @@ interface FlagEnvironmentsTabProps {
   brandError: string | null
   /** MULTI only: reloads environments and brand values after a change. */
   onRefresh: () => Promise<void>
+  /** No write permission (VIEWER): switches and edits are disabled. */
+  readOnly?: boolean
+  /** Keys for the "SDK usage" example (first environment); null hides it. */
+  sdk?: { projectKey: string; environmentKey: string } | null
 }
 
 /** Values and switches of the flag per environment (MULTI: per brand too). */
@@ -47,6 +53,8 @@ export function FlagEnvironmentsTab({
   brandEnvironments,
   brandError,
   onRefresh,
+  readOnly = false,
+  sdk = null,
 }: FlagEnvironmentsTabProps) {
   const { t } = useTranslation()
   const [busy, setBusy] = useState<Set<string>>(new Set())
@@ -65,7 +73,7 @@ export function FlagEnvironmentsTab({
     try {
       await request()
     } catch (error) {
-      toast.error(getErrorMessage(error))
+      notifyWriteError(error, t)
       if (isMulti) await onRefresh()
     } finally {
       setBusy((prev) => {
@@ -149,10 +157,15 @@ export function FlagEnvironmentsTab({
   const saveValue = async (value: string) => {
     if (!editing) return
     const { environmentId, brand } = editing
-    await api.patch(
-      `/feature-flags/${flag.id}/environments/${environmentId}/value`,
-      brand ? { value, brandId: brand.brandId } : { value }
-    )
+    try {
+      await api.patch(
+        `/feature-flags/${flag.id}/environments/${environmentId}/value`,
+        brand ? { value, brandId: brand.brandId } : { value }
+      )
+    } catch (error) {
+      handleForbidden(error, t) // the dialog shows the message
+      throw error
+    }
     if (isMulti) {
       await onRefresh()
     } else {
@@ -187,6 +200,7 @@ export function FlagEnvironmentsTab({
               enabled={env.isEnabled}
               value={env.value}
               busy={busy.has(`${env.id}-default`)}
+              readOnly={readOnly}
               onToggle={(next) => void toggleDefault(env.id, next)}
               onEdit={
                 editable
@@ -246,6 +260,7 @@ export function FlagEnvironmentsTab({
                   enabled={env.enabled}
                   value={env.value}
                   busy={busy.has(`${env.environmentId}-default`)}
+                  readOnly={readOnly}
                   onToggle={(next) =>
                     void toggleDefault(env.environmentId, next)
                   }
@@ -271,6 +286,7 @@ export function FlagEnvironmentsTab({
                     linked={brand.inherited}
                     onLinkChange={(link) => void changeLink(env, brand, link)}
                     busy={busy.has(`${env.environmentId}-${brand.brandId}`)}
+                    readOnly={readOnly}
                     onToggle={(next) => void toggleBrand(env, brand, next)}
                     onEdit={
                       editable
@@ -306,6 +322,31 @@ export function FlagEnvironmentsTab({
         </p>
       </div>
       {content}
+      {sdk && (
+        <section
+          aria-labelledby="flag-sdk-usage"
+          className="space-y-2 rounded-lg border bg-card p-4"
+        >
+          <h3 id="flag-sdk-usage" className="text-sm font-semibold">
+            {t('flag-detail.sdk.title')}
+          </h3>
+          <p className="text-xs text-muted-foreground">
+            {t('flag-detail.sdk.hint')}
+          </p>
+          <CodeBlock
+            label={t('flag-detail.sdk.code-label')}
+            code={buildSdkSnippet({
+              apiKey: 'YOUR_CLIENT_API_KEY',
+              projectKey: sdk.projectKey,
+              environmentKey: sdk.environmentKey,
+              // /sdk is served on the app's origin (nginx / Vite proxy).
+              baseUrl: window.location.origin,
+              context: {},
+              flag: { key: flag.key, flagType: flag.type },
+            })}
+          />
+        </section>
+      )}
       <FlagValueDialog
         open={editorOpen}
         onOpenChange={setEditorOpen}

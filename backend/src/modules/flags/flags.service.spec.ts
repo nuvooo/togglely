@@ -168,6 +168,25 @@ describe('FlagsService', () => {
       expect(result.key).toBe('my-flag')
     })
 
+    it('returns createdAt and the latest updatedAt of the flag and its values', async () => {
+      const { service, prisma } = createService()
+      prisma.featureFlag.findUnique.mockResolvedValue({
+        ...mockFlag,
+        createdAt: new Date('2024-01-01T00:00:00Z'),
+        updatedAt: new Date('2024-01-02T00:00:00Z'),
+        flagEnvironments: [{ updatedAt: new Date('2024-05-01T00:00:00Z') }],
+      })
+
+      const result = await service.findOne('flag-1')
+
+      expect(prisma.featureFlag.findUnique).toHaveBeenCalledWith({
+        where: { id: 'flag-1' },
+        include: { flagEnvironments: { select: { updatedAt: true } } },
+      })
+      expect(result.createdAt).toEqual(new Date('2024-01-01T00:00:00Z'))
+      expect(result.updatedAt).toEqual(new Date('2024-05-01T00:00:00Z'))
+    })
+
     it('throws when flag is not found', async () => {
       const { service, prisma } = createService()
       prisma.featureFlag.findUnique.mockResolvedValue(null)

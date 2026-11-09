@@ -17,7 +17,7 @@ interface BrandRow {
 }
 
 /** Pivots environment → brands into brand → environments (first-seen order). */
-export function toBrandRows(environments: BrandEnvironment[]): BrandRow[] {
+function toBrandRows(environments: BrandEnvironment[]): BrandRow[] {
   const rows = new Map<string, BrandRow>()
   for (const env of environments) {
     for (const brand of env.brands) {
