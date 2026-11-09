@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import api from '@/lib/axios'
 
 export interface WorkspaceProject {
@@ -17,10 +17,32 @@ interface WorkspaceData {
   projects: WorkspaceProject[]
   organizations: WorkspaceOrganization[]
 }
+interface WorkspaceSnapshot {
+  data: WorkspaceData | null
+  error: unknown
+}
 
-let cache: WorkspaceData | null = null
+const EMPTY: WorkspaceSnapshot = { data: null, error: null }
+
+let snapshot: WorkspaceSnapshot = EMPTY
 let inflight: Promise<WorkspaceData> | null = null
+/** Bumped on reset/refresh; results of older generations are discarded. */
+let generation = 0
 const listeners = new Set<() => void>()
+
+function setSnapshot(next: WorkspaceSnapshot) {
+  snapshot = next
+  for (const notify of listeners) notify()
+}
+
+function subscribe(listener: () => void) {
+  listeners.add(listener)
+  return () => {
+    listeners.delete(listener)
+  }
+}
+
+const getSnapshot = () => snapshot
 
 async function load(): Promise<WorkspaceData> {
   const [projects, orgs] = await Promise.all([api.get('/projects'), api.get('/organizations')])
@@ -30,44 +52,49 @@ async function load(): Promise<WorkspaceData> {
   }
 }
 
-/** Clears the cache (tests, logout, after creating projects/orgs). */
-export function resetWorkspaceCache() {
-  cache = null
-  inflight = null
+/** Starts a load bound to the current generation; stale results never reach the cache. */
+function startLoad(): Promise<WorkspaceData> {
+  const gen = generation
+  const promise: Promise<WorkspaceData> = load()
+    .then(
+      (data) => {
+        if (gen === generation) setSnapshot({ data, error: null })
+        return data
+      },
+      (error: unknown) => {
+        if (gen === generation) setSnapshot({ data: snapshot.data, error })
+        throw error
+      }
+    )
+    .finally(() => {
+      if (inflight === promise) inflight = null
+    })
+  inflight = promise
+  return promise
 }
 
-/** Reloads projects/orgs and notifies all mounted consumers. */
-export async function refreshWorkspace() {
-  inflight = load()
-  cache = await inflight
+/** Clears the cache (tests, logout, after creating projects/orgs); mounted consumers drop their data. */
+export function resetWorkspaceCache() {
+  generation++
   inflight = null
-  for (const notify of listeners) notify()
+  setSnapshot(EMPTY)
+}
+
+/** Reloads projects/orgs and notifies all mounted consumers. Rejects if the reload fails. */
+export async function refreshWorkspace(): Promise<void> {
+  generation++
+  await startLoad()
 }
 
 /** Projects and organizations of the current user, shared across the shell. */
 export function useWorkspace() {
-  const [data, setData] = useState<WorkspaceData | null>(cache)
-  const [error, setError] = useState<unknown>(null)
+  const { data, error } = useSyncExternalStore(subscribe, getSnapshot, getSnapshot)
 
   useEffect(() => {
-    const notify = () => setData(cache)
-    listeners.add(notify)
-    if (!cache) {
-      inflight ??= load()
-      inflight
-        .then((result) => {
-          cache = result
-          inflight = null
-          setData(result)
-        })
-        .catch((err) => {
-          inflight = null
-          setError(err)
-        })
-    }
-    return () => {
-      listeners.delete(notify)
-    }
+    if (snapshot.data || inflight) return
+    if (snapshot.error) setSnapshot(EMPTY)
+    // Errors are surfaced through the snapshot.
+    startLoad().catch(() => {})
   }, [])
 
   const projectsByOrg = useCallback(
