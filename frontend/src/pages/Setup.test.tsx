@@ -9,6 +9,7 @@ const mocks = vi.hoisted(() => ({
   status: { setupRequired: true, mailEnabled: false, setupTokenRequired: false },
   post: vi.fn(),
   refreshWorkspace: vi.fn(() => Promise.resolve()),
+  toastInfo: vi.fn(),
 }))
 vi.mock('@/lib/axios', () => ({
   default: {
@@ -17,6 +18,7 @@ vi.mock('@/lib/axios', () => ({
   },
 }))
 vi.mock('@/lib/workspace', () => ({ refreshWorkspace: mocks.refreshWorkspace }))
+vi.mock('sonner', () => ({ toast: { info: mocks.toastInfo } }))
 
 import Setup from './Setup'
 
@@ -26,6 +28,7 @@ const renderPage = () =>
       <Routes>
         <Route path="/setup" element={<Setup />} />
         <Route path="/projects" element={<div>project picker</div>} />
+        <Route path="/login" element={<div>login page</div>} />
       </Routes>
     </MemoryRouter>
   )
@@ -48,6 +51,7 @@ describe('Setup page', () => {
     mocks.status = { setupRequired: true, mailEnabled: false, setupTokenRequired: false }
     mocks.post.mockReset()
     mocks.refreshWorkspace.mockClear()
+    mocks.toastInfo.mockClear()
     useAuthStore.setState({ token: null, user: null })
     localStorage.clear()
   })
@@ -97,6 +101,18 @@ describe('Setup page', () => {
     })
     expect(useAuthStore.getState().token).toBe('jwt')
     expect(mocks.refreshWorkspace).toHaveBeenCalled()
+  })
+
+  it('tells the user the instance is already set up before sending them to the login', async () => {
+    mocks.post.mockRejectedValueOnce({ isAxiosError: true, response: { status: 409, data: { message: 'x' } } })
+    renderPage()
+    await screen.findByLabelText(/^name$/i)
+    await fillForm()
+    fireEvent.click(screen.getByRole('button', { name: /set up/i }))
+
+    expect(await screen.findByText('login page')).toBeInTheDocument()
+    expect(mocks.toastInfo).toHaveBeenCalledWith(i18n.t('setup.error-already-done'))
+    expect(useAuthStore.getState().token).toBeNull()
   })
 
   it('shows a clear error for a wrong setup token', async () => {

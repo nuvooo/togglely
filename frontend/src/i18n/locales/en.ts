@@ -628,7 +628,7 @@ export const en = {
   'reset-link.valid-until': 'Valid until {{time}}, single use.',
   'reset-link.server-admin-title': 'Only the server administrator can reset this password',
   'reset-link.server-admin-text':
-    "{{name}} also belongs to other organizations you don't own. Only the server administrator can reset the password – with this command on the server:",
+    "{{name}} is an organization owner or also belongs to other organizations you don't own. Only the server administrator can reset the password – with this command on the server:",
   'forgot.title': 'Forgot your password?',
   'forgot.subtitle': "Enter your email address and we'll send you a reset link.",
   'forgot.submit': 'Send reset link',
@@ -640,6 +640,7 @@ export const en = {
     'Without a mail server the password cannot be reset by email. Please contact the owner of your organization – they can create a reset link for you.',
   'forgot.no-mail-admin': 'Server administrators can run this command:',
   'forgot.back': 'Back to sign in',
+  'forgot.status-error': 'Could not reach the server. Please try again.',
   'reset.title': 'Set a new password',
   'reset.subtitle': 'Afterwards, sign in with your new password. All existing sessions end.',
   'reset.password-label': 'New password',
@@ -650,4 +651,8 @@ export const en = {
   'reset.invalid-text': 'This reset link is invalid, expired or has already been used.',
   'reset.request-new': 'Request a new link',
   'reset.success': 'Password changed. Please sign in with your new password.',
+  'reset.success-title': 'Password changed',
+  'reset.success-logged-in':
+    'The new password is active. If you reset your own account, you will be asked to sign in again.',
+  'reset.continue': 'Continue',
 }

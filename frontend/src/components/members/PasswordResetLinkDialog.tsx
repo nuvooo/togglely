@@ -12,12 +12,13 @@ import {
 } from '@/components/ui/dialog'
 import api from '@/lib/axios'
 import { getErrorCode, getErrorMessage } from '@/lib/errors'
+import { shellQuote } from '@/lib/shell'
 import { CopyLinkField } from './CopyLinkField'
 import { type Member, memberName } from './types'
 
 /** CLI the server operator runs when an owner may not reset the password. */
 export const resetPasswordCommand = (email: string) =>
-  `docker exec -it togglely-backend node dist/cli reset-password ${email}`
+  `docker exec -it togglely-backend node dist/cli reset-password ${shellQuote(email)}`
 
 type State =
   | { step: 'confirm' }

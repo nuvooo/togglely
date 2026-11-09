@@ -2,6 +2,7 @@ import { Loader2 } from 'lucide-react'
 import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
+import { toast } from 'sonner'
 import { AuthLayout, FormError } from '@/components/auth/AuthLayout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
@@ -57,9 +58,12 @@ export default function Setup() {
     } catch (err: unknown) {
       const code = getErrorStatus(err)
       if (code === 409) {
-        // Someone else finished the setup meanwhile: /setup now leads to /login
-        setError(t('setup.error-already-done'))
+        // Someone else finished the setup meanwhile. The toast outlives this page,
+        // so announce it first, then leave /setup (the gate would redirect anyway).
+        toast.info(t('setup.error-already-done'))
         markSetupComplete()
+        navigate('/login', { replace: true })
+        return
       } else if (code === 403) {
         setError(t('setup.error-token'))
       } else {

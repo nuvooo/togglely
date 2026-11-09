@@ -1,5 +1,5 @@
 import { fireEvent, render, screen, waitFor } from '@testing-library/react'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useLocation } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n from '@/i18n'
 import { resetSetupStatus } from '@/lib/setup'
@@ -18,6 +18,11 @@ vi.mock('sonner', () => ({ toast: { success: mocks.toastSuccess, error: vi.fn() 
 import ForgotPassword from './ForgotPassword'
 import ResetPassword from './ResetPassword'
 
+function LocationProbe() {
+  const location = useLocation()
+  return <div data-testid="location">{location.pathname + location.search}</div>
+}
+
 const renderAt = (path: string) =>
   render(
     <MemoryRouter initialEntries={[path]}>
@@ -26,6 +31,7 @@ const renderAt = (path: string) =>
         <Route path="/reset-password" element={<ResetPassword />} />
         <Route path="/login" element={<div>login page</div>} />
       </Routes>
+      <LocationProbe />
     </MemoryRouter>
   )
 
@@ -53,6 +59,24 @@ describe('password reset pages', () => {
       expect(screen.getByText('node dist/cli reset-password <email>')).toBeInTheDocument()
       expect(screen.queryByLabelText(/email/i)).toBeNull()
       expect(screen.getByRole('link', { name: /back to sign in/i })).toHaveAttribute('href', '/login')
+    })
+
+    it('offers a retry instead of guessing when the status cannot be loaded', async () => {
+      let failing = true
+      mocks.get.mockImplementation((url: string) => {
+        if (url === '/setup/status') {
+          return failing ? Promise.reject(new Error('down')) : Promise.resolve({ data: { mailEnabled: true } })
+        }
+        return Promise.reject(new Error(url))
+      })
+      renderAt('/forgot-password')
+      expect(await screen.findByRole('alert')).toHaveTextContent(/could not reach the server/i)
+      expect(screen.queryByText(/contact the owner of your organization/i)).toBeNull()
+      expect(screen.queryByLabelText(/email/i)).toBeNull()
+
+      failing = false
+      fireEvent.click(screen.getByRole('button', { name: /retry/i }))
+      expect(await screen.findByLabelText(/email/i)).toBeInTheDocument()
     })
 
     it('requests a reset email with a mail server', async () => {
@@ -93,14 +117,46 @@ describe('password reset pages', () => {
       expect(mocks.post).not.toHaveBeenCalled()
     })
 
-    it('ends a local session after the reset', async () => {
+    it('removes the token from the URL but still uses it', async () => {
+      mocks.post.mockResolvedValueOnce({ data: { success: true } })
+      renderAt('/reset-password?token=tok')
+      await screen.findByLabelText(/new password/i)
+      expect(screen.getByTestId('location')).toHaveTextContent(/^\/reset-password$/)
+      fillPasswords('Secret123')
+      await waitFor(() =>
+        expect(mocks.post).toHaveBeenCalledWith('/password-reset/reset', { token: 'tok', password: 'Secret123' })
+      )
+    })
+
+    it('keeps a local session after the reset and offers to continue', async () => {
       useAuthStore.setState({ token: 'jwt', user: { id: 'u', email: 'a@b.c', name: 'A' } })
       mocks.post.mockResolvedValueOnce({ data: { success: true } })
       renderAt('/reset-password?token=tok')
       await screen.findByLabelText(/new password/i)
       fillPasswords('Secret123')
-      expect(await screen.findByText('login page')).toBeInTheDocument()
-      expect(useAuthStore.getState().token).toBeNull()
+      expect(await screen.findByRole('heading', { name: /password changed/i })).toBeInTheDocument()
+      expect(screen.getByRole('link', { name: /continue/i })).toHaveAttribute('href', '/overview')
+      expect(screen.queryByText('login page')).toBeNull()
+      expect(useAuthStore.getState().token).toBe('jwt')
+    })
+
+    it('points a logged-in user to the account security section for a new link', async () => {
+      useAuthStore.setState({ token: 'jwt', user: { id: 'u', email: 'a@b.c', name: 'A' } })
+      mocks.valid = false
+      renderAt('/reset-password?token=bad')
+      expect(await screen.findByRole('link', { name: /request a new link/i })).toHaveAttribute(
+        'href',
+        '/account#security'
+      )
+    })
+
+    it('points a guest to the forgot password page for a new link', async () => {
+      mocks.valid = false
+      renderAt('/reset-password?token=bad')
+      expect(await screen.findByRole('link', { name: /request a new link/i })).toHaveAttribute(
+        'href',
+        '/forgot-password'
+      )
     })
 
     it.each([

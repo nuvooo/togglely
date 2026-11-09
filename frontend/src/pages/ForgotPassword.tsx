@@ -9,7 +9,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import api from '@/lib/axios'
 import { getErrorMessage } from '@/lib/errors'
-import { useSetupStatus } from '@/lib/setup'
+import { useSetupStatusResult } from '@/lib/setup'
 
 function BackToLogin() {
   const { t } = useTranslation()
@@ -26,7 +26,7 @@ function BackToLogin() {
  */
 export default function ForgotPassword() {
   const { t } = useTranslation()
-  const status = useSetupStatus()
+  const { status, error: statusError, retry } = useSetupStatusResult()
   const [email, setEmail] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isSent, setIsSent] = useState(false)
@@ -44,6 +44,28 @@ export default function ForgotPassword() {
     } finally {
       setIsLoading(false)
     }
+  }
+
+  // Without the status we cannot tell whether mail works: don't guess, offer a retry
+  if (statusError) {
+    return (
+      <AuthLayout>
+        <Card className="shadow-sm">
+          <CardHeader className="space-y-1 pb-2 text-center">
+            <CardTitle className="text-2xl font-semibold">{t('forgot.title')}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 pt-4">
+            <FormError>{t('forgot.status-error')}</FormError>
+          </CardContent>
+          <CardFooter className="flex-col gap-3 pt-2">
+            <Button className="w-full" onClick={retry}>
+              {t('common.retry')}
+            </Button>
+            <BackToLogin />
+          </CardFooter>
+        </Card>
+      </AuthLayout>
+    )
   }
 
   if (!status) {

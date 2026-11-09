@@ -632,7 +632,7 @@ export const de = {
   'reset-link.valid-until': 'Gültig bis {{time}}, einmal verwendbar.',
   'reset-link.server-admin-title': 'Nur der Server-Administrator kann dieses Passwort zurücksetzen',
   'reset-link.server-admin-text':
-    '{{name}} ist auch Mitglied in anderen Organisationen, deren Owner du nicht bist. Deshalb kann nur der Server-Administrator das Passwort zurücksetzen – mit diesem Befehl auf dem Server:',
+    '{{name}} ist Owner einer Organisation oder auch Mitglied in anderen Organisationen, deren Owner du nicht bist. Deshalb kann nur der Server-Administrator das Passwort zurücksetzen – mit diesem Befehl auf dem Server:',
   'forgot.title': 'Passwort vergessen?',
   'forgot.subtitle': 'Gib deine E-Mail-Adresse ein, wir schicken dir einen Reset-Link.',
   'forgot.submit': 'Reset-Link senden',
@@ -644,6 +644,7 @@ export const de = {
     'Ohne Mailserver kann das Passwort nicht per E-Mail zurückgesetzt werden. Bitte wende dich an den Owner deiner Organisation – er kann dir einen Reset-Link erstellen.',
   'forgot.no-mail-admin': 'Server-Administratoren können folgenden Befehl ausführen:',
   'forgot.back': 'Zurück zur Anmeldung',
+  'forgot.status-error': 'Der Server ist nicht erreichbar. Bitte versuche es erneut.',
   'reset.title': 'Neues Passwort festlegen',
   'reset.subtitle': 'Danach meldest du dich mit dem neuen Passwort an. Alle bestehenden Sitzungen werden beendet.',
   'reset.password-label': 'Neues Passwort',
@@ -654,4 +655,8 @@ export const de = {
   'reset.invalid-text': 'Dieser Reset-Link ist ungültig, abgelaufen oder wurde bereits verwendet.',
   'reset.request-new': 'Neuen Link anfordern',
   'reset.success': 'Passwort geändert. Bitte melde dich mit dem neuen Passwort an.',
+  'reset.success-title': 'Passwort geändert',
+  'reset.success-logged-in':
+    'Das neue Passwort ist aktiv. Falls du dein eigenes Konto zurückgesetzt hast, wirst du gebeten, dich erneut anzumelden.',
+  'reset.continue': 'Weiter',
 }

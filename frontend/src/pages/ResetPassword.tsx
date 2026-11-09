@@ -4,7 +4,6 @@ import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { AuthLayout, FormError } from '@/components/auth/AuthLayout'
-import { useLogout } from '@/components/shell/useLogout'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
@@ -12,6 +11,7 @@ import { Label } from '@/components/ui/label'
 import api from '@/lib/axios'
 import { getErrorMessage } from '@/lib/errors'
 import { passwordIssue } from '@/lib/password'
+import { ROUTES } from '@/lib/routes'
 import { useAuthStore } from '@/store/authStore'
 
 /**
@@ -20,18 +20,23 @@ import { useAuthStore } from '@/store/authStore'
  */
 export default function ResetPassword() {
   const { t } = useTranslation()
-  const [searchParams] = useSearchParams()
+  const [searchParams, setSearchParams] = useSearchParams()
   const navigate = useNavigate()
-  const token = searchParams.get('token')
+  // Read once and kept in state: the token is removed from the URL right away
+  const [token] = useState(() => searchParams.get('token'))
   const loggedIn = useAuthStore((s) => !!s.token)
-  // The reset ends all sessions, including a local one
-  const logoutToLogin = useLogout('/login')
+  const [done, setDone] = useState(false)
 
   const [password, setPassword] = useState('')
   const [confirmPassword, setConfirmPassword] = useState('')
   const [isSaving, setIsSaving] = useState(false)
   const [valid, setValid] = useState<boolean | null>(token ? null : false)
   const [error, setError] = useState<string | null>(null)
+
+  // Keep the secret out of the address bar, history and Referer headers
+  useEffect(() => {
+    if (searchParams.has('token')) setSearchParams({}, { replace: true })
+  }, [searchParams, setSearchParams])
 
   useEffect(() => {
     if (!token) return
@@ -55,9 +60,15 @@ export default function ResetPassword() {
     setIsSaving(true)
     try {
       await api.post('/password-reset/reset', { token, password })
+      // A logged-in user may have reset someone else's account, so the local
+      // session stays. If it was their own, the server revoked it and the next
+      // API call ends it via the session-expired handling.
+      if (loggedIn) {
+        setDone(true)
+        return
+      }
       toast.success(t('reset.success'))
-      if (loggedIn) logoutToLogin()
-      else navigate('/login', { replace: true })
+      navigate('/login', { replace: true })
     } catch (err: unknown) {
       setError(getErrorMessage(err))
       setIsSaving(false)
@@ -74,6 +85,22 @@ export default function ResetPassword() {
     )
   }
 
+  if (done) {
+    return (
+      <AuthLayout>
+        <Card className="shadow-sm">
+          <CardContent className="space-y-4 pt-6 text-center">
+            <h2 className="text-xl font-semibold">{t('reset.success-title')}</h2>
+            <p className="text-sm text-muted-foreground">{t('reset.success-logged-in')}</p>
+            <Button asChild className="w-full">
+              <Link to={ROUTES.overview}>{t('reset.continue')}</Link>
+            </Button>
+          </CardContent>
+        </Card>
+      </AuthLayout>
+    )
+  }
+
   if (!valid) {
     return (
       <AuthLayout>
@@ -82,7 +109,7 @@ export default function ResetPassword() {
             <h2 className="text-xl font-semibold">{t('reset.invalid-title')}</h2>
             <p className="text-sm text-muted-foreground">{t('reset.invalid-text')}</p>
             <Button asChild variant="outline" className="w-full">
-              <Link to="/forgot-password">{t('reset.request-new')}</Link>
+              <Link to={loggedIn ? `${ROUTES.account}#security` : '/forgot-password'}>{t('reset.request-new')}</Link>
             </Button>
           </CardContent>
         </Card>

