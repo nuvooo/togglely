@@ -9,6 +9,7 @@ import {
 } from '@nestjs/common'
 import { AccessService, isObjectId } from '../../shared/access/access.service'
 import { AuthGuard } from '../../shared/auth.guard'
+import { parseOrgAuditLogQuery } from './audit-log-query'
 import { AUDIT_LOG_MAX_LIMIT, AuditLogsService } from './audit-logs.service'
 
 @Controller('audit-logs')
@@ -54,15 +55,21 @@ export class AuditLogsController {
     return { auditLogs }
   }
 
+  /**
+   * One page of the organization log, newest first. Query: `limit` (1–200,
+   * default 50), `before` (the previous page's `nextCursor`), `projectId`,
+   * `userId` (ObjectIds) and `action` (prefix, `[a-z_.]{1,64}`).
+   * Returns `{ auditLogs, nextCursor }`; `nextCursor` is null on the last page.
+   */
   @Get('organization/:organizationId')
   async findByOrganization(
     @Param('organizationId') organizationId: string,
-    @Req() req: any
+    @Req() req: any,
+    @Query() rawQuery: Record<string, unknown> = {}
   ) {
+    const query = parseOrgAuditLogQuery(rawQuery ?? {})
     await this.access.assertOrgRole(req.user.userId, organizationId, 'VIEWER')
-    const auditLogs =
-      await this.auditLogsService.findByOrganization(organizationId)
-    return { auditLogs }
+    return this.auditLogsService.findOrganizationPage(organizationId, query)
   }
 
   /** Latest logs across all organizations the caller is a member of. */

@@ -22,7 +22,6 @@ describe('AuditLogsService', () => {
   it('never queries without a filter', async () => {
     const { prisma, service } = setup()
     await expect(service.findAll('')).resolves.toEqual([])
-    await expect(service.findByOrganization('')).resolves.toEqual([])
     await expect(service.findForUser('')).resolves.toEqual([])
     expect(prisma.auditLog.findMany).not.toHaveBeenCalled()
   })
@@ -123,5 +122,104 @@ describe('AuditLogsService', () => {
     expect(data.newValues.defaultValue).toMatch(/…\[truncated\]$/)
     expect(data.newValues.nested.v).toMatch(/…\[truncated\]$/)
     expect(data.oldValues).toEqual({ defaultValue: 'short' })
+  })
+
+  describe('findOrganizationPage', () => {
+    const ORG = '64a000000000000000000010'
+    const at = (iso: string) => new Date(iso)
+    const row = (id: string, iso: string) => ({ id, createdAt: at(iso) })
+
+    it('scopes to the organization and applies every filter', async () => {
+      const { prisma, service } = setup()
+      const before = at('2026-11-09T10:00:00.000Z')
+      await service.findOrganizationPage(ORG, {
+        limit: 20,
+        before,
+        projectId: 'p1',
+        userId: 'u1',
+        action: 'flag.',
+      })
+      const args = prisma.auditLog.findMany.mock.calls[0][0]
+      expect(args.where).toEqual({
+        organizationId: ORG,
+        projectId: 'p1',
+        userId: 'u1',
+        action: { startsWith: 'flag.' },
+        createdAt: { lt: before },
+      })
+      expect(args.orderBy).toEqual({ createdAt: 'desc' })
+      // one extra row tells whether there is a next page
+      expect(args.take).toBe(21)
+      expect(args.include.project).toEqual({
+        select: { id: true, name: true, key: true },
+      })
+      expect(args.include.user).toBeDefined()
+    })
+
+    it('never queries without an organization', async () => {
+      const { prisma, service } = setup()
+      await expect(service.findOrganizationPage('', {})).resolves.toEqual({
+        auditLogs: [],
+        nextCursor: null,
+      })
+      expect(prisma.auditLog.findMany).not.toHaveBeenCalled()
+    })
+
+    it('uses 50 entries by default and caps the limit at 200', async () => {
+      const { prisma, service } = setup()
+      await service.findOrganizationPage(ORG, {})
+      await service.findOrganizationPage(ORG, { limit: 999 })
+      expect(
+        prisma.auditLog.findMany.mock.calls.map((c: any[]) => c[0].take)
+      ).toEqual([51, 201])
+    })
+
+    it('returns no cursor on the last page', async () => {
+      const { prisma, service } = setup()
+      prisma.auditLog.findMany.mockResolvedValue([
+        row('a', '2026-11-09T10:00:03.000Z'),
+        row('b', '2026-11-09T10:00:02.000Z'),
+      ])
+      const page = await service.findOrganizationPage(ORG, { limit: 2 })
+      expect(page.auditLogs.map((l: any) => l.id)).toEqual(['a', 'b'])
+      expect(page.nextCursor).toBeNull()
+    })
+
+    it('returns the createdAt of the last entry as cursor when more exist', async () => {
+      const { prisma, service } = setup()
+      prisma.auditLog.findMany.mockResolvedValue([
+        row('a', '2026-11-09T10:00:03.000Z'),
+        row('b', '2026-11-09T10:00:02.000Z'),
+        row('c', '2026-11-09T10:00:01.000Z'),
+      ])
+      const page = await service.findOrganizationPage(ORG, { limit: 2 })
+      expect(page.auditLogs.map((l: any) => l.id)).toEqual(['a', 'b'])
+      expect(page.nextCursor).toBe('2026-11-09T10:00:02.000Z')
+      expect(prisma.auditLog.findMany).toHaveBeenCalledTimes(1)
+    })
+
+    it('never splits entries with the same timestamp across pages', async () => {
+      const { prisma, service } = setup()
+      const tie = '2026-11-09T10:00:02.000Z'
+      prisma.auditLog.findMany
+        .mockResolvedValueOnce([
+          row('a', '2026-11-09T10:00:03.000Z'),
+          row('b', tie),
+          row('c', tie),
+        ])
+        .mockResolvedValueOnce([row('b', tie), row('c', tie), row('d', tie)])
+      const page = await service.findOrganizationPage(ORG, {
+        limit: 2,
+        action: 'flag.',
+      })
+      // the next page starts strictly before the tie, so all of it belongs here
+      expect(page.auditLogs.map((l: any) => l.id)).toEqual(['a', 'b', 'c', 'd'])
+      expect(page.nextCursor).toBe(tie)
+      expect(prisma.auditLog.findMany.mock.calls[1][0].where).toEqual({
+        organizationId: ORG,
+        action: { startsWith: 'flag.' },
+        createdAt: at(tie),
+      })
+    })
   })
 })

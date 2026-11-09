@@ -1,6 +1,11 @@
 import { Injectable } from '@nestjs/common'
 import { Prisma } from '@prisma/client'
 import { PrismaService } from '../../shared/prisma.service'
+import {
+  ORG_AUDIT_LOG_DEFAULT_LIMIT,
+  ORG_AUDIT_LOG_MAX_LIMIT,
+  OrgAuditLogQuery,
+} from './audit-log-query'
 
 const AUDIT_LOG_USER_INCLUDE = {
   user: {
@@ -12,6 +17,14 @@ const AUDIT_LOG_USER_INCLUDE = {
     },
   },
 } as const
+
+const AUDIT_LOG_ORG_INCLUDE = {
+  ...AUDIT_LOG_USER_INCLUDE,
+  project: { select: { id: true, name: true, key: true } },
+} as const
+
+/** Safety cap for entries sharing one timestamp on a page boundary. */
+const ORG_AUDIT_LOG_MAX_TIED = 1000
 
 export const AUDIT_LOG_DEFAULT_LIMIT = 100
 export const AUDIT_LOG_MAX_LIMIT = 200
@@ -101,9 +114,52 @@ export class AuditLogsService {
     return this.findLatest({ id: { in: ids } }, take)
   }
 
-  async findByOrganization(organizationId: string) {
-    if (!organizationId) return []
-    return this.findLatest({ organizationId })
+  /**
+   * One page of an organization's log, newest first, with the acting user
+   * and the project. `nextCursor` (the createdAt of the last entry) is passed
+   * as `before` for the next page; it is null on the last page. Entries
+   * sharing the boundary timestamp are never split across pages, since the
+   * next page starts strictly before it.
+   */
+  async findOrganizationPage(
+    organizationId: string,
+    query: OrgAuditLogQuery
+  ): Promise<{ auditLogs: any[]; nextCursor: string | null }> {
+    if (!organizationId) return { auditLogs: [], nextCursor: null }
+    const take = Math.min(
+      Math.max(query.limit ?? ORG_AUDIT_LOG_DEFAULT_LIMIT, 1),
+      ORG_AUDIT_LOG_MAX_LIMIT
+    )
+    const where: Prisma.AuditLogWhereInput = { organizationId }
+    if (query.projectId) where.projectId = query.projectId
+    if (query.userId) where.userId = query.userId
+    if (query.action) where.action = { startsWith: query.action }
+
+    const rows = await this.prisma.auditLog.findMany({
+      where: query.before
+        ? { ...where, createdAt: { lt: query.before } }
+        : where,
+      include: AUDIT_LOG_ORG_INCLUDE,
+      orderBy: { createdAt: 'desc' },
+      take: take + 1,
+    })
+    if (rows.length <= take) return { auditLogs: rows, nextCursor: null }
+
+    let page = rows.slice(0, take)
+    const boundary = page[take - 1].createdAt
+    if (rows[take].createdAt.getTime() === boundary.getTime()) {
+      const tied = await this.prisma.auditLog.findMany({
+        where: { ...where, createdAt: boundary },
+        include: AUDIT_LOG_ORG_INCLUDE,
+        orderBy: { createdAt: 'desc' },
+        take: ORG_AUDIT_LOG_MAX_TIED,
+      })
+      page = [
+        ...page.filter((r) => r.createdAt.getTime() !== boundary.getTime()),
+        ...tied,
+      ]
+    }
+    return { auditLogs: page, nextCursor: boundary.toISOString() }
   }
 
   /** Latest logs of all organizations the user is a member of. */

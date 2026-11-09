@@ -68,3 +68,73 @@ describe('AuditLogsController findAll (project)', () => {
     expect(service.findAll).not.toHaveBeenCalled()
   })
 })
+
+describe('AuditLogsController findByOrganization', () => {
+  const ORG = '64a000000000000000000010'
+
+  function orgSetup() {
+    const page = { auditLogs: [{ id: 'log-1' }], nextCursor: null }
+    const service = {
+      findOrganizationPage: jest.fn().mockResolvedValue(page),
+    } as any
+    const access = {
+      assertOrgRole: jest.fn().mockResolvedValue({ role: 'VIEWER' }),
+    } as any
+    const controller = new AuditLogsController(service, access)
+    return {
+      controller,
+      service,
+      access,
+      page,
+      req: { user: { userId: USER } },
+    }
+  }
+
+  it('lets VIEWERs read the page of their organization', async () => {
+    const { controller, service, access, page, req } = orgSetup()
+    await expect(controller.findByOrganization(ORG, req, {})).resolves.toEqual(
+      page
+    )
+    expect(access.assertOrgRole).toHaveBeenCalledWith(USER, ORG, 'VIEWER')
+    expect(service.findOrganizationPage).toHaveBeenCalledWith(ORG, {})
+  })
+
+  it('passes the validated filters to the service', async () => {
+    const { controller, service, req } = orgSetup()
+    await controller.findByOrganization(ORG, req, {
+      limit: '25',
+      before: '2026-11-09T10:00:00.000Z',
+      projectId: PROJECT,
+      userId: USER,
+      action: 'webhook.',
+    })
+    expect(service.findOrganizationPage).toHaveBeenCalledWith(ORG, {
+      limit: 25,
+      before: new Date('2026-11-09T10:00:00.000Z'),
+      projectId: PROJECT,
+      userId: USER,
+      action: 'webhook.',
+    })
+  })
+
+  it('rejects invalid filters before checking access', async () => {
+    const { controller, service, access, req } = orgSetup()
+    await expect(
+      controller.findByOrganization(ORG, req, { limit: '500' })
+    ).rejects.toBeInstanceOf(BadRequestException)
+    await expect(
+      controller.findByOrganization(ORG, req, { action: 'flag.*' })
+    ).rejects.toBeInstanceOf(BadRequestException)
+    expect(access.assertOrgRole).not.toHaveBeenCalled()
+    expect(service.findOrganizationPage).not.toHaveBeenCalled()
+  })
+
+  it('does not query organizations the user is not a member of', async () => {
+    const { controller, service, access, req } = orgSetup()
+    access.assertOrgRole.mockRejectedValue(new NotFoundException())
+    await expect(
+      controller.findByOrganization(ORG, req, {})
+    ).rejects.toBeInstanceOf(NotFoundException)
+    expect(service.findOrganizationPage).not.toHaveBeenCalled()
+  })
+})
