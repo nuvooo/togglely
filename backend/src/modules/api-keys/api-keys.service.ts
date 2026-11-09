@@ -3,6 +3,7 @@ import { ApiKeyType, OrganizationRole } from '@prisma/client'
 import * as crypto from 'crypto'
 import { hasRole } from '../../shared/access/access.service'
 import { PrismaService } from '../../shared/prisma.service'
+import { isPrismaUniqueConstraintError } from '../../shared/prisma-errors'
 
 const API_KEY_LIST_SELECT = {
   id: true,
@@ -112,7 +113,7 @@ export class ApiKeysService {
     if (isMcp && !data.projectId) {
       throw new BadRequestException('projectId is required for MCP keys')
     }
-    const key = `${isMcp ? 'tkm_' : 'tk_'}${crypto.randomBytes(32).toString('hex')}`
+    const key = this.generateKey(isMcp)
 
     const expiresAt = data.expiresInDays
       ? new Date(Date.now() + data.expiresInDays * 24 * 60 * 60 * 1000)
@@ -133,22 +134,37 @@ export class ApiKeysService {
     }
 
     // MCP keys: only the hash and a masked key are persisted; the plain key is
-    // returned exactly once.
-    const created = await this.prisma.apiKey.create({
-      data: {
-        name: data.name,
-        key: maskApiKey(key),
-        keyHash: hashApiKey(key),
-        type,
-        organizationId: orgId,
-        userId,
-        projectId: data.projectId,
-        allowedEnvironmentIds: data.allowedEnvironmentIds ?? [],
-        expiresAt,
-        isActive: true,
-      },
-    })
-    return { ...created, key }
+    // returned exactly once. The masked form lives in the globally unique `key`
+    // column and can collide, so retry with a fresh key on P2002.
+    const maxAttempts = 3
+    for (let attempt = 1; ; attempt++) {
+      const plain = attempt === 1 ? key : this.generateKey(true)
+      try {
+        const created = await this.prisma.apiKey.create({
+          data: {
+            name: data.name,
+            key: maskApiKey(plain),
+            keyHash: hashApiKey(plain),
+            type,
+            organizationId: orgId,
+            userId,
+            projectId: data.projectId,
+            allowedEnvironmentIds: data.allowedEnvironmentIds ?? [],
+            expiresAt,
+            isActive: true,
+          },
+        })
+        return { ...created, key: plain }
+      } catch (error) {
+        if (!isPrismaUniqueConstraintError(error) || attempt >= maxAttempts) {
+          throw error
+        }
+      }
+    }
+  }
+
+  private generateKey(isMcp: boolean): string {
+    return `${isMcp ? 'tkm_' : 'tk_'}${crypto.randomBytes(32).toString('hex')}`
   }
 
   private maskForRole<T extends { key: string }>(

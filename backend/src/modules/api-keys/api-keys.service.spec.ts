@@ -143,6 +143,43 @@ describe('ApiKeysService', () => {
       expect(prisma.apiKey.create).not.toHaveBeenCalled()
     })
 
+    it('retries MCP key creation with a fresh key after a unique-constraint collision', async () => {
+      const prisma = {
+        apiKey: {
+          create: jest
+            .fn()
+            .mockRejectedValueOnce({ code: 'P2002' })
+            .mockImplementation(async ({ data }) => ({ id: 'k', ...data })),
+        },
+      } as any
+      const result = await new ApiKeysService(prisma).create('org', 'u', {
+        name: 'x',
+        type: 'MCP',
+        projectId: PROJECT,
+      })
+      expect(prisma.apiKey.create).toHaveBeenCalledTimes(2)
+      const [first, second] = prisma.apiKey.create.mock.calls.map(
+        (c: any) => c[0].data
+      )
+      expect(second.keyHash).not.toBe(first.keyHash)
+      expect(second.keyHash).toBe(hashApiKey(result.key))
+      expect(second.key).toBe(maskApiKey(result.key))
+    })
+
+    it('rethrows after 3 colliding attempts', async () => {
+      const prisma = {
+        apiKey: { create: jest.fn().mockRejectedValue({ code: 'P2002' }) },
+      } as any
+      await expect(
+        new ApiKeysService(prisma).create('org', 'u', {
+          name: 'x',
+          type: 'MCP',
+          projectId: PROJECT,
+        })
+      ).rejects.toEqual({ code: 'P2002' })
+      expect(prisma.apiKey.create).toHaveBeenCalledTimes(3)
+    })
+
     it('non-MCP keys ignore projectId and store no hash', async () => {
       const prisma = {
         apiKey: { create: jest.fn().mockResolvedValue({}) },
