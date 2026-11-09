@@ -22,6 +22,7 @@
     --destructive-foreground: 0 0% 98%;
     --success: 142.1 72.2% 29.2%;
     --success-foreground: 0 0% 100%;
+    --switch-off: 240 4% 56%;
     --warning: 37.7 92.1% 50.2%;
     --warning-foreground: 240 10% 3.9%;
     --border: 240 5.9% 90%;
@@ -51,6 +52,7 @@
     --destructive-foreground: 0 0% 98%;
     --success: 142.1 70.6% 45.3%;
     --success-foreground: 240 10% 3.9%;
+    --switch-off: 240 5% 41%;
     --warning: 37.7 92.1% 50.2%;
     --warning-foreground: 240 10% 3.9%;
     --border: 240 3.7% 13%;

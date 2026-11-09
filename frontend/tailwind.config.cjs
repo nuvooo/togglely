@@ -52,6 +52,7 @@ module.exports = {
           DEFAULT: 'hsl(var(--warning))',
           foreground: 'hsl(var(--warning-foreground))',
         },
+        'switch-off': 'hsl(var(--switch-off))',
         sidebar: {
           DEFAULT: 'hsl(var(--sidebar))',
           accent: 'hsl(var(--sidebar-accent))',
