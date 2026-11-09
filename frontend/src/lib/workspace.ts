@@ -73,7 +73,10 @@ function startLoad(): Promise<WorkspaceData> {
   return promise
 }
 
-/** Clears the cache (tests, logout, after creating projects/orgs); mounted consumers drop their data. */
+/**
+ * Clears the cache; mounted consumers drop their data. For logout and tests only —
+ * code that creates projects/orgs must call `refreshWorkspace()` instead.
+ */
 export function resetWorkspaceCache() {
   generation++
   inflight = null
