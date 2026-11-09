@@ -2,26 +2,42 @@ import { UnauthorizedException } from '@nestjs/common'
 import { computeSdkEtag, etagMatches, handleSdkFlagsRequest } from './sdk-etag'
 import { setSdkCorsHeaders } from './sdk-http.utils'
 
+const S = { organizationId: 'org', projectId: 'p1', environmentId: 'e1' }
+
 describe('computeSdkEtag', () => {
+  it('differs by organization, project and environment', () => {
+    const base = computeSdkEtag(1, S, undefined, {}, undefined)
+    expect(
+      computeSdkEtag(1, { ...S, organizationId: 'org2' }, undefined, {}, undefined)
+    ).not.toBe(base)
+    expect(
+      computeSdkEtag(1, { ...S, projectId: 'p2' }, undefined, {}, undefined)
+    ).not.toBe(base)
+    // Environment deleted and re-created under the same key
+    expect(
+      computeSdkEtag(1, { ...S, environmentId: 'e2' }, undefined, {}, undefined)
+    ).not.toBe(base)
+  })
+
   it('has the form W/"<version>-<16 hex>"', () => {
-    expect(computeSdkEtag(7, undefined, {}, undefined)).toMatch(
+    expect(computeSdkEtag(7, S, undefined, {}, undefined)).toMatch(
       /^W\/"7-[0-9a-f]{16}"$/
     )
   })
 
   it('is stable regardless of context key order', () => {
-    expect(computeSdkEtag(1, 'b', { a: 1, z: 'x' }, 'f')).toBe(
-      computeSdkEtag(1, 'b', { z: 'x', a: 1 }, 'f')
+    expect(computeSdkEtag(1, S, 'b', { a: 1, z: 'x' }, 'f')).toBe(
+      computeSdkEtag(1, S, 'b', { z: 'x', a: 1 }, 'f')
     )
   })
 
   it('differs by version, brand, context and flag key', () => {
-    const base = computeSdkEtag(1, 'b', { userId: 'u1' }, 'f')
-    expect(computeSdkEtag(2, 'b', { userId: 'u1' }, 'f')).not.toBe(base)
-    expect(computeSdkEtag(1, 'c', { userId: 'u1' }, 'f')).not.toBe(base)
-    expect(computeSdkEtag(1, 'b', { userId: 'u2' }, 'f')).not.toBe(base)
-    expect(computeSdkEtag(1, 'b', { userId: 'u1' }, 'g')).not.toBe(base)
-    expect(computeSdkEtag(1, 'b', { userId: 'u1' }, undefined)).not.toBe(base)
+    const base = computeSdkEtag(1, S, 'b', { userId: 'u1' }, 'f')
+    expect(computeSdkEtag(2, S, 'b', { userId: 'u1' }, 'f')).not.toBe(base)
+    expect(computeSdkEtag(1, S, 'c', { userId: 'u1' }, 'f')).not.toBe(base)
+    expect(computeSdkEtag(1, S, 'b', { userId: 'u2' }, 'f')).not.toBe(base)
+    expect(computeSdkEtag(1, S, 'b', { userId: 'u1' }, 'g')).not.toBe(base)
+    expect(computeSdkEtag(1, S, 'b', { userId: 'u1' }, undefined)).not.toBe(base)
   })
 })
 
@@ -97,6 +113,7 @@ describe('handleSdkFlagsRequest', () => {
       resolveSdkAccess: jest.fn().mockResolvedValue(access),
       evaluateFlagForAccess: jest.fn().mockResolvedValue({ value: true }),
       getAllFlagsForAccess: jest.fn().mockResolvedValue({ a: { value: 1 } }),
+      trackExposuresForAccess: jest.fn().mockResolvedValue(undefined),
     }
     const changeEvents = { getVersion: jest.fn().mockResolvedValue(version) }
     const logger = { debug: jest.fn(), error: jest.fn() }
@@ -111,7 +128,7 @@ describe('handleSdkFlagsRequest', () => {
     }
   }
 
-  it('returns flags with ETag and Cache-Control: no-cache', async () => {
+  it('returns flags with ETag, private no-cache and Vary', async () => {
     const deps = setup()
     const res = createRes()
 
@@ -119,14 +136,15 @@ describe('handleSdkFlagsRequest', () => {
 
     expect(res.statusCode).toBe(200)
     expect(res.body).toEqual({ a: { value: 1 } })
-    expect(res.headers.etag).toBe(computeSdkEtag(4, undefined, {}, undefined))
-    expect(res.headers['cache-control']).toBe('no-cache')
+    expect(res.headers.etag).toBe(computeSdkEtag(4, S, undefined, {}, undefined))
+    expect(res.headers['cache-control']).toBe('private, no-cache')
+    expect(res.headers.vary).toBe('Origin, X-API-Key, Authorization')
     expect(deps.changeEvents.getVersion).toHaveBeenCalledWith('p1', 'e1')
   })
 
   it('answers 304 with ETag and without evaluating when the ETag matches', async () => {
     const deps = setup()
-    const etag = computeSdkEtag(4, undefined, {}, undefined)
+    const etag = computeSdkEtag(4, S, undefined, {}, undefined)
     const res = createRes()
 
     await handleSdkFlagsRequest(
@@ -139,7 +157,46 @@ describe('handleSdkFlagsRequest', () => {
     expect(res.end).toHaveBeenCalled()
     expect(res.json).not.toHaveBeenCalled()
     expect(res.headers.etag).toBe(etag)
+    expect(res.headers.vary).toBe('Origin, X-API-Key, Authorization')
     expect(deps.sdkService.getAllFlagsForAccess).not.toHaveBeenCalled()
+  })
+
+  it('still records experiment exposures on the 304 path', async () => {
+    const deps = setup()
+    const context = { userId: 'u1' }
+    const etag = computeSdkEtag(4, S, 'acme', context, 'my-flag')
+    const res = createRes()
+
+    await handleSdkFlagsRequest(
+      deps as any,
+      req(
+        { 'if-none-match': etag },
+        { brandKey: 'acme', context: JSON.stringify(context) }
+      ) as any,
+      res,
+      'my-flag'
+    )
+
+    expect(res.statusCode).toBe(304)
+    expect(deps.sdkService.trackExposuresForAccess).toHaveBeenCalledWith(
+      access,
+      'acme',
+      context,
+      'my-flag'
+    )
+    expect(deps.sdkService.evaluateFlagForAccess).not.toHaveBeenCalled()
+  })
+
+  it('does not fail the 304 when exposure tracking fails', async () => {
+    const deps = setup()
+    deps.sdkService.trackExposuresForAccess.mockRejectedValue(new Error('db'))
+    const etag = computeSdkEtag(4, S, undefined, {}, undefined)
+    const res = createRes()
+
+    await handleSdkFlagsRequest(deps as any, req({ 'if-none-match': etag }) as any, res)
+    await Promise.resolve()
+
+    expect(res.statusCode).toBe(304)
   })
 
   it('evaluates again when the version changed', async () => {
@@ -149,7 +206,7 @@ describe('handleSdkFlagsRequest', () => {
     await handleSdkFlagsRequest(
       deps as any,
       req({
-        'if-none-match': computeSdkEtag(4, undefined, {}, undefined),
+        'if-none-match': computeSdkEtag(4, S, undefined, {}, undefined),
       }) as any,
       res
     )
@@ -169,7 +226,7 @@ describe('handleSdkFlagsRequest', () => {
       'my-flag'
     )
 
-    expect(res.headers.etag).toBe(computeSdkEtag(4, 'acme', {}, 'my-flag'))
+    expect(res.headers.etag).toBe(computeSdkEtag(4, S, 'acme', {}, 'my-flag'))
     expect(deps.sdkService.evaluateFlagForAccess).toHaveBeenCalledWith(
       access,
       'my-flag',
@@ -189,7 +246,7 @@ describe('handleSdkFlagsRequest', () => {
     await handleSdkFlagsRequest(
       deps as any,
       req({
-        'if-none-match': computeSdkEtag(4, undefined, {}, undefined),
+        'if-none-match': computeSdkEtag(4, S, undefined, {}, undefined),
       }) as any,
       res
     )

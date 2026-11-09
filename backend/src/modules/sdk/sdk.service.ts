@@ -22,6 +22,8 @@ const OBJECT_ID_PATTERN = /^[a-f0-9]{24}$/i
 export interface SdkAccess {
   organizationId: string
   apiKeyId: string
+  /** SERVER | CLIENT | SDK (stream limits differ for client keys) */
+  apiKeyType?: string
   project: Project
   environment: Environment
 }
@@ -87,7 +89,12 @@ export class SdkService {
           { expiresAt: { gt: new Date() } },
         ],
       },
-      select: { id: true, organizationId: true, environmentId: true },
+      select: {
+        id: true,
+        organizationId: true,
+        environmentId: true,
+        type: true,
+      },
     })
 
     if (!keyRecord) {
@@ -143,6 +150,7 @@ export class SdkService {
     return {
       organizationId: keyRecord.organizationId,
       apiKeyId: keyRecord.id,
+      apiKeyType: keyRecord.type,
       project,
       environment,
     }
@@ -530,12 +538,22 @@ export class SdkService {
 
     if (!variant) return null
 
-    // Track exposure asynchronously (fire-and-forget)
+    this.recordExposure(experiment.id, variant.id, userId)
+
+    return {
+      value: variant.value,
+      experimentKey: experiment.key,
+      variantKey: variant.key,
+    }
+  }
+
+  /** Track an exposure asynchronously (fire-and-forget). */
+  private recordExposure(experimentId: string, variantId: string, userId: string) {
     this.prisma.experimentEvent
       .create({
         data: {
-          experiment: { connect: { id: experiment.id } },
-          variant: { connect: { id: variant.id } },
+          experiment: { connect: { id: experimentId } },
+          variant: { connect: { id: variantId } },
           type: 'EXPOSURE',
           userId,
         },
@@ -543,11 +561,75 @@ export class SdkService {
       .catch((err) => {
         this.logger.error('[SDK Service] Failed to track exposure:', err)
       })
+  }
 
-    return {
-      value: variant.value,
-      experimentKey: experiment.key,
-      variantKey: variant.key,
+  /**
+   * Records experiment exposures for a request answered with 304 (not
+   * evaluated): same rules as evaluation (flag enabled for the brand or the
+   * environment default, first running experiment per flag, traffic
+   * allocation, deterministic variant), without evaluating all flags.
+   */
+  async trackExposuresForAccess(
+    access: SdkAccess,
+    brandKey: string | undefined,
+    context: ToggleContext,
+    flagKey?: string
+  ): Promise<void> {
+    if (!context.userId) return
+    const { project, environment } = access
+    if (flagKey !== undefined && !isValidIdentifier(flagKey)) return
+
+    const experiments = await this.prisma.experiment.findMany({
+      where: {
+        environmentId: environment.id,
+        status: 'RUNNING',
+        ...(flagKey !== undefined && {
+          flag: { key: flagKey, projectId: project.id },
+        }),
+      },
+      include: { variants: true },
+    })
+    if (experiments.length === 0) return
+
+    // Evaluation uses the first running experiment per flag
+    const byFlag = new Map<string, (typeof experiments)[number]>()
+    for (const experiment of experiments) {
+      if (!byFlag.has(experiment.flagId)) byFlag.set(experiment.flagId, experiment)
+    }
+
+    const brandId = await this.resolveBrandId(project, brandKey)
+    const flagEnvs = await this.prisma.flagEnvironment.findMany({
+      where: {
+        environmentId: environment.id,
+        flagId: { in: [...byFlag.keys()] },
+        OR: [{ brandId }, { brandId: null }],
+      },
+      select: { flagId: true, brandId: true, enabled: true },
+    })
+
+    const userId = String(context.userId)
+    for (const [flagId, experiment] of byFlag) {
+      const brandEnv = brandId
+        ? flagEnvs.find((fe) => fe.flagId === flagId && fe.brandId === brandId)
+        : undefined
+      const flagEnv =
+        brandEnv ?? flagEnvs.find((fe) => fe.flagId === flagId && !fe.brandId)
+      if (!flagEnv?.enabled || experiment.variants.length === 0) continue
+      if (
+        !this.hashingService.isInTraffic(
+          experiment.id,
+          userId,
+          experiment.trafficPercent
+        )
+      ) {
+        continue
+      }
+      const variant = this.hashingService.assignVariant(
+        experiment.id,
+        userId,
+        experiment.variants
+      )
+      if (variant) this.recordExposure(experiment.id, variant.id, userId)
     }
   }
 }

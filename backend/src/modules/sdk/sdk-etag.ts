@@ -10,13 +10,25 @@ import {
   setSdkCorsHeaders,
 } from './sdk-http.utils'
 
+export interface SdkEtagScope {
+  organizationId: string
+  projectId: string
+  environmentId: string
+}
+
+/** Vary for SDK flag responses: the result depends on key and origin. */
+export const SDK_FLAGS_VARY = 'Origin, X-API-Key, Authorization'
+
 /**
  * Weak ETag of an SDK flags response: changes whenever the configuration
- * version of the environment changes, and differs per request shape
- * (brand, targeting context, single flag vs. all flags).
+ * version of the environment changes, and differs per tenant scope
+ * (organization, project, environment id: no collisions across tenants or
+ * for a re-created environment) and request shape (brand, targeting
+ * context, single flag vs. all flags).
  */
 export function computeSdkEtag(
   version: number,
+  scope: SdkEtagScope,
   brandKey: string | undefined,
   context: Record<string, unknown>,
   flagKey: string | undefined
@@ -28,7 +40,14 @@ export function computeSdkEtag(
   )
   const hash = createHash('sha256')
     .update(
-      `${brandKey ?? ''}|${JSON.stringify(sortedContext)}|${flagKey ?? ''}`
+      JSON.stringify([
+        scope.organizationId,
+        scope.projectId,
+        scope.environmentId,
+        brandKey ?? '',
+        sortedContext,
+        flagKey ?? '',
+      ])
     )
     .digest('hex')
     .slice(0, 16)
@@ -70,6 +89,12 @@ export interface SdkFlagsHandlerDeps {
       brandKey?: string,
       context?: Record<string, unknown>
     ): Promise<unknown>
+    trackExposuresForAccess(
+      access: SdkAccess,
+      brandKey: string | undefined,
+      context: Record<string, unknown>,
+      flagKey?: string
+    ): Promise<void>
   }
   changeEvents: {
     getVersion(projectId: string, environmentId: string): Promise<number>
@@ -128,11 +153,31 @@ export async function handleSdkFlagsRequest(
       access.project.id,
       access.environment.id
     )
-    const etag = computeSdkEtag(version, brandKey, context, flagKey)
+    const etag = computeSdkEtag(
+      version,
+      {
+        organizationId: access.organizationId,
+        projectId: access.project.id,
+        environmentId: access.environment.id,
+      },
+      brandKey,
+      context,
+      flagKey
+    )
     res.setHeader('ETag', etag)
-    res.setHeader('Cache-Control', 'no-cache')
+    // Shared caches must never serve one key's response to another
+    res.setHeader('Cache-Control', 'private, no-cache')
+    res.setHeader('Vary', SDK_FLAGS_VARY)
 
     if (etagMatches(req.headers['if-none-match'], etag)) {
+      // Not evaluated, but experiment exposures still count
+      deps.sdkService
+        .trackExposuresForAccess(access, brandKey, context, flagKey)
+        .catch((error: unknown) =>
+          deps.logger.error(
+            `[SDK] Exposure tracking failed for ${route}: ${String(error)}`
+          )
+        )
       res.status(304).end()
       return
     }

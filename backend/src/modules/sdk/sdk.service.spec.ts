@@ -760,4 +760,113 @@ describe('SdkService', () => {
       )
     })
   })
+
+  describe('resolveSdkAccess key type', () => {
+    it('returns the API key type (used for stream limits)', async () => {
+      const { service, prisma } = createService()
+      mockValidAccess(prisma)
+      prisma.apiKey.findFirst.mockResolvedValue({ ...mockApiKey, type: 'CLIENT' })
+
+      const access = await service.resolveSdkAccess('my-project', 'production', 'k')
+
+      expect(access.apiKeyType).toBe('CLIENT')
+      expect(prisma.apiKey.findFirst.mock.calls[0][0].select).toMatchObject({
+        type: true,
+      })
+    })
+  })
+
+  describe('trackExposuresForAccess (304 path)', () => {
+    const access = {
+      organizationId: 'org-1',
+      apiKeyId: 'key-1',
+      apiKeyType: 'SERVER',
+      project: mockProject,
+      environment: mockEnvironment,
+    } as any
+    const experiment = {
+      id: 'exp-1',
+      key: 'exp',
+      flagId: 'flag-1',
+      trafficPercent: 100,
+      variants: [
+        { id: 'v1', key: 'a', value: 'A', weight: 50 },
+        { id: 'v2', key: 'b', value: 'B', weight: 50 },
+      ],
+    }
+
+    function setup() {
+      const ctx = createService()
+      ctx.prisma.experiment.findMany = jest.fn().mockResolvedValue([experiment])
+      ctx.prisma.flagEnvironment.findMany.mockResolvedValue([
+        { flagId: 'flag-1', brandId: null, enabled: true },
+      ])
+      return ctx
+    }
+
+    it('does nothing without a userId', async () => {
+      const { service, prisma } = setup()
+      await service.trackExposuresForAccess(access, undefined, {})
+      expect(prisma.experiment.findMany).not.toHaveBeenCalled()
+      expect(prisma.experimentEvent.create).not.toHaveBeenCalled()
+    })
+
+    it('records one exposure per running experiment with the same assignment as evaluation', async () => {
+      const { service, prisma, hashingService } = setup()
+      await service.trackExposuresForAccess(access, undefined, { userId: 'u1' })
+
+      expect(prisma.experiment.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({
+          where: expect.objectContaining({
+            environmentId: 'env-1',
+            status: 'RUNNING',
+          }),
+        })
+      )
+      const variant = hashingService.assignVariant('exp-1', 'u1', experiment.variants as any)
+      expect(prisma.experimentEvent.create).toHaveBeenCalledTimes(1)
+      expect(prisma.experimentEvent.create).toHaveBeenCalledWith({
+        data: {
+          experiment: { connect: { id: 'exp-1' } },
+          variant: { connect: { id: (variant as any).id } },
+          type: 'EXPOSURE',
+          userId: 'u1',
+        },
+      })
+    })
+
+    it('skips experiments whose flag is disabled in the environment', async () => {
+      const { service, prisma } = setup()
+      prisma.flagEnvironment.findMany.mockResolvedValue([
+        { flagId: 'flag-1', brandId: null, enabled: false },
+      ])
+      await service.trackExposuresForAccess(access, undefined, { userId: 'u1' })
+      expect(prisma.experimentEvent.create).not.toHaveBeenCalled()
+    })
+
+    it('skips users outside the traffic allocation', async () => {
+      const { service, prisma } = setup()
+      prisma.experiment.findMany.mockResolvedValue([{ ...experiment, trafficPercent: 0 }])
+      await service.trackExposuresForAccess(access, undefined, { userId: 'u1' })
+      expect(prisma.experimentEvent.create).not.toHaveBeenCalled()
+    })
+
+    it('limits tracking to the requested flag for single-flag requests', async () => {
+      const { service, prisma } = setup()
+      await service.trackExposuresForAccess(access, undefined, { userId: 'u1' }, 'my-flag')
+      expect(prisma.experiment.findMany.mock.calls[0][0].where).toMatchObject({
+        flag: { key: 'my-flag', projectId: 'proj-1' },
+      })
+    })
+
+    it('uses only the first running experiment per flag, like evaluation', async () => {
+      const { service, prisma } = setup()
+      prisma.experiment.findMany.mockResolvedValue([
+        experiment,
+        { ...experiment, id: 'exp-2', key: 'exp2' },
+      ])
+      await service.trackExposuresForAccess(access, undefined, { userId: 'u1' })
+      expect(prisma.experimentEvent.create).toHaveBeenCalledTimes(1)
+    })
+  })
 })
