@@ -6,7 +6,6 @@ import helmet from 'helmet'
 import morgan from 'morgan'
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston'
 import { AppModule } from './app.module'
-import { CHANGE_BUS } from './modules/change-events/change-bus'
 import { ChangeEventsService } from './modules/change-events/change-events.service'
 import {
   SDK_CORS_ALLOWED_HEADERS,
@@ -14,7 +13,7 @@ import {
 } from './modules/sdk/sdk.constants'
 import { SdkService } from './modules/sdk/sdk.service'
 import { handleSdkFlagsRequest } from './modules/sdk/sdk-etag'
-import { readSdkStreamOptions, SdkStreamHub } from './modules/sdk/sdk-stream'
+import { SdkStreamHub } from './modules/sdk/sdk-stream'
 import { setSdkCorsHeaders } from './modules/sdk/sdk-http.utils'
 import { GlobalExceptionFilter } from './shared/filters/global-exception.filter'
 import { MetricsService } from './shared/metrics/metrics.service'
@@ -32,6 +31,9 @@ async function bootstrap() {
   assertSecureConfig()
 
   const app = await NestFactory.create(AppModule)
+  // SIGTERM/SIGINT: onModuleDestroy hooks run before the HTTP server closes
+  // (SDK streams are ended, pending change events flushed)
+  app.enableShutdownHooks()
   app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER))
   const logger = new Logger('Bootstrap')
   const isProduction = process.env.NODE_ENV === 'production'
@@ -133,10 +135,7 @@ async function bootstrap() {
   const sdkService = app.get(SdkService)
   const changeEvents = app.get(ChangeEventsService)
   const sdkFlagsDeps = { sdkService, changeEvents, logger }
-  const sdkStreamHub = new SdkStreamHub(
-    { sdkService, changeEvents, bus: app.get(CHANGE_BUS), logger },
-    readSdkStreamOptions(process.env)
-  )
+  const sdkStreamHub = app.get(SdkStreamHub)
 
   // Health endpoint
   httpAdapter.get('/health', (req, res) => {

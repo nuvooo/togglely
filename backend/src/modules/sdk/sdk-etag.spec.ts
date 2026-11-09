@@ -8,7 +8,13 @@ describe('computeSdkEtag', () => {
   it('differs by organization, project and environment', () => {
     const base = computeSdkEtag(1, S, undefined, {}, undefined)
     expect(
-      computeSdkEtag(1, { ...S, organizationId: 'org2' }, undefined, {}, undefined)
+      computeSdkEtag(
+        1,
+        { ...S, organizationId: 'org2' },
+        undefined,
+        {},
+        undefined
+      )
     ).not.toBe(base)
     expect(
       computeSdkEtag(1, { ...S, projectId: 'p2' }, undefined, {}, undefined)
@@ -37,7 +43,9 @@ describe('computeSdkEtag', () => {
     expect(computeSdkEtag(1, S, 'c', { userId: 'u1' }, 'f')).not.toBe(base)
     expect(computeSdkEtag(1, S, 'b', { userId: 'u2' }, 'f')).not.toBe(base)
     expect(computeSdkEtag(1, S, 'b', { userId: 'u1' }, 'g')).not.toBe(base)
-    expect(computeSdkEtag(1, S, 'b', { userId: 'u1' }, undefined)).not.toBe(base)
+    expect(computeSdkEtag(1, S, 'b', { userId: 'u1' }, undefined)).not.toBe(
+      base
+    )
   })
 })
 
@@ -136,7 +144,9 @@ describe('handleSdkFlagsRequest', () => {
 
     expect(res.statusCode).toBe(200)
     expect(res.body).toEqual({ a: { value: 1 } })
-    expect(res.headers.etag).toBe(computeSdkEtag(4, S, undefined, {}, undefined))
+    expect(res.headers.etag).toBe(
+      computeSdkEtag(4, S, undefined, {}, undefined)
+    )
     expect(res.headers['cache-control']).toBe('private, no-cache')
     expect(res.headers.vary).toBe('Origin, X-API-Key, Authorization')
     expect(deps.changeEvents.getVersion).toHaveBeenCalledWith('p1', 'e1')
@@ -193,7 +203,11 @@ describe('handleSdkFlagsRequest', () => {
     const etag = computeSdkEtag(4, S, undefined, {}, undefined)
     const res = createRes()
 
-    await handleSdkFlagsRequest(deps as any, req({ 'if-none-match': etag }) as any, res)
+    await handleSdkFlagsRequest(
+      deps as any,
+      req({ 'if-none-match': etag }) as any,
+      res
+    )
     await Promise.resolve()
 
     expect(res.statusCode).toBe(304)
