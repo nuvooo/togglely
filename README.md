@@ -281,6 +281,24 @@ docker-compose -f docker-compose.yml up -d
 3. Build and start backend
 4. Build and serve frontend
 
+### Password Reset Without Email
+
+Without SMTP, users cannot receive reset mails. Two alternatives:
+
+- **Organization owners** can create a one-time reset link for a member
+  (`POST /api/organizations/:id/members/:userId/password-reset-link`).
+  This only works if the owner owns *every* organization the user belongs to;
+  otherwise the server administrator has to do it.
+- **Server administrators** can create a reset link on the server:
+
+```bash
+docker exec -it togglely-backend node dist/cli reset-password user@example.com
+# without Docker: cd backend && npm run cli -- reset-password user@example.com
+```
+
+The link is printed to the terminal, is valid for 1 hour and replaces any
+previously issued reset link. No mail is sent.
+
 ## 🤝 Contributing
 
 Contributions are welcome! Please follow these steps:
