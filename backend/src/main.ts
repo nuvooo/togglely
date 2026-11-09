@@ -1,4 +1,4 @@
-import { Logger, ValidationPipe } from '@nestjs/common'
+import { INestApplication, Logger, ValidationPipe } from '@nestjs/common'
 import { NestFactory } from '@nestjs/core'
 import { DocumentBuilder, SwaggerModule } from '@nestjs/swagger'
 import cors from 'cors'
@@ -6,26 +6,53 @@ import helmet from 'helmet'
 import morgan from 'morgan'
 import { WINSTON_MODULE_NEST_PROVIDER } from 'nest-winston'
 import { AppModule } from './app.module'
-import { SDK_ERROR_CODES } from './modules/sdk/sdk.constants'
-import { SdkService } from './modules/sdk/sdk.service'
+import { ChangeEventsService } from './modules/change-events/change-events.service'
 import {
-  extractEffectiveBrandKey,
-  extractSdkApiKey,
-  extractSdkOrigin,
-  mapSdkError,
-  setSdkCorsHeaders,
-} from './modules/sdk/sdk-http.utils'
+  SDK_CORS_ALLOWED_HEADERS,
+  SDK_CORS_EXPOSED_HEADERS,
+} from './modules/sdk/sdk.constants'
+import { SdkService } from './modules/sdk/sdk.service'
+import { handleSdkFlagsRequest } from './modules/sdk/sdk-etag'
+import { SdkStreamHub } from './modules/sdk/sdk-stream'
+import { setSdkCorsHeaders } from './modules/sdk/sdk-http.utils'
 import { GlobalExceptionFilter } from './shared/filters/global-exception.filter'
 import { MetricsService } from './shared/metrics/metrics.service'
+import {
+  assertSecureConfig,
+  createIpRateLimiter,
+  isOriginAllowed,
+  isSdkPath,
+  parseOriginList,
+  redactUrl,
+} from './shared/security/http-security'
 
 async function bootstrap() {
+  // Refuse to boot in production with a missing/weak JWT secret
+  assertSecureConfig()
+
   const app = await NestFactory.create(AppModule)
+  // SIGTERM/SIGINT: onModuleDestroy hooks run before the HTTP server closes
+  // (SDK streams are ended, pending change events flushed)
+  app.enableShutdownHooks()
   app.useLogger(app.get(WINSTON_MODULE_NEST_PROVIDER))
   const logger = new Logger('Bootstrap')
+  const isProduction = process.env.NODE_ENV === 'production'
+  const swaggerEnabled = !isProduction || process.env.ENABLE_SWAGGER === 'true'
+
+  // Behind reverse proxies (Traefik/nginx) req.ip must be the real client IP,
+  // otherwise all clients share one rate-limit bucket. By default only
+  // private-network hops are trusted, so X-Forwarded-For cannot be spoofed.
+  app
+    .getHttpAdapter()
+    .getInstance()
+    .set(
+      'trust proxy',
+      process.env.TRUST_PROXY || 'loopback, linklocal, uniquelocal'
+    )
 
   // Swagger UI needs relaxed CSP (inline scripts) — apply BEFORE helmet
   app.use((req: any, res: any, next: any) => {
-    if (req.path && req.path.startsWith('/api/swagger')) {
+    if (swaggerEnabled && req.path && req.path.startsWith('/api/swagger')) {
       res.setHeader(
         'Content-Security-Policy',
         "default-src 'self'; style-src * 'unsafe-inline'; img-src * data:; script-src * 'unsafe-inline'; connect-src *; font-src * data:"
@@ -39,80 +66,66 @@ async function bootstrap() {
     )
   })
 
-  // CORS for all routes including SDK
-  // Allow multiple origins via CORS_ORIGINS env variable
-  const corsOriginsEnv = process.env.CORS_ORIGINS || ''
-  const corsOrigins = corsOriginsEnv
-    ? corsOriginsEnv
-        .split(',')
-        .map((o) => o.trim())
-        .filter((o) => o)
-    : []
+  // CORS for the dashboard API. SDK routes are called from customer websites
+  // and are restricted per project via allowedOrigins instead.
+  const corsOrigins = parseOriginList(process.env.CORS_ORIGINS)
+  const allowAll = corsOrigins.includes('*')
 
-  logger.log('[CORS] Configuration:')
-  logger.debug(`[CORS] CORS_ORIGINS env: "${corsOriginsEnv}"`)
-  logger.debug(
-    `[CORS] Parsed origins:`,
-    corsOrigins.length > 0 ? corsOrigins : 'ALLOWING ALL (*)'
+  if (allowAll) {
+    logger.warn('[CORS] CORS_ORIGINS=* allows every origin for the API')
+  } else if (corsOrigins.length === 0) {
+    logger.log(
+      isProduction
+        ? '[CORS] No CORS_ORIGINS configured: same-origin requests only'
+        : '[CORS] No CORS_ORIGINS configured: allowing localhost (dev)'
+    )
+  }
+
+  const corsHeaders = [
+    'Content-Type',
+    'Authorization',
+    'X-API-Key',
+    'X-Requested-With',
+  ]
+  const apiCors = cors({
+    origin: (origin, callback) => {
+      // Requests without Origin (same-origin, curl, server-side)
+      if (!origin || allowAll) return callback(null, true)
+
+      if (!isProduction && /^https?:\/\/localhost(:\d+)?$/.test(origin)) {
+        return callback(null, true)
+      }
+
+      if (isOriginAllowed(origin, corsOrigins)) return callback(null, true)
+
+      logger.warn(`[CORS] Blocked origin: ${origin}`)
+      // No CORS headers -> the browser blocks the response
+      callback(null, false)
+    },
+    credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
+    allowedHeaders: corsHeaders,
+  })
+  const sdkCors = cors({
+    origin: true,
+    credentials: false,
+    methods: ['GET', 'POST', 'OPTIONS'],
+    // Includes If-None-Match / Last-Event-ID for conditional requests and
+    // stream resumption
+    allowedHeaders: SDK_CORS_ALLOWED_HEADERS.split(', '),
+    exposedHeaders: SDK_CORS_EXPOSED_HEADERS.split(', '),
+  })
+  app.use((req: any, res: any, next: any) =>
+    isSdkPath(req.path) ? sdkCors(req, res, next) : apiCors(req, res, next)
   )
 
-  // Check if we should allow all origins
-  const allowAll = corsOrigins.length === 0 || corsOrigins.includes('*')
-
+  // Never log query strings (may contain API keys) or path tokens
+  morgan.token('safe-url', (req: any) => redactUrl(req.originalUrl || req.url))
   app.use(
-    cors({
-      origin: (origin, callback) => {
-        // Allow requests with no origin (mobile apps, curl, server-side, etc.)
-        if (!origin) {
-          logger.debug(`[CORS] Allowing request with no origin (curl/mobile)`)
-          return callback(null, true)
-        }
-
-        // If CORS_ORIGINS is empty or contains *, allow all
-        if (allowAll) {
-          logger.debug(`[CORS] Allowing origin: ${origin} (wildcard mode)`)
-          return callback(null, true)
-        }
-
-        // Always allow localhost origins for development
-        if (origin.match(/^https?:\/\/localhost(:\d+)?$/)) {
-          logger.debug(`[CORS] Allowing localhost origin: ${origin}`)
-          return callback(null, true)
-        }
-
-        // Check against allowed origins list
-        const allowed = corsOrigins.some((allowed) => {
-          if (allowed === origin) return true
-          // Wildcard support: *.example.com
-          if (allowed.startsWith('*.')) {
-            const domain = allowed.slice(2)
-            return origin.endsWith(domain)
-          }
-          return false
-        })
-
-        if (allowed) {
-          logger.debug(`[CORS] Allowing origin: ${origin}`)
-          callback(null, true)
-          return
-        }
-
-        logger.warn(`[CORS] BLOCKED origin: ${origin}`)
-        logger.warn(`[CORS] Allowed origins: ${JSON.stringify(corsOrigins)}`)
-        callback(new Error(`Origin ${origin} not allowed`))
-      },
-      credentials: true,
-      methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'],
-      allowedHeaders: [
-        'Content-Type',
-        'Authorization',
-        'X-API-Key',
-        'X-Requested-With',
-      ],
-    })
+    morgan(
+      ':remote-addr - :remote-user [:date[clf]] ":method :safe-url HTTP/:http-version" :status :res[content-length] ":user-agent"'
+    )
   )
-
-  app.use(morgan('combined'))
 
   app.useGlobalPipes(new ValidationPipe({ whitelist: true, transform: true }))
   app.useGlobalFilters(new GlobalExceptionFilter())
@@ -120,15 +133,27 @@ async function bootstrap() {
   // Register standalone routes BEFORE global prefix
   const httpAdapter = app.getHttpAdapter()
   const sdkService = app.get(SdkService)
+  const changeEvents = app.get(ChangeEventsService)
+  const sdkFlagsDeps = { sdkService, changeEvents, logger }
+  const sdkStreamHub = app.get(SdkStreamHub)
 
   // Health endpoint
   httpAdapter.get('/health', (req, res) => {
     res.json({ status: 'ok', timestamp: new Date().toISOString() })
   })
 
-  // Prometheus metrics endpoint (outside /api prefix)
+  // Prometheus metrics endpoint (outside /api prefix). Protected by
+  // METRICS_TOKEN; without a token it is disabled in production.
   const metricsService = app.get(MetricsService)
-  httpAdapter.get('/metrics', async (_req, res) => {
+  const metricsToken = process.env.METRICS_TOKEN
+  httpAdapter.get('/metrics', async (req, res) => {
+    if (metricsToken) {
+      if (req.headers.authorization !== `Bearer ${metricsToken}`) {
+        return res.status(401).json({ error: 'Unauthorized' })
+      }
+    } else if (isProduction) {
+      return res.status(404).json({ error: 'Not found' })
+    }
     const metrics = await metricsService.getMetrics()
     res.set('Content-Type', metricsService.getContentType())
     res.set('Cache-Control', 'no-store')
@@ -151,106 +176,55 @@ async function bootstrap() {
   )
 
   // SDK endpoints registered as raw HTTP handlers — ThrottlerGuard (APP_GUARD)
-  // does NOT apply here because these bypass the NestJS controller layer.
-  // Rate limiting for SDK routes must be handled separately (e.g. reverse proxy).
+  // does NOT apply here because these bypass the NestJS controller layer,
+  // so they get their own per-IP limit.
+  app.use(
+    '/sdk',
+    createIpRateLimiter({
+      windowMs: 60_000,
+      limit: Number(process.env.SDK_RATE_LIMIT_PER_MINUTE) || 600,
+    })
+  )
+
+  // Live change stream (Server-Sent Events). Registered after the rate
+  // limiter: opening a stream counts as one request; concurrent streams are
+  // limited per API key and per IP by the hub.
+  httpAdapter.options('/sdk/stream/:projectKey/:environmentKey', (req, res) => {
+    setSdkCorsHeaders(res, req.headers['origin'] as string | undefined)
+    res.status(200).send()
+  })
+  httpAdapter.get('/sdk/stream/:projectKey/:environmentKey', (req, res) =>
+    sdkStreamHub.handle(req, res)
+  )
 
   // Get single flag - MUST be registered BEFORE the list endpoint!
+  // Both answer conditional requests: ETag = config version + request shape,
+  // If-None-Match → 304 after the key/origin check, before evaluation.
   httpAdapter.get(
     '/sdk/flags/:projectKey/:environmentKey/:flagKey',
-    async (req, res) => {
-      const { projectKey, environmentKey, flagKey } = req.params
-      const effectiveBrandKey = extractEffectiveBrandKey(req.query)
-      const apiKey = extractSdkApiKey(req)
-      const origin = extractSdkOrigin(req)
-
-      // Always set CORS headers first
-      setSdkCorsHeaders(res, origin)
-
-      logger.debug(
-        `[SDK] Request: /sdk/flags/${projectKey}/${environmentKey}/${flagKey}`
-      )
-      logger.debug(
-        `[SDK] API Key present: ${!!apiKey}, Origin: ${origin || 'none'}`
-      )
-
-      try {
-        if (!apiKey) {
-          logger.debug('[SDK] ERROR: No API key provided')
-          return res.status(401).json({
-            error: 'API key required',
-            code: SDK_ERROR_CODES.missingApiKey,
-          })
-        }
-
-        const result = await sdkService.evaluateFlag(
-          projectKey,
-          environmentKey,
-          flagKey,
-          apiKey,
-          effectiveBrandKey as string,
-          origin
-        )
-
-        logger.debug(`[SDK] Success: ${flagKey} =`, result)
-        res.json(result)
-      } catch (error: any) {
-        logger.error(`[SDK] Error for ${flagKey}:`, error.message)
-        const response = mapSdkError(error)
-        res.status(response.status).json(response.body)
-      }
-    }
+    (req, res) =>
+      handleSdkFlagsRequest(sdkFlagsDeps, req, res, req.params.flagKey)
   )
 
   // Get all flags for project/environment
-  httpAdapter.get(
-    '/sdk/flags/:projectKey/:environmentKey',
-    async (req, res) => {
-      const { projectKey, environmentKey } = req.params
-      const effectiveBrandKey = extractEffectiveBrandKey(req.query)
-      const apiKey = extractSdkApiKey(req)
-      const origin = extractSdkOrigin(req)
-
-      // Always set CORS headers first
-      setSdkCorsHeaders(res, origin)
-
-      logger.debug(`[SDK] Request: /sdk/flags/${projectKey}/${environmentKey}`)
-      logger.debug(
-        `[SDK] API Key present: ${!!apiKey}, Origin: ${origin || 'none'}`
-      )
-
-      try {
-        if (!apiKey) {
-          logger.debug('[SDK] ERROR: No API key provided')
-          return res.status(401).json({
-            error: 'API key required',
-            code: SDK_ERROR_CODES.missingApiKey,
-          })
-        }
-
-        const results = await sdkService.getAllFlags(
-          projectKey,
-          environmentKey,
-          apiKey,
-          effectiveBrandKey as string,
-          origin
-        )
-
-        logger.debug(
-          `[SDK] Success: ${Object.keys(results).length} flags returned`
-        )
-        res.json(results)
-      } catch (error: any) {
-        logger.error(`[SDK] Error:`, error.message)
-        const response = mapSdkError(error)
-        res.status(response.status).json(response.body)
-      }
-    }
+  httpAdapter.get('/sdk/flags/:projectKey/:environmentKey', (req, res) =>
+    handleSdkFlagsRequest(sdkFlagsDeps, req, res)
   )
 
   // Set global prefix BEFORE creating Swagger document so paths are correct
   app.setGlobalPrefix('api')
 
-  // Swagger/OpenAPI Documentation - setup BEFORE global prefix
+  if (swaggerEnabled) {
+    setupSwagger(app)
+  }
+
+  const port = process.env.PORT || 4000
+  await app.listen(port, '0.0.0.0')
+  logger.log(`🚀 Togglely API running on http://0.0.0.0:${port}`)
+}
+
+/** Swagger/OpenAPI docs; disabled in production unless ENABLE_SWAGGER=true. */
+function setupSwagger(app: INestApplication) {
   const config = new DocumentBuilder()
     .setTitle('Togglely API')
     .setDescription(`Feature Flag Management API
@@ -280,8 +254,8 @@ Public SDK endpoints are available at /sdk/flags/ without authentication`)
             schema: {
               type: 'object',
               properties: {
-                email: { type: 'string', example: 'demo@togglely.io' },
-                password: { type: 'string', example: 'demo123!' },
+                email: { type: 'string', example: 'user@example.com' },
+                password: { type: 'string' },
               },
             },
           },
@@ -417,9 +391,6 @@ Public SDK endpoints are available at /sdk/flags/ without authentication`)
     };
   `,
   })
-
-  const port = process.env.PORT || 4000
-  await app.listen(port, '0.0.0.0')
-  logger.log(`🚀 Togglely API running on http://0.0.0.0:${port}`)
 }
+
 bootstrap()

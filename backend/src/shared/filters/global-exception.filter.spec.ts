@@ -67,6 +67,36 @@ describe('GlobalExceptionFilter', () => {
       )
     })
 
+    it('passes a machine-readable error code through to the client', () => {
+      const filter = createFilter()
+      const { host, json } = createMockHost()
+
+      filter.catch(
+        new HttpException(
+          { message: 'Nope', code: 'SOME_CODE' },
+          HttpStatus.FORBIDDEN
+        ),
+        host
+      )
+
+      expect(json).toHaveBeenCalledWith(
+        expect.objectContaining({
+          statusCode: HttpStatus.FORBIDDEN,
+          message: 'Nope',
+          code: 'SOME_CODE',
+        })
+      )
+    })
+
+    it('omits code when the exception has none', () => {
+      const filter = createFilter()
+      const { host, json } = createMockHost()
+
+      filter.catch(new NotFoundException('x'), host)
+
+      expect(json.mock.calls[0][0]).not.toHaveProperty('code')
+    })
+
     it('handles HttpException with string response', () => {
       const filter = createFilter()
       const { host, status, json } = createMockHost()
@@ -149,7 +179,7 @@ describe('GlobalExceptionFilter', () => {
       expect(status).toHaveBeenCalledWith(HttpStatus.INTERNAL_SERVER_ERROR)
       expect(json).toHaveBeenCalledWith(
         expect.objectContaining({
-          message: 'Database error',
+          message: 'Internal server error',
         })
       )
     })
@@ -166,7 +196,8 @@ describe('GlobalExceptionFilter', () => {
       expect(json).toHaveBeenCalledWith(
         expect.objectContaining({
           statusCode: HttpStatus.INTERNAL_SERVER_ERROR,
-          message: 'Something broke',
+          // internal details must not leak to the client
+          message: 'Internal server error',
         })
       )
     })
@@ -184,6 +215,46 @@ describe('GlobalExceptionFilter', () => {
           message: 'Internal server error',
         })
       )
+    })
+  })
+
+  describe('token redaction', () => {
+    it('masks invite tokens in the logged path and the response path', () => {
+      const filter = createFilter()
+      const { host, request, json } = createMockHost()
+      const warn = jest
+        .spyOn((filter as any).logger, 'warn')
+        .mockImplementation(() => undefined)
+      const secret = 'f'.repeat(64)
+      Object.assign(request, {
+        method: 'POST',
+        url: `/auth/invite/${secret}/register`,
+        originalUrl: `/api/auth/invite/${secret}/register?x=1`,
+        path: `/auth/invite/${secret}/register`,
+      })
+
+      filter.catch(new NotFoundException('Invite not found'), host)
+
+      expect(warn.mock.calls[0][0]).not.toContain(secret)
+      expect(warn.mock.calls[0][0]).toContain(
+        '/api/auth/invite/[REDACTED]/register'
+      )
+      const body = json.mock.calls[0][0]
+      expect(body.path).toBe('/api/auth/invite/[REDACTED]/register')
+    })
+
+    it('masks tokens in 5xx error logs', () => {
+      const filter = createFilter()
+      const { host, request, json } = createMockHost()
+      const error = jest
+        .spyOn((filter as any).logger, 'error')
+        .mockImplementation(() => undefined)
+      Object.assign(request, { url: '/auth/verify-email/abc123' })
+
+      filter.catch(new Error('boom'), host)
+
+      expect(error.mock.calls[0][0]).not.toContain('abc123')
+      expect(json.mock.calls[0][0].path).toBe('/auth/verify-email/[REDACTED]')
     })
   })
 })

@@ -1,0 +1,285 @@
+import { useEffect, useId, useState } from 'react'
+import { useTranslation } from 'react-i18next'
+import { toast } from 'sonner'
+import { Button } from '@/components/ui/button'
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog'
+import { Input } from '@/components/ui/input'
+import { Label } from '@/components/ui/label'
+import { getErrorMessage } from '@/lib/errors'
+
+export type FlagType = 'BOOLEAN' | 'STRING' | 'NUMBER' | 'JSON'
+
+/** Pretty-prints JSON for editing; leaves anything unparseable as is. */
+function toEditable(flagType: FlagType, value: string): string {
+  if (flagType !== 'JSON') return value
+  try {
+    return JSON.stringify(JSON.parse(value), null, 2)
+  } catch {
+    return value
+  }
+}
+
+/**
+ * Canonical form of a number value ('1e3' -> '1000', ' 5 ' -> '5'), or null
+ * for empty, NaN or infinite input.
+ */
+export function normalizeNumber(raw: string): string | null {
+  const trimmed = raw.trim()
+  if (trimmed === '') return null
+  const parsed = Number(trimmed)
+  return Number.isFinite(parsed) ? String(parsed) : null
+}
+
+/** Structural equality of parsed JSON values (object key order ignored). */
+function jsonEqual(a: unknown, b: unknown): boolean {
+  if (a === b) return true
+  if (typeof a !== 'object' || typeof b !== 'object' || !a || !b) return false
+  if (Array.isArray(a) !== Array.isArray(b)) return false
+  if (Array.isArray(a) && Array.isArray(b)) {
+    return a.length === b.length && a.every((v, i) => jsonEqual(v, b[i]))
+  }
+  const aObj = a as Record<string, unknown>
+  const bObj = b as Record<string, unknown>
+  const keys = Object.keys(aObj)
+  const bKeys = new Set(Object.keys(bObj))
+  return (
+    keys.length === bKeys.size &&
+    keys.every((k) => bKeys.has(k) && jsonEqual(aObj[k], bObj[k]))
+  )
+}
+
+/**
+ * True when the text contains a digit run (more than 15 digits) above
+ * Number.MAX_SAFE_INTEGER: JSON.parse would silently round it.
+ */
+export function hasUnsafeIntegers(text: string): boolean {
+  const max = BigInt(Number.MAX_SAFE_INTEGER)
+  return (text.match(/\d{16,}/g) ?? []).some((run) => BigInt(run) > max)
+}
+
+/**
+ * Validates and normalizes an edited value. Returns the value to send or an
+ * error key. Numbers are canonicalized; JSON is sent compact, unless it is
+ * unchanged from `original`, which is then kept verbatim.
+ */
+export function normalizeFlagValue(
+  flagType: FlagType,
+  raw: string,
+  original?: string
+):
+  | { ok: true; value: string }
+  | { ok: false; error: string; params?: Record<string, string> } {
+  if (flagType === 'NUMBER') {
+    const value = normalizeNumber(raw)
+    return value === null
+      ? { ok: false, error: 'flag-value.invalid-number' }
+      : { ok: true, value }
+  }
+  if (flagType === 'JSON') {
+    try {
+      const parsed = JSON.parse(raw)
+      if (original !== undefined) {
+        try {
+          if (jsonEqual(parsed, JSON.parse(original))) {
+            return { ok: true, value: original }
+          }
+        } catch {
+          // Original was not valid JSON: save the new value.
+        }
+      }
+      return { ok: true, value: JSON.stringify(parsed) }
+    } catch (error) {
+      return {
+        ok: false,
+        error: 'flag-value.invalid-json',
+        params: { message: error instanceof Error ? error.message : '' },
+      }
+    }
+  }
+  if (flagType === 'BOOLEAN') {
+    return raw === 'true' || raw === 'false'
+      ? { ok: true, value: raw }
+      : { ok: false, error: 'flag-value.invalid-boolean' }
+  }
+  return { ok: true, value: raw }
+}
+
+interface FlagValueDialogProps {
+  open: boolean
+  onOpenChange: (open: boolean) => void
+  flagType: FlagType
+  /** Flag name, shown in the description. */
+  flagName: string
+  environmentName: string
+  /** "Default (all brands)" or the brand name; omitted for single projects. */
+  targetName?: string
+  initialValue: string
+  /** Extra hint below the field, e.g. "saving creates an override". */
+  hint?: string
+  /** Persists the normalized value; rejects → toast, dialog stays open. */
+  onSave: (value: string) => Promise<void>
+}
+
+/** Type-aware editor for a flag value (STRING / NUMBER / JSON). */
+export function FlagValueDialog({
+  open,
+  onOpenChange,
+  flagType,
+  flagName,
+  environmentName,
+  targetName,
+  initialValue,
+  hint,
+  onSave,
+}: FlagValueDialogProps) {
+  const { t } = useTranslation()
+  const [value, setValue] = useState('')
+  const [error, setError] = useState<string | null>(null)
+  const [saving, setSaving] = useState(false)
+  const errorId = useId()
+  const hintId = useId()
+  const warningId = useId()
+  const unsafeIntegers = flagType === 'JSON' && hasUnsafeIntegers(value)
+  const describedBy =
+    [error ? errorId : hint ? hintId : null, unsafeIntegers ? warningId : null]
+      .filter(Boolean)
+      .join(' ') || undefined
+
+  useEffect(() => {
+    if (open) {
+      setValue(toEditable(flagType, initialValue))
+      setError(null)
+    }
+  }, [open, flagType, initialValue])
+
+  const handleSave = async () => {
+    const result = normalizeFlagValue(flagType, value, initialValue)
+    if (!result.ok) {
+      setError(t(result.error, result.params))
+      return
+    }
+    setSaving(true)
+    try {
+      await onSave(result.value)
+      onOpenChange(false)
+    } catch (err) {
+      const message = getErrorMessage(err)
+      setError(message)
+      toast.error(message)
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  const fieldClass =
+    'w-full rounded-md border border-input bg-background px-3 py-2 font-mono text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring'
+
+  return (
+    <Dialog open={open} onOpenChange={(next) => !saving && onOpenChange(next)}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>{t('flag-value.title')}</DialogTitle>
+          <DialogDescription>
+            {targetName
+              ? t('flag-value.description-target', {
+                  flag: flagName,
+                  target: targetName,
+                  environment: environmentName,
+                })
+              : t('flag-value.description', {
+                  flag: flagName,
+                  environment: environmentName,
+                })}
+          </DialogDescription>
+        </DialogHeader>
+        <form
+          className="space-y-2 py-2"
+          onSubmit={(e) => {
+            e.preventDefault()
+            void handleSave()
+          }}
+        >
+          <Label htmlFor="flag-value-input">
+            {t('flag-value.label', { type: flagType })}
+          </Label>
+          {flagType === 'JSON' ? (
+            <textarea
+              id="flag-value-input"
+              value={value}
+              onChange={(e) => {
+                setValue(e.target.value)
+                setError(null)
+              }}
+              className={`${fieldClass} min-h-[160px]`}
+              placeholder='{"enabled": true}'
+              aria-invalid={!!error}
+              aria-describedby={describedBy}
+            />
+          ) : flagType === 'BOOLEAN' ? (
+            <select
+              id="flag-value-input"
+              value={value}
+              onChange={(e) => setValue(e.target.value)}
+              className={fieldClass}
+              aria-describedby={describedBy}
+            >
+              <option value="true">true</option>
+              <option value="false">false</option>
+            </select>
+          ) : (
+            <Input
+              id="flag-value-input"
+              type={flagType === 'NUMBER' ? 'number' : 'text'}
+              inputMode={flagType === 'NUMBER' ? 'decimal' : undefined}
+              step={flagType === 'NUMBER' ? 'any' : undefined}
+              value={value}
+              onChange={(e) => {
+                setValue(e.target.value)
+                setError(null)
+              }}
+              aria-invalid={!!error}
+              aria-describedby={describedBy}
+            />
+          )}
+          {error && (
+            <p id={errorId} role="alert" className="text-sm text-destructive">
+              {error}
+            </p>
+          )}
+          {unsafeIntegers && (
+            <p
+              id={warningId}
+              className="rounded-sm border-l-2 border-warning bg-warning/10 px-2 py-1 text-xs text-foreground"
+            >
+              {t('flag-value.unsafe-integer')}
+            </p>
+          )}
+          {hint && !error && (
+            <p id={hintId} className="text-xs text-muted-foreground">
+              {hint}
+            </p>
+          )}
+        </form>
+        <DialogFooter>
+          <Button
+            variant="outline"
+            onClick={() => onOpenChange(false)}
+            disabled={saving}
+          >
+            {t('common.cancel')}
+          </Button>
+          <Button onClick={() => void handleSave()} disabled={saving}>
+            {saving ? t('flag-value.saving') : t('flag-value.save')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}

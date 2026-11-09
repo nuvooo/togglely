@@ -55,6 +55,21 @@ describe('sdk-http.utils', () => {
         })
       ).toBe('tenant-a')
     })
+
+    it('falls back to brandKey/tenantId inside the context', () => {
+      expect(extractEffectiveBrandKey({}, { brandKey: 'brand-b' })).toBe('brand-b')
+      expect(extractEffectiveBrandKey({}, { tenantId: 'tenant-b' })).toBe('tenant-b')
+    })
+
+    it('prefers explicit query parameters over the context', () => {
+      expect(
+        extractEffectiveBrandKey({ brandKey: 'brand-a' }, { brandKey: 'brand-b' })
+      ).toBe('brand-a')
+    })
+
+    it('ignores non-string context values', () => {
+      expect(extractEffectiveBrandKey({}, { brandKey: 42 })).toBeUndefined()
+    })
   })
 
   describe('extractSdkOrigin', () => {
@@ -93,11 +108,86 @@ describe('sdk-http.utils', () => {
       })
     })
 
-    it('returns a safe fallback for unexpected errors', () => {
+    it('returns a generic message for unexpected errors', () => {
       expect(mapSdkError({ message: 'Boom' })).toEqual({
         status: 500,
-        body: { error: 'Boom', code: 'INTERNAL_ERROR' },
+        body: { error: 'Internal error', code: 'INTERNAL_ERROR' },
+      })
+      expect(
+        mapSdkError({
+          message:
+            'Invalid `prisma.brand.findFirst()` invocation: Malformed ObjectID',
+        })
+      ).toEqual({
+        status: 500,
+        body: { error: 'Internal error', code: 'INTERNAL_ERROR' },
+      })
+      expect(mapSdkError({} as any)).toEqual({
+        status: 500,
+        body: { error: 'Internal error', code: 'INTERNAL_ERROR' },
       })
     })
+
+    it('uses fixed messages for auth/origin errors', () => {
+      expect(
+        mapSdkError({
+          status: 401,
+          message: 'API key does not have access to this project',
+        })
+      ).toEqual({
+        status: 401,
+        body: { error: 'Invalid API key', code: 'INVALID_API_KEY' },
+      })
+      expect(
+        mapSdkError({
+          status: 401,
+          message: 'API key does not have access to this environment',
+        })
+      ).toEqual({
+        status: 401,
+        body: { error: 'Invalid API key', code: 'INVALID_API_KEY' },
+      })
+    })
+  })
+})
+
+describe('parseSdkContext', () => {
+  const { parseSdkContext } = require('./sdk-http.utils')
+
+  it('parses a JSON object of primitives', () => {
+    expect(
+      parseSdkContext({
+        context: JSON.stringify({ userId: 'u1', age: 30, beta: true }),
+      })
+    ).toEqual({ userId: 'u1', age: 30, beta: true })
+  })
+
+  it('returns an empty context for missing or invalid input', () => {
+    expect(parseSdkContext({})).toEqual({})
+    expect(parseSdkContext({ context: 'not json' })).toEqual({})
+    expect(parseSdkContext({ context: '[1,2]' })).toEqual({})
+    expect(parseSdkContext({ context: ['a'] })).toEqual({})
+    expect(parseSdkContext({ context: 'x'.repeat(5000) })).toEqual({})
+  })
+
+  it('drops nested values, unsafe keys and oversized values', () => {
+    const result = parseSdkContext({
+      context: JSON.stringify({
+        country: 'DE',
+        nested: { a: 1 },
+        list: [1],
+        'bad key': 'x',
+        long: 'y'.repeat(2000),
+      }),
+    })
+    expect(result).toEqual({ country: 'DE' })
+  })
+
+  it('cannot pollute prototypes', () => {
+    const result = parseSdkContext({
+      context: '{"__proto__":{"polluted":true},"constructor":"x","a":"b"}',
+    })
+    expect(result).toEqual({ a: 'b' })
+    expect(({} as any).polluted).toBeUndefined()
   })
 })

@@ -5,13 +5,22 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common'
+import { FlagType } from '@prisma/client'
 import { Flag } from '../../domain/flag.entity'
 import { PrismaService } from '../../shared/prisma.service'
 import { isPrismaUniqueConstraintError } from '../../shared/prisma-errors'
 import { AuditLogsService } from '../audit-logs/audit-logs.service'
+import { writeAudit } from '../audit-logs/write-audit'
+import { ChangeEventsService } from '../change-events/change-events.service'
+import {
+  ENVIRONMENT_ORDER_BY,
+  sortByEnvironmentOrder,
+  sortByEnvironmentPosition,
+} from '../environments/environment-order'
 import { getDefaultFlagValue } from '../sdk/sdk.helpers'
 import { CreateFlagDto } from './dto/create-flag.dto'
 import { UpdateFlagValueDto } from './dto/update-flag-value.dto'
+import { latestFlagUpdate } from './flag-timestamps'
 
 @Injectable()
 export class FlagsService {
@@ -20,6 +29,7 @@ export class FlagsService {
   constructor(
     private readonly prisma: PrismaService,
     private readonly auditLogs: AuditLogsService,
+    private readonly changes: ChangeEventsService
   ) {}
 
   async findAll(userId: string, projectId?: string, environmentId?: string) {
@@ -35,7 +45,19 @@ export class FlagsService {
       if (!membership) throw new ForbiddenException('Access denied')
     }
 
-    const where = projectId ? { projectId } : {}
+    let where: { projectId: string } | { organizationId: { in: string[] } }
+    if (projectId) {
+      where = { projectId }
+    } else {
+      // Never list flags across tenants: restrict to the user's organizations.
+      const memberships = await this.prisma.organizationMember.findMany({
+        where: { userId },
+        select: { organizationId: true },
+      })
+      const organizationIds = memberships.map((m) => m.organizationId)
+      if (organizationIds.length === 0) return []
+      where = { organizationId: { in: organizationIds } }
+    }
     const flags = await this.prisma.featureFlag.findMany({ where })
 
     // If environmentId is provided, get the actual enabled status
@@ -80,7 +102,7 @@ export class FlagsService {
     // Get project environments first
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      include: { environments: true },
+      include: { environments: { orderBy: ENVIRONMENT_ORDER_BY } },
     })
 
     if (!project) throw new NotFoundException('Project not found')
@@ -140,21 +162,25 @@ export class FlagsService {
       description: f.description,
       flagType: f.flagType,
       projectId: f.projectId,
-      environments: f.flagEnvironments
-        .filter((fe) => !fe.brandId) // Only return non-brand environments
-        .map((fe) => ({
-          id: fe.id,
-          environmentId: fe.environmentId,
-          environmentName: fe.environment.name,
-          enabled: fe.enabled,
-          defaultValue: fe.defaultValue,
-        })),
+      createdAt: f.createdAt,
+      updatedAt: latestFlagUpdate(f),
+      environments: sortByEnvironmentPosition(
+        f.flagEnvironments.filter((fe) => !fe.brandId), // non-brand only
+        project.environments
+      ).map((fe) => ({
+        id: fe.id,
+        environmentId: fe.environmentId,
+        environmentName: fe.environment.name,
+        enabled: fe.enabled,
+        defaultValue: fe.defaultValue,
+      })),
     }))
   }
 
   async findOne(flagId: string) {
     const f = await this.prisma.featureFlag.findUnique({
       where: { id: flagId },
+      include: { flagEnvironments: { select: { updatedAt: true } } },
     })
 
     if (!f) throw new NotFoundException('Flag not found')
@@ -166,13 +192,15 @@ export class FlagsService {
       description: f.description,
       flagType: f.flagType,
       projectId: f.projectId,
+      createdAt: f.createdAt,
+      updatedAt: latestFlagUpdate(f),
     }
   }
 
   async create(projectId: string, userId: string, dto: CreateFlagDto) {
     const project = await this.prisma.project.findUnique({
       where: { id: projectId },
-      include: { environments: true },
+      include: { environments: { orderBy: ENVIRONMENT_ORDER_BY } },
     })
 
     if (!project) throw new NotFoundException('Project not found')
@@ -204,50 +232,66 @@ export class FlagsService {
       createdById: userId,
     })
 
-    const { created, envsWithNames } = await this.prisma.$transaction(async (tx) => {
-      const created = await tx.featureFlag.create({
-        data: {
-          id: flag.id,
-          key: flag.key,
-          name: flag.name,
-          description: flag.description,
-          flagType: flag.type,
-          projectId: flag.projectId,
-          organizationId: flag.organizationId,
-          createdById: userId,
-        },
-      })
+    const { created, envsWithNames } = await this.prisma.$transaction(
+      async (tx) => {
+        const created = await tx.featureFlag.create({
+          data: {
+            id: flag.id,
+            key: flag.key,
+            name: flag.name,
+            description: flag.description,
+            flagType: flag.type,
+            projectId: flag.projectId,
+            organizationId: flag.organizationId,
+            createdById: userId,
+          },
+        })
 
-      await Promise.all(
-        project.environments.map((env) =>
-          tx.flagEnvironment.create({
-            data: {
-              flagId: created.id,
-              environmentId: env.id,
-              enabled: dto.initialValues?.[env.key]?.enabled ?? false,
-              defaultValue: dto.initialValues?.[env.key]?.value ?? 'false',
-            },
-          })
+        await Promise.all(
+          project.environments.map((env) =>
+            tx.flagEnvironment.create({
+              data: {
+                flagId: created.id,
+                environmentId: env.id,
+                // Must be explicit: on MongoDB a `brandId: null` filter does
+                // not match documents where the field is missing.
+                brandId: null,
+                enabled: dto.initialValues?.[env.key]?.enabled ?? false,
+                defaultValue: dto.initialValues?.[env.key]?.value ?? 'false',
+              },
+            })
+          )
         )
-      )
 
-      // Get environments with names for the response
-      const envsWithNames = await tx.flagEnvironment.findMany({
-        where: { flagId: created.id, brandId: null },
-        include: { environment: true },
-      })
+        // Get environments with names for the response
+        const envsWithNames = await tx.flagEnvironment.findMany({
+          where: { flagId: created.id, brandId: null },
+          include: { environment: true },
+        })
 
-      return { created, envsWithNames }
+        return { created, envsWithNames }
+      }
+    )
+
+    void this.changes.recordChange({
+      organizationId: project.organizationId,
+      projectId,
+      environmentIds: 'all',
+      changes: [{ flagKey: created.key, action: 'created' }],
     })
 
-    await this.auditLogs.create({
+    await writeAudit(this.auditLogs, this.logger, {
       action: 'flag.created',
       entityType: 'FeatureFlag',
       entityId: created.id,
       userId,
       organizationId: project.organizationId,
       projectId,
-      newValues: { key: created.key, name: created.name, flagType: created.flagType },
+      newValues: {
+        key: created.key,
+        name: created.name,
+        flagType: created.flagType,
+      },
     })
 
     return {
@@ -257,7 +301,10 @@ export class FlagsService {
         name: created.name,
         description: created.description,
         flagType: created.flagType,
-        environments: envsWithNames.map((fe) => ({
+        environments: sortByEnvironmentPosition(
+          envsWithNames,
+          project.environments
+        ).map((fe) => ({
           id: fe.id,
           environmentId: fe.environmentId,
           environmentName: fe.environment.name,
@@ -268,11 +315,44 @@ export class FlagsService {
     }
   }
 
-  async update(flagId: string, data: { name?: string; description?: string }) {
+  async update(
+    flagId: string,
+    data: { name?: string; description?: string },
+    userId?: string
+  ) {
+    const before = await this.prisma.featureFlag.findUnique({
+      where: { id: flagId },
+    })
     const updated = await this.prisma.featureFlag.update({
       where: { id: flagId },
       data,
     })
+
+    void this.changes.recordChange({
+      organizationId: updated.organizationId,
+      projectId: updated.projectId,
+      environmentIds: 'all',
+      changes: [{ flagKey: updated.key, action: 'updated' }],
+    })
+
+    // Audit only the fields that actually changed.
+    const oldValues: Record<string, unknown> = {}
+    const newValues: Record<string, unknown> = {}
+    for (const field of ['name', 'description'] as const) {
+      if (data[field] === undefined) continue
+      if (before && before[field] === updated[field]) continue
+      oldValues[field] = before?.[field] ?? null
+      newValues[field] = updated[field]
+    }
+    if (Object.keys(newValues).length > 0) {
+      await this.auditFlag(
+        'flag.updated',
+        updated,
+        userId,
+        oldValues,
+        newValues
+      )
+    }
 
     return {
       id: updated.id,
@@ -284,7 +364,12 @@ export class FlagsService {
     }
   }
 
-  async toggle(flagId: string, environmentId: string, enabled?: boolean) {
+  async toggle(
+    flagId: string,
+    environmentId: string,
+    enabled?: boolean,
+    userId?: string
+  ) {
     // Find the flag to check its type
     const flag = await this.prisma.featureFlag.findUnique({
       where: { id: flagId },
@@ -292,30 +377,95 @@ export class FlagsService {
 
     if (!flag) throw new NotFoundException('Flag not found')
 
-    const allEnvs = await this.prisma.flagEnvironment.findMany({
-      where: { flagId, environmentId },
+    // Only the environment default (brandId null) is toggled. Brands without
+    // an own row inherit it live; brand overrides stay untouched.
+    const globalEnv = await this.prisma.flagEnvironment.findFirst({
+      where: { flagId, environmentId, brandId: null },
     })
-
-    const globalEnv = allEnvs.find((fe) => !fe.brandId)
     const newEnabled =
       enabled !== undefined ? enabled : !(globalEnv?.enabled ?? false)
 
     // Prepare update data - for BOOLEAN flags, sync defaultValue with enabled
-    const updateData: any = { enabled: newEnabled }
+    const updateData: { enabled: boolean; defaultValue?: string } = {
+      enabled: newEnabled,
+    }
     if (flag.flagType === 'BOOLEAN') {
       updateData.defaultValue = String(newEnabled)
     }
 
-    if (allEnvs.length > 0) {
-      // Update ALL records (global + all brands) so they stay in sync
-      await this.prisma.flagEnvironment.updateMany({
-        where: { flagId, environmentId },
+    const result = await this.writeToggle(
+      flag,
+      environmentId,
+      globalEnv?.id ?? null,
+      updateData
+    )
+
+    void this.changes.recordChange({
+      organizationId: flag.organizationId,
+      projectId: flag.projectId,
+      environmentIds: [environmentId],
+      changes: [{ flagKey: flag.key, action: 'toggled' }],
+    })
+
+    await this.auditFlag(
+      'flag.toggled',
+      flag,
+      userId,
+      { environmentId, enabled: globalEnv?.enabled ?? false },
+      { environmentId, enabled: newEnabled }
+    )
+
+    return result
+  }
+
+  /**
+   * Audit entry of a change to one flag (entity = the flag), so the flag's
+   * history can be queried by entityId. Skipped without an acting user.
+   */
+  private async auditFlag(
+    action: string,
+    flag: {
+      id: string
+      key: string
+      organizationId: string
+      projectId: string
+    },
+    userId: string | undefined,
+    oldValues: Record<string, unknown> | undefined,
+    newValues: Record<string, unknown>
+  ) {
+    if (!userId) return
+    const ref = { flagId: flag.id, flagKey: flag.key }
+    await writeAudit(this.auditLogs, this.logger, {
+      action,
+      entityType: 'FeatureFlag',
+      entityId: flag.id,
+      userId,
+      organizationId: flag.organizationId,
+      projectId: flag.projectId,
+      oldValues: oldValues ? { ...ref, ...oldValues } : undefined,
+      newValues: { ...ref, ...newValues },
+    })
+  }
+
+  private async writeToggle(
+    flag: { id: string; flagType: FlagType },
+    environmentId: string,
+    globalEnvId: string | null,
+    updateData: { enabled: boolean; defaultValue?: string }
+  ) {
+    const flagId = flag.id
+    const newEnabled = updateData.enabled
+
+    if (globalEnvId) {
+      await this.prisma.flagEnvironment.update({
+        where: { id: globalEnvId },
         data: updateData,
       })
       return { flagId, environmentId, enabled: newEnabled }
     }
 
-    // No records exist yet — create the global one
+    // No default exists yet — create it
     try {
       return await this.prisma.flagEnvironment.create({
         data: {
@@ -331,16 +481,11 @@ export class FlagsService {
       })
     } catch (e: any) {
       if (e.code === 'P2002') {
-        const allEnvs2 = await this.prisma.flagEnvironment.findMany({
-          where: { flagId, environmentId },
+        await this.prisma.flagEnvironment.updateMany({
+          where: { flagId, environmentId, brandId: null },
+          data: updateData,
         })
-        if (allEnvs2.length > 0) {
-          await this.prisma.flagEnvironment.updateMany({
-            where: { flagId, environmentId },
-            data: updateData,
-          })
-          return { flagId, environmentId, enabled: newEnabled }
-        }
+        return { flagId, environmentId, enabled: newEnabled }
       }
       throw e
     }
@@ -352,7 +497,7 @@ export class FlagsService {
       include: { environment: true },
     })
 
-    return envs.map((fe) => ({
+    return sortByEnvironmentOrder(envs).map((fe) => ({
       id: fe.environment.id,
       name: fe.environment.name,
       enabled: fe.enabled,
@@ -363,7 +508,8 @@ export class FlagsService {
   async updateEnvironment(
     flagId: string,
     envId: string,
-    data: { isEnabled?: boolean; defaultValue?: string }
+    data: { isEnabled?: boolean; defaultValue?: string },
+    userId?: string
   ) {
     this.logger.debug(`[updateEnvironment] flagId=${flagId}, envId=${envId}`)
 
@@ -374,9 +520,11 @@ export class FlagsService {
 
     if (!flag) throw new NotFoundException('Flag not found')
 
-    // Try 1: Find by flagEnvironment.id directly (most likely case)
+    // Try 1: Find by flagEnvironment.id directly (most likely case).
+    // Always scoped to flagId so a FlagEnvironment of another flag/tenant can
+    // never be modified through this flag's route.
     let existing = await this.prisma.flagEnvironment.findFirst({
-      where: { id: envId },
+      where: { id: envId, flagId },
     })
     this.logger.debug(
       `[updateEnvironment] direct lookup result: ${existing ? 'found' : 'not found'}`
@@ -403,9 +551,9 @@ export class FlagsService {
       )
 
       // Find one matching the envId (either by environment.id or flagEnvironment.id)
-      existing = allEnvs.find(
-        (fe) => fe.id === envId || fe.environmentId === envId
-      ) ?? null
+      existing =
+        allEnvs.find((fe) => fe.id === envId || fe.environmentId === envId) ??
+        null
     }
 
     if (existing) {
@@ -432,10 +580,36 @@ export class FlagsService {
         }
       }
 
-      return this.prisma.flagEnvironment.update({
+      const updated = await this.prisma.flagEnvironment.update({
         where: { id: existing.id },
         data: updateData,
       })
+      void this.changes.recordChange({
+        organizationId: flag.organizationId,
+        projectId: flag.projectId,
+        environmentIds: [existing.environmentId],
+        changes: [{ flagKey: flag.key, action: 'updated' }],
+      })
+      if (userId) {
+        await this.auditFlag(
+          'flag.environment_updated',
+          flag,
+          userId,
+          {
+            environmentId: existing.environmentId,
+            brandId: existing.brandId,
+            enabled: existing.enabled,
+            defaultValue: existing.defaultValue,
+          },
+          {
+            environmentId: updated.environmentId,
+            brandId: updated.brandId,
+            enabled: updated.enabled,
+            defaultValue: updated.defaultValue,
+          }
+        )
+      }
+      return updated
     }
 
     this.logger.warn(
@@ -447,7 +621,8 @@ export class FlagsService {
   async updateValue(
     flagId: string,
     environmentId: string,
-    dto: UpdateFlagValueDto
+    dto: UpdateFlagValueDto,
+    userId?: string
   ) {
     const brandId = dto.brandId || null
 
@@ -476,39 +651,100 @@ export class FlagsService {
       }
     }
 
+    const recordValueChange = () =>
+      void this.changes.recordChange({
+        organizationId: flag.organizationId,
+        projectId: flag.projectId,
+        environmentIds: [environmentId],
+        changes: [{ flagKey: flag.key, action: 'updated' }],
+      })
+
+    const auditValueChange = async (
+      oldValues: Record<string, unknown>,
+      row: { enabled: boolean; defaultValue: string }
+    ) => {
+      if (!userId) return
+      await this.auditFlag(
+        'flag.value_updated',
+        flag,
+        userId,
+        { environmentId, ...(brandId ? { brandId } : {}), ...oldValues },
+        {
+          environmentId,
+          ...(brandId ? { brandId } : {}),
+          enabled: row.enabled,
+          defaultValue: row.defaultValue,
+        }
+      )
+    }
+
     if (existing) {
-      return this.prisma.flagEnvironment.update({
+      const updated = await this.prisma.flagEnvironment.update({
         where: { id: existing.id },
         data: {
           enabled: enabled,
           defaultValue: defaultValue,
         },
       })
+      recordValueChange()
+      await auditValueChange(
+        { enabled: existing.enabled, defaultValue: existing.defaultValue },
+        updated
+      )
+      return updated
     }
 
-    return this.prisma.flagEnvironment.create({
+    // A new brand row is an override: fields not given are taken from the
+    // environment default the brand inherited so far.
+    const inheritedFrom = brandId
+      ? await this.prisma.flagEnvironment.findFirst({
+          where: { flagId, environmentId, brandId: null },
+        })
+      : null
+
+    const created = await this.prisma.flagEnvironment.create({
       data: {
         flagId,
         environmentId,
         brandId,
-        enabled: enabled ?? false,
-        defaultValue: defaultValue ?? getDefaultFlagValue(flag.flagType),
+        enabled: enabled ?? inheritedFrom?.enabled ?? false,
+        defaultValue:
+          defaultValue ??
+          inheritedFrom?.defaultValue ??
+          getDefaultFlagValue(flag.flagType),
       },
     })
+    recordValueChange()
+    await auditValueChange(
+      brandId
+        ? { inherited: true }
+        : // A missing environment default: nothing to compare with
+          {},
+      created
+    )
+    return created
   }
 
   async delete(flagId: string, userId?: string) {
     const flag = await this.prisma.featureFlag.findUnique({
       where: { id: flagId },
     })
+    if (!flag) throw new NotFoundException('Flag not found')
 
     await this.prisma.$transaction(async (tx) => {
       await tx.flagEnvironment.deleteMany({ where: { flagId } })
       await tx.featureFlag.delete({ where: { id: flagId } })
     })
 
-    if (flag && userId) {
-      await this.auditLogs.create({
+    void this.changes.recordChange({
+      organizationId: flag.organizationId,
+      projectId: flag.projectId,
+      environmentIds: 'all',
+      changes: [{ flagKey: flag.key, action: 'deleted' }],
+    })
+
+    if (userId) {
+      await writeAudit(this.auditLogs, this.logger, {
         action: 'flag.deleted',
         entityType: 'FeatureFlag',
         entityId: flagId,

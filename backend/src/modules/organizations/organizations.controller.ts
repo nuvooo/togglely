@@ -1,54 +1,68 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   Delete,
   ForbiddenException,
   Get,
-  Inject,
+  NotFoundException,
   Param,
   Patch,
   Post,
   Req,
   UseGuards,
 } from '@nestjs/common'
-import { ConfigService } from '@nestjs/config'
-import * as bcrypt from 'bcryptjs'
-import { randomUUID } from 'crypto'
+import { Throttle } from '@nestjs/throttler'
+import { AccessService, isObjectId } from '../../shared/access/access.service'
 import { AuthGuard } from '../../shared/auth.guard'
-import { MailService } from '../../shared/mail.service'
-import { PrismaService } from '../../shared/prisma.service'
+import {
+  AddMemberDto,
+  CreateInviteDto,
+  CreateOrganizationDto,
+  UpdateMemberRoleDto,
+  UpdateOrganizationDto,
+} from './dto/organization.dto'
+import { MemberPasswordResetService } from './member-password-reset.service'
+import { OrganizationInvitesService } from './organization-invites.service'
 import { OrganizationsService } from './organizations.service'
+import { assertCanGrantRole, PRIVILEGED_ROLES } from './roles'
+
+export { assertCanGrantRole } from './roles'
+
+function assertObjectIdParam(id: string, label = 'Member') {
+  if (!isObjectId(id)) throw new NotFoundException(`${label} not found`)
+}
 
 @Controller('organizations')
 @UseGuards(AuthGuard)
 export class OrganizationsController {
   constructor(
     private readonly orgsService: OrganizationsService,
-    private readonly prisma: PrismaService,
-    private readonly mailService: MailService,
-    private readonly config: ConfigService
+    private readonly access: AccessService,
+    private readonly invites: OrganizationInvitesService,
+    private readonly memberPasswordReset: MemberPasswordResetService
   ) {}
 
   @Get()
   async findAll(@Req() req: any) {
-    const orgs = await this.orgsService.findAll(req.user.userId);
-    return { organizations: orgs };
+    const orgs = await this.orgsService.findAll(req.user.userId)
+    return { organizations: orgs }
   }
 
   @Get('stats')
   async getStats(@Req() req: any) {
-    const stats = await this.orgsService.getStats(req.user.userId);
-    return stats;
+    const stats = await this.orgsService.getStats(req.user.userId)
+    return stats
   }
 
   @Get('my')
   async getMyOrg(@Req() req: any) {
-    const org = await this.orgsService.findByUser(req.user.userId);
-    return { organization: org };
+    const org = await this.orgsService.findByUser(req.user.userId)
+    return { organization: org }
   }
 
   @Post()
-  async create(@Body() body: { name: string; slug?: string }, @Req() req: any) {
+  async create(@Body() body: CreateOrganizationDto, @Req() req: any) {
     const org = await this.orgsService.create(
       body.name,
       body.slug,
@@ -59,165 +73,111 @@ export class OrganizationsController {
 
   // Members - Define BEFORE the generic :id route to avoid shadowing
   @Get(':id/members')
-  async getMembers(@Param('id') id: string) {
-    const members = await this.orgsService.getMembers(id);
-    return { members };
+  async getMembers(@Param('id') id: string, @Req() req: any) {
+    await this.access.assertOrgRole(req.user.userId, id, 'VIEWER')
+    const members = await this.orgsService.getMembers(id)
+    return { members }
   }
 
   @Post(':id/members')
   async addMember(
     @Param('id') id: string,
-    @Body() body: { email: string; role?: string }
+    @Body() body: AddMemberDto,
+    @Req() req: any
   ) {
-    const member = await this.orgsService.addMember(
-      id,
-      body.email,
-      body.role || 'MEMBER'
-    )
+    const actor = await this.access.assertOrgRole(req.user.userId, id, 'ADMIN')
+    const role = body.role ?? 'MEMBER'
+    assertCanGrantRole(actor.role, role)
+
+    const member = await this.orgsService.addMember(id, body.email, role)
     return { member }
   }
 
   @Delete(':id/members/:userId')
-  async removeMember(@Param('id') id: string, @Param('userId') userId: string) {
+  async removeMember(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @Req() req: any
+  ) {
+    assertObjectIdParam(userId)
+    const actorId: string = req.user.userId
+    const isSelf = actorId === userId
+
+    // Any member may leave; removing others requires ADMIN+.
+    const actor = await this.access.assertOrgRole(
+      actorId,
+      id,
+      isSelf ? 'VIEWER' : 'ADMIN'
+    )
+
+    const target = isSelf ? actor : await this.orgsService.getMember(id, userId)
+    if (!target) throw new NotFoundException('Member not found in organization')
+
+    if (
+      !isSelf &&
+      PRIVILEGED_ROLES.has(target.role) &&
+      actor.role !== 'OWNER'
+    ) {
+      throw new ForbiddenException('Only owners can remove admins or owners')
+    }
+
+    if (target.role === 'OWNER') {
+      const owners = await this.orgsService.countOwners(id)
+      if (owners <= 1) {
+        throw new BadRequestException(
+          'Cannot remove the last owner of the organization'
+        )
+      }
+    }
+
     await this.orgsService.removeMember(id, userId)
     return { success: true }
   }
 
-  // Invites
+  /**
+   * OWNER-only: creates a password reset link for a member without sending
+   * mail (for servers without SMTP). The link is shown once to the owner.
+   */
+  @Post(':id/members/:userId/password-reset-link')
+  @Throttle({ default: { ttl: 900000, limit: 10 } })
+  async createPasswordResetLink(
+    @Param('id') id: string,
+    @Param('userId') userId: string,
+    @Req() req: any
+  ) {
+    return this.memberPasswordReset.createLink(id, req.user.userId, userId)
+  }
+
+  // Invites (ADMIN+). The plain invite link is only returned on creation.
   @Post(':id/invites')
   async createInvite(
     @Param('id') id: string,
-    @Body() body: { email: string; role?: string },
+    @Body() body: CreateInviteDto,
     @Req() req: any
   ) {
-    // Check permissions
-    const membership = await this.prisma.organizationMember.findFirst({
-      where: {
-        userId: req.user.userId,
-        organizationId: id,
-        role: { in: ['OWNER', 'ADMIN'] },
-      },
-    })
-
-    if (!membership) {
-      throw new ForbiddenException('Only owners and admins can invite members')
-    }
-
-    // Check if user already exists
-    const existingUser = await this.prisma.user.findUnique({
-      where: { email: body.email },
-    })
-
-    // Check if already a member
-    if (existingUser) {
-      const existingMember = await this.prisma.organizationMember.findFirst({
-        where: { organizationId: id, userId: existingUser.id },
-      })
-
-      if (existingMember) {
-        throw new ForbiddenException('User is already a member')
-      }
-    }
-
-    // Check for existing pending invite
-    const existingInvite = await this.prisma.organizationInvite.findFirst({
-      where: {
-        email: body.email,
-        organizationId: id,
-        acceptedAt: null,
-      },
-    })
-
-    if (existingInvite) {
-      throw new ForbiddenException(
-        'An invite is already pending for this email'
-      )
-    }
-
-    // Create invite token
-    const token = randomUUID()
-    const expiresAt = new Date()
-    expiresAt.setDate(expiresAt.getDate() + 7) // 7 days expiry
-
-    const invite = await this.prisma.organizationInvite.create({
-      data: {
-        email: body.email,
-        organizationId: id,
-        role: (body.role || 'MEMBER') as any,
-        token,
-        expiresAt,
-      },
-    })
-
-    // Get organization name
-    const organization = await this.prisma.organization.findUnique({
-      where: { id },
-      select: { name: true },
-    })
-
-    // Send invite email
-    const baseUrl = this.config.get('FRONTEND_URL') || 'https://togglely.de'
-    await this.mailService.sendInviteEmail(
-      body.email,
-      token,
-      organization?.name || 'Organization',
-      baseUrl
+    const actor = await this.access.assertOrgRole(req.user.userId, id, 'ADMIN')
+    return this.invites.create(
+      id,
+      { userId: req.user.userId, role: actor.role },
+      body
     )
-
-    return {
-      success: true,
-      inviteToken: token,
-      inviteUrl: `/invite/${token}`,
-      message: 'Invite created and email sent.',
-    }
   }
 
   @Get(':id/invites')
   async getInvites(@Param('id') id: string, @Req() req: any) {
-    // Check permissions
-    const membership = await this.prisma.organizationMember.findFirst({
-      where: {
-        userId: req.user.userId,
-        organizationId: id,
-        role: { in: ['OWNER', 'ADMIN'] },
-      },
-    })
-
-    if (!membership) {
-      throw new ForbiddenException('Only owners and admins can view invites')
-    }
-
-    const invites = await this.prisma.organizationInvite.findMany({
-      where: { organizationId: id },
-      orderBy: { createdAt: 'desc' },
-    })
-
-    return { invites }
+    await this.access.assertOrgRole(req.user.userId, id, 'ADMIN')
+    return { invites: await this.invites.list(id) }
   }
 
+  /** Revokes the invite (kept for the audit trail instead of deleting). */
   @Delete(':id/invites/:inviteId')
   async cancelInvite(
     @Param('id') id: string,
     @Param('inviteId') inviteId: string,
     @Req() req: any
   ) {
-    // Check permissions
-    const membership = await this.prisma.organizationMember.findFirst({
-      where: {
-        userId: req.user.userId,
-        organizationId: id,
-        role: { in: ['OWNER', 'ADMIN'] },
-      },
-    })
-
-    if (!membership) {
-      throw new ForbiddenException('Only owners and admins can cancel invites')
-    }
-
-    await this.prisma.organizationInvite.delete({
-      where: { id: inviteId, organizationId: id },
-    })
-
+    await this.access.assertOrgRole(req.user.userId, id, 'ADMIN')
+    await this.invites.revoke(id, inviteId, req.user.userId)
     return { success: true }
   }
 
@@ -226,88 +186,73 @@ export class OrganizationsController {
   async updateMember(
     @Param('id') id: string,
     @Param('userId') userId: string,
-    @Body() body: { role: string },
+    @Body() body: UpdateMemberRoleDto,
     @Req() req: any
   ) {
-    // Check permissions (only OWNER can change roles, ADMIN cannot change OWNER)
-    const membership = await this.prisma.organizationMember.findFirst({
-      where: {
-        userId: req.user.userId,
-        organizationId: id,
-        role: { in: ['OWNER', 'ADMIN'] },
-      },
-    })
+    assertObjectIdParam(userId)
+    const actor = await this.access.assertOrgRole(req.user.userId, id, 'ADMIN')
 
-    if (!membership) {
-      throw new ForbiddenException(
-        'Only owners and admins can update member roles'
-      )
+    if (req.user.userId === userId) {
+      throw new ForbiddenException('You cannot change your own role')
     }
 
-    // Get target member
-    const targetMember = await this.prisma.organizationMember.findFirst({
-      where: { organizationId: id, userId },
-    })
-
+    const targetMember = await this.orgsService.getMember(id, userId)
     if (!targetMember) {
-      throw new ForbiddenException('Member not found')
+      throw new NotFoundException('Member not found')
     }
 
-    // ADMIN cannot change OWNER's role
-    if (membership.role === 'ADMIN' && targetMember.role === 'OWNER') {
-      throw new ForbiddenException('Admins cannot modify the owner')
-    }
-
-    // Cannot change owner's role (only owner can transfer ownership)
-    if (targetMember.role === 'OWNER' && body.role !== 'OWNER') {
+    // Only owners may touch privileged roles (either side of the change).
+    if (
+      actor.role !== 'OWNER' &&
+      (PRIVILEGED_ROLES.has(targetMember.role) ||
+        PRIVILEGED_ROLES.has(body.role))
+    ) {
       throw new ForbiddenException(
-        'Cannot change owner role. Transfer ownership instead.'
+        'Only owners can grant or revoke the ADMIN or OWNER role'
       )
     }
 
-    const updated = await this.prisma.organizationMember.update({
-      where: { id: targetMember.id },
-      data: { role: body.role as any },
-      include: {
-        user: {
-          select: { id: true, email: true, firstName: true, lastName: true },
-        },
-      },
-    })
-
-    return {
-      member: {
-        id: updated.id,
-        userId: updated.userId,
-        email: updated.user.email,
-        firstName: updated.user.firstName,
-        lastName: updated.user.lastName,
-        name:
-          `${updated.user.firstName ?? ''} ${updated.user.lastName ?? ''}`.trim() ||
-          updated.user.email,
-        role: updated.role,
-      },
+    if (targetMember.role === 'OWNER' && body.role !== 'OWNER') {
+      const owners = await this.orgsService.countOwners(id)
+      if (owners <= 1) {
+        throw new BadRequestException(
+          'Cannot demote the last owner of the organization'
+        )
+      }
     }
+
+    const member = await this.orgsService.updateMemberRole(
+      targetMember.id,
+      body.role
+    )
+    return { member }
   }
 
   @Get(':id')
-  async findOne(@Param('id') id: string) {
-    const org = await this.orgsService.findOne(id);
-    return { organization: org };
+  async findOne(@Param('id') id: string, @Req() req: any) {
+    await this.access.assertOrgRole(req.user.userId, id, 'VIEWER')
+    const org = await this.orgsService.findOne(id)
+    return { organization: org }
   }
 
   @Patch(':id')
   async update(
     @Param('id') id: string,
-    @Body() body: { name?: string; description?: string }
+    @Body() body: UpdateOrganizationDto,
+    @Req() req: any
   ) {
-    const org = await this.orgsService.update(id, body)
+    await this.access.assertOrgRole(req.user.userId, id, 'ADMIN')
+    const data: { name?: string; description?: string } = {}
+    if (body.name !== undefined) data.name = body.name
+    if (body.description !== undefined) data.description = body.description
+    const org = await this.orgsService.update(id, data)
     return { organization: org }
   }
 
   @Delete(':id')
-  async delete(@Param('id') id: string) {
-    await this.orgsService.delete(id);
-    return { success: true };
+  async delete(@Param('id') id: string, @Req() req: any) {
+    await this.access.assertOrgRole(req.user.userId, id, 'OWNER')
+    await this.orgsService.delete(id)
+    return { success: true }
   }
 }

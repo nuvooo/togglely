@@ -1,4 +1,4 @@
-import { UnauthorizedException } from '@nestjs/common'
+import { ConflictException, UnauthorizedException } from '@nestjs/common'
 import * as bcrypt from 'bcryptjs'
 import { AuthService } from './auth.service'
 
@@ -20,6 +20,7 @@ function createService(overrides: Record<string, any> = {}) {
   const prisma = {
     user: {
       findUnique: jest.fn(),
+      findFirst: jest.fn().mockResolvedValue(null),
       create: jest.fn(),
     },
     organizationMember: {
@@ -70,6 +71,40 @@ describe('AuthService', () => {
       ).rejects.toBeInstanceOf(UnauthorizedException)
     })
 
+    it('finds legacy mixed-case accounts case-insensitively', async () => {
+      const { service, prisma } = createService()
+      prisma.user.findUnique.mockResolvedValue(null)
+      prisma.user.findFirst.mockResolvedValue({
+        ...mockUser,
+        email: 'Test@Example.com',
+      })
+      prisma.organizationMember.findFirst.mockResolvedValue(null)
+      mockBcrypt.compare.mockResolvedValue(true as never)
+
+      const result = await service.login('test@example.com', 'password123')
+
+      expect(prisma.user.findUnique).toHaveBeenCalledWith({
+        where: { email: 'test@example.com' },
+      })
+      expect(prisma.user.findFirst).toHaveBeenCalledWith({
+        where: { email: { equals: 'test@example.com', mode: 'insensitive' } },
+      })
+      expect(result.user.id).toBe('user-1')
+    })
+
+    it('normalizes the email before the lookup', async () => {
+      const { service, prisma } = createService()
+      prisma.user.findUnique.mockResolvedValue(mockUser)
+      prisma.organizationMember.findFirst.mockResolvedValue(null)
+      mockBcrypt.compare.mockResolvedValue(true as never)
+
+      await service.login(' Test@Example.COM ', 'password123')
+
+      expect(prisma.user.findUnique).toHaveBeenCalledWith({
+        where: { email: 'test@example.com' },
+      })
+    })
+
     it('throws when password is invalid', async () => {
       const { service, prisma } = createService()
       prisma.user.findUnique.mockResolvedValue(mockUser)
@@ -112,7 +147,7 @@ describe('AuthService', () => {
 
       await expect(
         service.register('test@example.com', 'password123', 'John Doe')
-      ).rejects.toBeInstanceOf(UnauthorizedException)
+      ).rejects.toBeInstanceOf(ConflictException)
     })
   })
 })

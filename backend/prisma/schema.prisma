@@ -18,17 +18,18 @@ model User {
   emailVerifyToken  String?
   resetToken        String?
   resetTokenExpiry  DateTime?
+  passwordChangedAt DateTime?
   createdAt         DateTime  @default(now())
   updatedAt         DateTime  @updatedAt
 
   // Relations
-  memberships    OrganizationMember[]
-  apiKeys        ApiKey[]
-  auditLogs      AuditLog[]
-  createdFlags   FeatureFlag[] @relation("CreatedFlags")
-  updatedFlags   FeatureFlag[] @relation("UpdatedFlags")
-  acceptedInvites OrganizationInvite[] @relation(name: "AcceptedInvites")
-  createdExperiments Experiment[] @relation("CreatedExperiments")
+  memberships        OrganizationMember[]
+  apiKeys            ApiKey[]
+  auditLogs          AuditLog[]
+  createdFlags       FeatureFlag[]        @relation("CreatedFlags")
+  updatedFlags       FeatureFlag[]        @relation("UpdatedFlags")
+  acceptedInvites    OrganizationInvite[] @relation(name: "AcceptedInvites")
+  createdExperiments Experiment[]         @relation("CreatedExperiments")
 
   @@map("users")
 }
@@ -97,7 +98,7 @@ model Project {
   updatedAt      DateTime    @updatedAt
 
   // Relations
-  organization Organization @relation(fields: [organizationId], references: [id])
+  organization Organization  @relation(fields: [organizationId], references: [id])
   environments Environment[]
   featureFlags FeatureFlag[]
   brands       Brand[]
@@ -145,6 +146,7 @@ model Environment {
 
   @@unique([projectId, key])
   @@index([projectId])
+  @@index([projectId, sortOrder])
   @@index([organizationId])
   @@map("environments")
 }
@@ -214,12 +216,13 @@ model TargetingRule {
   operator   RuleOperator @default(AND)
   serveValue String
   isDefault  Boolean      @default(false)
+  enabled    Boolean      @default(true)
   priority   Int          @default(0)
   createdAt  DateTime     @default(now())
   updatedAt  DateTime     @updatedAt
 
   // Relations
-  flagEnvironment FlagEnvironment @relation(fields: [flagEnvId], references: [id])
+  flagEnvironment FlagEnvironment @relation(fields: [flagEnvId], references: [id], onDelete: Cascade)
   conditions      RuleCondition[]
 
   @@index([flagEnvId])
@@ -240,7 +243,7 @@ model RuleCondition {
   createdAt DateTime          @default(now())
 
   // Relations
-  rule TargetingRule @relation(fields: [ruleId], references: [id])
+  rule TargetingRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)
 
   @@index([ruleId])
   @@map("rule_conditions")
@@ -261,18 +264,18 @@ enum ConditionOperator {
 }
 
 model ApiKey {
-  id            String     @id @default(auto()) @map("_id") @db.ObjectId
-  name          String
-  key           String     @unique
-  type          ApiKeyType @default(SERVER)
-  organizationId String    @db.ObjectId
-  userId        String?    @db.ObjectId
-  environmentId String?
-  lastUsedAt    DateTime?
-  expiresAt     DateTime?
-  isActive      Boolean    @default(true)
-  createdAt     DateTime   @default(now())
-  updatedAt     DateTime   @updatedAt
+  id             String     @id @default(auto()) @map("_id") @db.ObjectId
+  name           String
+  key            String     @unique
+  type           ApiKeyType @default(SERVER)
+  organizationId String     @db.ObjectId
+  userId         String?    @db.ObjectId
+  environmentId  String?
+  lastUsedAt     DateTime?
+  expiresAt      DateTime?
+  isActive       Boolean    @default(true)
+  createdAt      DateTime   @default(now())
+  updatedAt      DateTime   @updatedAt
 
   // Relations
   organization Organization @relation(fields: [organizationId], references: [id])
@@ -312,27 +315,49 @@ model AuditLog {
   @@index([projectId])
   @@index([userId])
   @@index([createdAt])
+  // Organization log pages: filter by org, newest first.
+  @@index([organizationId, createdAt])
   @@map("audit_logs")
 }
 
 model OrganizationInvite {
   id             String           @id @default(auto()) @map("_id") @db.ObjectId
-  email          String
+  // Optional: unbound invites can be used by anyone holding the link
+  email          String?
   organizationId String           @db.ObjectId
   role           OrganizationRole @default(MEMBER)
-  token          String           @unique
+  // SHA-256 of the invite token; the plain token is only shown once.
+  // Not @unique: MongoDB unique indexes treat a missing field as null, so
+  // legacy invites (no hash) and new invites (no plain token) would collide.
+  // Tokens are 256-bit random values, uniqueness is guaranteed by entropy.
+  tokenHash      String?
+  // Legacy plain token of invites created before hashing was introduced
+  token          String?
   expiresAt      DateTime
   createdAt      DateTime         @default(now())
+  createdById    String?          @db.ObjectId
   acceptedAt     DateTime?
   acceptedById   String?          @db.ObjectId
+  revokedAt      DateTime?
 
   // Relations
   organization Organization @relation(fields: [organizationId], references: [id], onDelete: Cascade)
   acceptedBy   User?        @relation(name: "AcceptedInvites", fields: [acceptedById], references: [id])
 
-  @@unique([organizationId, email])
   @@index([organizationId])
+  @@index([organizationId, email])
+  @@index([tokenHash])
+  @@index([token])
   @@map("organization_invites")
+}
+
+/// Singleton documents guarding one-time instance operations (e.g. setup).
+model InstanceLock {
+  id        String   @id @default(auto()) @map("_id") @db.ObjectId
+  key       String   @unique
+  createdAt DateTime @default(now())
+
+  @@map("instance_locks")
 }
 
 // --- A/B Testing ---
@@ -352,31 +377,31 @@ enum ExperimentEventType {
 }
 
 model Experiment {
-  id              String           @id @default(auto()) @map("_id") @db.ObjectId
-  name            String
-  key             String
-  description     String?
-  hypothesis      String?
-  status          ExperimentStatus @default(DRAFT)
-  flagId          String           @db.ObjectId
-  environmentId   String           @db.ObjectId
-  trafficPercent  Int              @default(100)
-  startedAt       DateTime?
-  endedAt         DateTime?
-  createdById     String           @db.ObjectId
-  projectId       String           @db.ObjectId
-  organizationId  String           @db.ObjectId
-  createdAt       DateTime         @default(now())
-  updatedAt       DateTime         @updatedAt
+  id             String           @id @default(auto()) @map("_id") @db.ObjectId
+  name           String
+  key            String
+  description    String?
+  hypothesis     String?
+  status         ExperimentStatus @default(DRAFT)
+  flagId         String           @db.ObjectId
+  environmentId  String           @db.ObjectId
+  trafficPercent Int              @default(100)
+  startedAt      DateTime?
+  endedAt        DateTime?
+  createdById    String           @db.ObjectId
+  projectId      String           @db.ObjectId
+  organizationId String           @db.ObjectId
+  createdAt      DateTime         @default(now())
+  updatedAt      DateTime         @updatedAt
 
   // Relations
-  flag          FeatureFlag         @relation(fields: [flagId], references: [id])
-  environment   Environment         @relation(fields: [environmentId], references: [id])
-  createdBy     User                @relation("CreatedExperiments", fields: [createdById], references: [id])
-  project       Project             @relation(fields: [projectId], references: [id])
-  organization  Organization        @relation(fields: [organizationId], references: [id])
-  variants      ExperimentVariant[]
-  events        ExperimentEvent[]
+  flag         FeatureFlag         @relation(fields: [flagId], references: [id])
+  environment  Environment         @relation(fields: [environmentId], references: [id])
+  createdBy    User                @relation("CreatedExperiments", fields: [createdById], references: [id])
+  project      Project             @relation(fields: [projectId], references: [id])
+  organization Organization        @relation(fields: [organizationId], references: [id])
+  variants     ExperimentVariant[]
+  events       ExperimentEvent[]
 
   @@unique([projectId, key])
   @@index([flagId])
@@ -386,20 +411,20 @@ model Experiment {
 }
 
 model ExperimentVariant {
-  id            String   @id @default(auto()) @map("_id") @db.ObjectId
-  experimentId  String   @db.ObjectId
-  key           String
-  name          String
-  description   String?
-  value         String
-  weight        Int      @default(50)
-  isControl     Boolean  @default(false)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  id           String   @id @default(auto()) @map("_id") @db.ObjectId
+  experimentId String   @db.ObjectId
+  key          String
+  name         String
+  description  String?
+  value        String
+  weight       Int      @default(50)
+  isControl    Boolean  @default(false)
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
 
   // Relations
-  experiment    Experiment        @relation(fields: [experimentId], references: [id], onDelete: Cascade)
-  events        ExperimentEvent[]
+  experiment Experiment        @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  events     ExperimentEvent[]
 
   @@unique([experimentId, key])
   @@index([experimentId])
@@ -407,21 +432,90 @@ model ExperimentVariant {
 }
 
 model ExperimentEvent {
-  id            String              @id @default(auto()) @map("_id") @db.ObjectId
-  experimentId  String              @db.ObjectId
-  variantId     String?             @db.ObjectId
-  type          ExperimentEventType
-  userId        String
-  metadata      Json?
-  createdAt     DateTime            @default(now())
+  id           String              @id @default(auto()) @map("_id") @db.ObjectId
+  experimentId String              @db.ObjectId
+  variantId    String?             @db.ObjectId
+  type         ExperimentEventType
+  userId       String
+  metadata     Json?
+  createdAt    DateTime            @default(now())
 
   // Relations
-  experiment    Experiment          @relation(fields: [experimentId], references: [id], onDelete: Cascade)
-  variant       ExperimentVariant?  @relation(fields: [variantId], references: [id])
+  experiment Experiment         @relation(fields: [experimentId], references: [id], onDelete: Cascade)
+  variant    ExperimentVariant? @relation(fields: [variantId], references: [id])
 
   @@index([experimentId])
   @@index([variantId])
   @@index([experimentId, type])
   @@index([createdAt])
   @@map("experiment_events")
+}
+
+// --- Change notifications ---
+
+/// Configuration version per (project, environment). Incremented on every
+/// change that can affect SDK evaluation results (ETag / live stream).
+model ConfigVersion {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  projectId     String   @db.ObjectId
+  environmentId String   @db.ObjectId
+  version       Int      @default(0)
+  updatedAt     DateTime @updatedAt
+
+  @@unique([projectId, environmentId])
+  @@map("config_versions")
+}
+
+model Webhook {
+  id                  String    @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId      String    @db.ObjectId
+  projectId           String    @db.ObjectId
+  url                 String
+  secret              String
+  /// Empty = all environments of the project
+  environmentIds      String[]  @db.ObjectId
+  enabled             Boolean   @default(true)
+  description         String?
+  consecutiveFailures Int       @default(0)
+  createdById         String    @db.ObjectId
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  lastDeliveryAt      DateTime?
+  lastStatus          String?
+
+  deliveries WebhookDelivery[]
+
+  @@index([projectId])
+  @@map("webhooks")
+}
+
+model WebhookDelivery {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  webhookId     String    @db.ObjectId
+  eventId       String
+  event         Json
+  attempt       Int       @default(0)
+  /// pending | success | failed
+  status        String
+  responseCode  Int?
+  responseBody  String?
+  error         String?
+  durationMs    Int?
+  nextAttemptAt DateTime?
+  lockedUntil   DateTime?
+  /// Random token of the worker that currently holds the lock; results are
+  /// only written while it still matches (lost locks are not overwritten)
+  lockToken     String?
+  /// Sent by a user (test event or redeliver): no retries, does not affect
+  /// the webhook's failure counter or auto-disable
+  manual        Boolean   @default(false)
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@unique([webhookId, eventId])
+  @@index([status, nextAttemptAt])
+  @@index([webhookId, createdAt])
+  @@map("webhook_deliveries")
 }

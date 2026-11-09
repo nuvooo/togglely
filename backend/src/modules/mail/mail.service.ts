@@ -1,15 +1,29 @@
-import { Injectable } from '@nestjs/common'
+import { Injectable, Logger } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import { MailerService } from '@nestjs-modules/mailer'
+import { isMailEnabled } from '../../shared/mail.service'
 
 @Injectable()
 export class MailService {
+  private readonly logger = new Logger(MailService.name)
+
   constructor(
     private readonly mailerService: MailerService,
     private readonly configService: ConfigService
   ) {}
 
+  /** Mail is only sent when an SMTP server is configured. */
+  isEnabled(): boolean {
+    return isMailEnabled(this.configService)
+  }
+
+  /** Returns false without sending when SMTP is not configured. */
   async sendPasswordResetEmail(email: string, token: string) {
+    if (!this.isEnabled()) {
+      this.logger.debug('SMTP not configured, skipping password reset email')
+      return false
+    }
+
     const frontendUrl = this.configService.get(
       'FRONTEND_URL',
       'http://localhost:3000'
@@ -33,5 +47,6 @@ export class MailService {
         </div>
       `,
     })
+    return true
   }
 }

@@ -7,5 +7,6 @@ import { PasswordResetService } from './password-reset.service'
   imports: [MailModule],
   controllers: [PasswordResetController],
   providers: [PasswordResetService],
+  exports: [PasswordResetService],
 })
 export class PasswordResetModule {}

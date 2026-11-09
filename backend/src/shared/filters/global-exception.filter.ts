@@ -7,6 +7,7 @@ import {
   Logger,
 } from '@nestjs/common'
 import { Request, Response } from 'express'
+import { redactUrl } from '../security/http-security'
 
 @Catch()
 export class GlobalExceptionFilter implements ExceptionFilter {
@@ -20,6 +21,7 @@ export class GlobalExceptionFilter implements ExceptionFilter {
     let status = HttpStatus.INTERNAL_SERVER_ERROR
     let message = 'Internal server error'
     let error = 'Internal Server Error'
+    let code: string | undefined
 
     if (exception instanceof HttpException) {
       status = exception.getStatus()
@@ -37,24 +39,32 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           ? rawMessage.join(', ')
           : ((rawMessage as string) ?? message)
         error = (resp.error as string) ?? error
+        // Optional machine-readable code for the frontend
+        if (typeof resp.code === 'string') code = resp.code
       }
     } else if (this.isPrismaError(exception)) {
       const prismaResult = this.handlePrismaError(exception)
       status = prismaResult.status
       message = prismaResult.message
       error = prismaResult.error
-    } else if (exception instanceof Error) {
-      message = exception.message
     }
 
+    // Never expose internal error details (Prisma queries, stack info, ...)
+    // to clients; they are logged below.
+    const internalMessage =
+      exception instanceof Error ? exception.message : String(exception)
+    // Paths can carry secrets (invite and verification tokens)
+    const logPath = redactUrl(request.originalUrl ?? request.url)
+
     if (status >= 500) {
+      message = 'Internal server error'
       this.logger.error(
-        `${request.method} ${request.url} ${status} - ${JSON.stringify(message)}`,
+        `${request.method} ${logPath} ${status} - ${JSON.stringify(internalMessage)}`,
         exception instanceof Error ? exception.stack : undefined
       )
     } else {
       this.logger.warn(
-        `${request.method} ${request.url} ${status} - ${JSON.stringify(message)}`
+        `${request.method} ${logPath} ${status} - ${JSON.stringify(message)}`
       )
     }
 
@@ -62,8 +72,9 @@ export class GlobalExceptionFilter implements ExceptionFilter {
       statusCode: status,
       message,
       error,
+      ...(code ? { code } : {}),
       timestamp: new Date().toISOString(),
-      path: request.url,
+      path: logPath,
     })
   }
 
@@ -99,6 +110,12 @@ export class GlobalExceptionFilter implements ExceptionFilter {
           status: HttpStatus.NOT_FOUND,
           message: 'Record not found',
           error: 'Not Found',
+        }
+      case 'P2023':
+        return {
+          status: HttpStatus.BAD_REQUEST,
+          message: 'Invalid identifier',
+          error: 'Bad Request',
         }
       case 'P2003':
         return {

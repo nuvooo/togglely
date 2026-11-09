@@ -2,34 +2,33 @@ import {
   IsEmail,
   IsOptional,
   IsString,
-  Matches,
+  MaxLength,
   MinLength,
 } from 'class-validator'
+import { NormalizeEmail } from '../../../shared/validation/normalize-email'
+import { IsPasswordPolicy } from './password-policy.decorator'
 
 export class RegisterDto {
+  @NormalizeEmail()
   @IsEmail({}, { message: 'Please provide a valid email address' })
+  @MaxLength(254)
   email: string
 
-  @IsString()
-  @MinLength(8, { message: 'Password must be at least 8 characters' })
-  @Matches(/(?=.*[a-z])/, {
-    message: 'Password must contain at least one lowercase letter',
-  })
-  @Matches(/(?=.*[A-Z])/, {
-    message: 'Password must contain at least one uppercase letter',
-  })
-  @Matches(/(?=.*\d)/, { message: 'Password must contain at least one number' })
+  @IsPasswordPolicy()
   password: string
 
   @IsString()
   @MinLength(1, { message: 'Name is required' })
+  @MaxLength(200)
   name: string
 
   @IsString()
   @IsOptional()
+  @MaxLength(100)
   firstName?: string
 
   @IsString()
   @IsOptional()
+  @MaxLength(100)
   lastName?: string
 }

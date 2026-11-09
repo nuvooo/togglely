@@ -1,6 +1,8 @@
 export const SDK_CORS_ALLOWED_METHODS = 'GET, POST, PUT, PATCH, DELETE, OPTIONS'
 export const SDK_CORS_ALLOWED_HEADERS =
-  'Content-Type, Authorization, X-API-Key, X-Requested-With'
+  'Content-Type, Authorization, X-API-Key, X-Requested-With, If-None-Match, Last-Event-ID'
+/** Response headers browser SDKs may read (conditional requests). */
+export const SDK_CORS_EXPOSED_HEADERS = 'ETag'
 
 export const SDK_ERROR_CODES = {
   missingApiKey: 'MISSING_API_KEY',

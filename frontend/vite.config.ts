@@ -33,10 +33,15 @@ export default defineConfig({
         target: 'http://localhost:4000',
         changeOrigin: true,
       },
+      // Public SDK routes (served by nginx in production)
+      '/sdk': {
+        target: 'http://localhost:4000',
+        changeOrigin: true,
+      },
     },
   },
   build: {
-    sourcemap: true,
+    sourcemap: false,
   },
   test: {
     globals: true,

@@ -1,6 +1,7 @@
 import {
   SDK_CORS_ALLOWED_HEADERS,
   SDK_CORS_ALLOWED_METHODS,
+  SDK_CORS_EXPOSED_HEADERS,
   SDK_ERROR_CODES,
 } from './sdk.constants'
 
@@ -25,15 +26,70 @@ export function extractSdkOrigin(req: SdkRequestLike): string | undefined {
   return getHeader(req.headers, 'origin')
 }
 
+/**
+ * Brand of an SDK request: `?brandKey=` / `?tenantId=` (sent by the SDK
+ * client) or, as a fallback, `brandKey` / `tenantId` in the parsed context.
+ */
 export function extractEffectiveBrandKey(
-  query: Record<string, unknown>
+  query: Record<string, unknown>,
+  context: Record<string, unknown> = {}
 ): string | undefined {
-  const brandKey =
-    typeof query.brandKey === 'string' ? query.brandKey : undefined
-  const tenantId =
-    typeof query.tenantId === 'string' ? query.tenantId : undefined
+  const pick = (source: Record<string, unknown>, key: string) =>
+    typeof source[key] === 'string' && source[key] ? (source[key] as string) : undefined
 
-  return brandKey || tenantId
+  return (
+    pick(query, 'brandKey') ||
+    pick(query, 'tenantId') ||
+    pick(context, 'brandKey') ||
+    pick(context, 'tenantId')
+  )
+}
+
+export const SDK_CONTEXT_MAX_LENGTH = 4096
+export const SDK_CONTEXT_MAX_KEYS = 50
+export const SDK_CONTEXT_VALUE_MAX_LENGTH = 1024
+const SDK_CONTEXT_KEY_PATTERN = /^[A-Za-z0-9_.-]{1,100}$/
+const FORBIDDEN_CONTEXT_KEYS = new Set(['__proto__', 'constructor', 'prototype'])
+
+/**
+ * Parses the `context` query parameter sent by the SDK
+ * (`?context=<JSON object>`) into a flat targeting context. Untrusted input:
+ * size-limited, only safe keys and primitive values are kept; anything
+ * invalid yields an empty context instead of an error.
+ */
+export function parseSdkContext(
+  query: Record<string, unknown>
+): Record<string, string | number | boolean> {
+  const raw = query.context
+  if (typeof raw !== 'string' || raw.length === 0) return {}
+  if (raw.length > SDK_CONTEXT_MAX_LENGTH) return {}
+
+  let parsed: unknown
+  try {
+    parsed = JSON.parse(raw)
+  } catch {
+    return {}
+  }
+  if (!parsed || typeof parsed !== 'object' || Array.isArray(parsed)) return {}
+
+  const context: Record<string, string | number | boolean> = Object.create(null)
+  let count = 0
+  for (const [key, value] of Object.entries(parsed)) {
+    if (count >= SDK_CONTEXT_MAX_KEYS) break
+    if (FORBIDDEN_CONTEXT_KEYS.has(key) || !SDK_CONTEXT_KEY_PATTERN.test(key)) {
+      continue
+    }
+    if (typeof value === 'string') {
+      if (value.length > SDK_CONTEXT_VALUE_MAX_LENGTH) continue
+    } else if (typeof value === 'number') {
+      if (!Number.isFinite(value)) continue
+    } else if (typeof value !== 'boolean') {
+      continue
+    }
+    context[key] = value
+    count++
+  }
+  return { ...context }
 }
 
 export function setSdkCorsHeaders(
@@ -43,6 +99,7 @@ export function setSdkCorsHeaders(
   res.setHeader('Access-Control-Allow-Origin', origin || '*')
   res.setHeader('Access-Control-Allow-Methods', SDK_CORS_ALLOWED_METHODS)
   res.setHeader('Access-Control-Allow-Headers', SDK_CORS_ALLOWED_HEADERS)
+  res.setHeader('Access-Control-Expose-Headers', SDK_CORS_EXPOSED_HEADERS)
   res.setHeader('Access-Control-Allow-Credentials', 'true')
   res.setHeader('Vary', 'Origin')
 }
@@ -51,23 +108,24 @@ export function mapSdkError(error: { status?: number; message?: string }): {
   status: number
   body: { error: string; code: string }
 } {
-  const message = error.message || 'Internal error'
+  // Only known SDK error conditions are mapped to specific responses. Their
+  // client-facing messages are fixed strings: raw error messages (e.g. from
+  // Prisma) must never be reflected to SDK clients.
+  const message = typeof error?.message === 'string' ? error.message : ''
+  const status = error?.status
 
-  if (error.status === 401 || message.includes('Invalid API key')) {
+  if (status === 401 || message.includes('Invalid API key')) {
     return {
       status: 401,
-      body: {
-        error: message || 'Invalid API key',
-        code: SDK_ERROR_CODES.invalidApiKey,
-      },
+      body: { error: 'Invalid API key', code: SDK_ERROR_CODES.invalidApiKey },
     }
   }
 
-  if (error.status === 403 || message.includes('Origin not allowed')) {
+  if (status === 403 || message.includes('Origin not allowed')) {
     return {
       status: 403,
       body: {
-        error: message || 'Origin not allowed',
+        error: 'Origin not allowed',
         code: SDK_ERROR_CODES.originNotAllowed,
       },
     }
@@ -95,7 +153,7 @@ export function mapSdkError(error: { status?: number; message?: string }): {
 
   return {
     status: 500,
-    body: { error: message, code: SDK_ERROR_CODES.internalError },
+    body: { error: 'Internal error', code: SDK_ERROR_CODES.internalError },
   }
 }
 

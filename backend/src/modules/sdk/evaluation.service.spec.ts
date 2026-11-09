@@ -1,4 +1,8 @@
-import { EvaluationService, TargetingRuleWithConditions, ToggleContext } from './evaluation.service'
+import {
+  EvaluationService,
+  TargetingRuleWithConditions,
+  ToggleContext,
+} from './evaluation.service'
 
 describe('EvaluationService', () => {
   let service: EvaluationService
@@ -12,8 +16,8 @@ describe('EvaluationService', () => {
       expect(
         service.matchesCondition(
           { id: '1', attribute: 'country', operator: 'EQUALS', value: 'DE' },
-          { country: 'DE' },
-        ),
+          { country: 'DE' }
+        )
       ).toBe(true)
     })
 
@@ -21,71 +25,106 @@ describe('EvaluationService', () => {
       expect(
         service.matchesCondition(
           { id: '1', attribute: 'country', operator: 'EQUALS', value: 'DE' },
-          { country: 'US' },
-        ),
+          { country: 'US' }
+        )
       ).toBe(false)
     })
 
     it('should match NOT_EQUALS operator', () => {
       expect(
         service.matchesCondition(
-          { id: '1', attribute: 'country', operator: 'NOT_EQUALS', value: 'DE' },
-          { country: 'US' },
-        ),
+          {
+            id: '1',
+            attribute: 'country',
+            operator: 'NOT_EQUALS',
+            value: 'DE',
+          },
+          { country: 'US' }
+        )
       ).toBe(true)
     })
 
     it('should match NOT_EQUALS when attribute is missing', () => {
       expect(
         service.matchesCondition(
-          { id: '1', attribute: 'country', operator: 'NOT_EQUALS', value: 'DE' },
-          {},
-        ),
+          {
+            id: '1',
+            attribute: 'country',
+            operator: 'NOT_EQUALS',
+            value: 'DE',
+          },
+          {}
+        )
       ).toBe(true)
     })
 
     it('should match CONTAINS operator', () => {
       expect(
         service.matchesCondition(
-          { id: '1', attribute: 'email', operator: 'CONTAINS', value: '@company.com' },
-          { email: 'user@company.com' },
-        ),
+          {
+            id: '1',
+            attribute: 'email',
+            operator: 'CONTAINS',
+            value: '@company.com',
+          },
+          { email: 'user@company.com' }
+        )
       ).toBe(true)
     })
 
     it('should not match CONTAINS when substring missing', () => {
       expect(
         service.matchesCondition(
-          { id: '1', attribute: 'email', operator: 'CONTAINS', value: '@company.com' },
-          { email: 'user@other.com' },
-        ),
+          {
+            id: '1',
+            attribute: 'email',
+            operator: 'CONTAINS',
+            value: '@company.com',
+          },
+          { email: 'user@other.com' }
+        )
       ).toBe(false)
     })
 
     it('should match NOT_CONTAINS operator', () => {
       expect(
         service.matchesCondition(
-          { id: '1', attribute: 'email', operator: 'NOT_CONTAINS', value: '@company.com' },
-          { email: 'user@other.com' },
-        ),
+          {
+            id: '1',
+            attribute: 'email',
+            operator: 'NOT_CONTAINS',
+            value: '@company.com',
+          },
+          { email: 'user@other.com' }
+        )
       ).toBe(true)
     })
 
     it('should match NOT_CONTAINS when attribute is missing', () => {
       expect(
         service.matchesCondition(
-          { id: '1', attribute: 'email', operator: 'NOT_CONTAINS', value: '@company.com' },
-          {},
-        ),
+          {
+            id: '1',
+            attribute: 'email',
+            operator: 'NOT_CONTAINS',
+            value: '@company.com',
+          },
+          {}
+        )
       ).toBe(true)
     })
 
     it('should match STARTS_WITH operator', () => {
       expect(
         service.matchesCondition(
-          { id: '1', attribute: 'email', operator: 'STARTS_WITH', value: 'admin' },
-          { email: 'admin@example.com' },
-        ),
+          {
+            id: '1',
+            attribute: 'email',
+            operator: 'STARTS_WITH',
+            value: 'admin',
+          },
+          { email: 'admin@example.com' }
+        )
       ).toBe(true)
     })
 
@@ -93,8 +132,8 @@ describe('EvaluationService', () => {
       expect(
         service.matchesCondition(
           { id: '1', attribute: 'email', operator: 'ENDS_WITH', value: '.com' },
-          { email: 'user@example.com' },
-        ),
+          { email: 'user@example.com' }
+        )
       ).toBe(true)
     })
 
@@ -102,8 +141,8 @@ describe('EvaluationService', () => {
       expect(
         service.matchesCondition(
           { id: '1', attribute: 'age', operator: 'GREATER_THAN', value: '18' },
-          { age: '25' },
-        ),
+          { age: '25' }
+        )
       ).toBe(true)
     })
 
@@ -111,8 +150,8 @@ describe('EvaluationService', () => {
       expect(
         service.matchesCondition(
           { id: '1', attribute: 'age', operator: 'GREATER_THAN', value: '18' },
-          { age: '18' },
-        ),
+          { age: '18' }
+        )
       ).toBe(false)
     })
 
@@ -120,8 +159,8 @@ describe('EvaluationService', () => {
       expect(
         service.matchesCondition(
           { id: '1', attribute: 'name', operator: 'GREATER_THAN', value: '18' },
-          { name: 'abc' },
-        ),
+          { name: 'abc' }
+        )
       ).toBe(false)
     })
 
@@ -129,80 +168,192 @@ describe('EvaluationService', () => {
       expect(
         service.matchesCondition(
           { id: '1', attribute: 'age', operator: 'LESS_THAN', value: '18' },
-          { age: '15' },
-        ),
+          { age: '15' }
+        )
       ).toBe(true)
     })
 
     it('should match IN operator with comma-separated values', () => {
       expect(
         service.matchesCondition(
-          { id: '1', attribute: 'country', operator: 'IN', value: 'DE, US, GB' },
-          { country: 'US' },
-        ),
+          {
+            id: '1',
+            attribute: 'country',
+            operator: 'IN',
+            value: 'DE, US, GB',
+          },
+          { country: 'US' }
+        )
       ).toBe(true)
     })
 
     it('should match IN operator with JSON array', () => {
       expect(
         service.matchesCondition(
-          { id: '1', attribute: 'country', operator: 'IN', value: '["DE","US","GB"]' },
-          { country: 'US' },
-        ),
+          {
+            id: '1',
+            attribute: 'country',
+            operator: 'IN',
+            value: '["DE","US","GB"]',
+          },
+          { country: 'US' }
+        )
       ).toBe(true)
     })
 
     it('should not match IN when value not in list', () => {
       expect(
         service.matchesCondition(
-          { id: '1', attribute: 'country', operator: 'IN', value: 'DE, US, GB' },
-          { country: 'FR' },
-        ),
+          {
+            id: '1',
+            attribute: 'country',
+            operator: 'IN',
+            value: 'DE, US, GB',
+          },
+          { country: 'FR' }
+        )
       ).toBe(false)
     })
 
     it('should match NOT_IN operator', () => {
       expect(
         service.matchesCondition(
-          { id: '1', attribute: 'country', operator: 'NOT_IN', value: 'DE, US' },
-          { country: 'FR' },
-        ),
+          {
+            id: '1',
+            attribute: 'country',
+            operator: 'NOT_IN',
+            value: 'DE, US',
+          },
+          { country: 'FR' }
+        )
       ).toBe(true)
     })
 
     it('should match NOT_IN when attribute is missing', () => {
       expect(
         service.matchesCondition(
-          { id: '1', attribute: 'country', operator: 'NOT_IN', value: 'DE, US' },
-          {},
-        ),
+          {
+            id: '1',
+            attribute: 'country',
+            operator: 'NOT_IN',
+            value: 'DE, US',
+          },
+          {}
+        )
       ).toBe(true)
     })
 
     it('should match MATCHES_REGEX operator', () => {
       expect(
         service.matchesCondition(
-          { id: '1', attribute: 'email', operator: 'MATCHES_REGEX', value: '^[a-z]+@company\\.com$' },
-          { email: 'admin@company.com' },
-        ),
+          {
+            id: '1',
+            attribute: 'email',
+            operator: 'MATCHES_REGEX',
+            value: '^[a-z]+@company\\.com$',
+          },
+          { email: 'admin@company.com' }
+        )
       ).toBe(true)
     })
 
     it('should return false for invalid regex', () => {
       expect(
         service.matchesCondition(
-          { id: '1', attribute: 'email', operator: 'MATCHES_REGEX', value: '[invalid(' },
-          { email: 'test@test.com' },
-        ),
+          {
+            id: '1',
+            attribute: 'email',
+            operator: 'MATCHES_REGEX',
+            value: '[invalid(',
+          },
+          { email: 'test@test.com' }
+        )
       ).toBe(false)
+    })
+
+    it('should reject regex patterns with nested quantifiers (ReDoS)', () => {
+      const started = Date.now()
+      for (const value of [
+        '(a+)+$',
+        '(a*)*b',
+        '(\\w+){2,}x',
+        '(a|aa+)+$',
+        '(.*a){20}',
+      ]) {
+        expect(
+          service.matchesCondition(
+            { id: '1', attribute: 'name', operator: 'MATCHES_REGEX', value },
+            { name: `${'a'.repeat(40)}!` }
+          )
+        ).toBe(false)
+      }
+      expect(Date.now() - started).toBeLessThan(1000)
+    })
+
+    it('should reject overly long regex patterns and inputs', () => {
+      expect(
+        service.matchesCondition(
+          {
+            id: '1',
+            attribute: 'name',
+            operator: 'MATCHES_REGEX',
+            value: 'a'.repeat(257),
+          },
+          { name: 'a'.repeat(257) }
+        )
+      ).toBe(false)
+      expect(
+        service.matchesCondition(
+          {
+            id: '1',
+            attribute: 'name',
+            operator: 'MATCHES_REGEX',
+            value: '^a+$',
+          },
+          { name: 'a'.repeat(1025) }
+        )
+      ).toBe(false)
+      expect(
+        service.matchesCondition(
+          {
+            id: '1',
+            attribute: 'name',
+            operator: 'MATCHES_REGEX',
+            value: '^a+$',
+          },
+          { name: 'a'.repeat(1024) }
+        )
+      ).toBe(true)
+    })
+
+    it('should ignore prototype keys and inherited properties as attributes', () => {
+      for (const attribute of [
+        '__proto__',
+        'constructor',
+        'prototype',
+        'toString',
+      ]) {
+        expect(
+          service.matchesCondition(
+            { id: '1', attribute, operator: 'CONTAINS', value: 'Object' },
+            {}
+          )
+        ).toBe(false)
+        expect(
+          service.matchesCondition(
+            { id: '1', attribute, operator: 'MATCHES_REGEX', value: '.' },
+            {}
+          )
+        ).toBe(false)
+      }
     })
 
     it('should not match when attribute is missing (for non-negation operators)', () => {
       expect(
         service.matchesCondition(
           { id: '1', attribute: 'country', operator: 'EQUALS', value: 'DE' },
-          {},
-        ),
+          {}
+        )
       ).toBe(false)
     })
   })
@@ -218,12 +369,17 @@ describe('EvaluationService', () => {
         priority: 1,
         conditions: [
           { id: 'c1', attribute: 'country', operator: 'EQUALS', value: 'DE' },
-          { id: 'c2', attribute: 'email', operator: 'CONTAINS', value: '@company.com' },
+          {
+            id: 'c2',
+            attribute: 'email',
+            operator: 'CONTAINS',
+            value: '@company.com',
+          },
         ],
       }
 
       expect(
-        service.matchesRule(rule, { country: 'DE', email: 'user@company.com' }),
+        service.matchesRule(rule, { country: 'DE', email: 'user@company.com' })
       ).toBe(true)
     })
 
@@ -237,12 +393,17 @@ describe('EvaluationService', () => {
         priority: 1,
         conditions: [
           { id: 'c1', attribute: 'country', operator: 'EQUALS', value: 'DE' },
-          { id: 'c2', attribute: 'email', operator: 'CONTAINS', value: '@company.com' },
+          {
+            id: 'c2',
+            attribute: 'email',
+            operator: 'CONTAINS',
+            value: '@company.com',
+          },
         ],
       }
 
       expect(
-        service.matchesRule(rule, { country: 'DE', email: 'user@other.com' }),
+        service.matchesRule(rule, { country: 'DE', email: 'user@other.com' })
       ).toBe(false)
     })
 
@@ -382,7 +543,9 @@ describe('EvaluationService', () => {
         },
       ]
 
-      expect(service.evaluateRules(rules, { country: 'FR' })).toBe('default_value')
+      expect(service.evaluateRules(rules, { country: 'FR' })).toBe(
+        'default_value'
+      )
     })
 
     it('should return null when no rules match and no default exists', () => {
@@ -429,5 +592,41 @@ describe('EvaluationService', () => {
 
       expect(service.evaluateRules(rules, { country: 'DE' })).toBe('de_value')
     })
+  })
+})
+
+describe('EvaluationService disabled rules', () => {
+  const { EvaluationService } = require('./evaluation.service')
+  const service = new EvaluationService()
+  const rule = (overrides: Record<string, unknown>) => ({
+    id: 'r',
+    name: 'r',
+    operator: 'AND',
+    serveValue: 'on',
+    isDefault: false,
+    priority: 0,
+    conditions: [{ id: 'c', attribute: 'country', operator: 'EQUALS', value: 'DE' }],
+    ...overrides,
+  })
+
+  it('skips disabled rules and falls through to the next one', () => {
+    expect(
+      service.evaluateRules(
+        [
+          rule({ id: 'a', enabled: false, serveValue: 'disabled' }),
+          rule({ id: 'b', priority: 1, serveValue: 'active' }),
+        ],
+        { country: 'DE' }
+      )
+    ).toBe('active')
+  })
+
+  it('ignores a disabled default rule', () => {
+    expect(
+      service.evaluateRules(
+        [rule({ isDefault: true, enabled: false, conditions: [] })],
+        {}
+      )
+    ).toBeNull()
   })
 })

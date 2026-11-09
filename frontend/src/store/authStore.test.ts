@@ -1,4 +1,5 @@
 import { describe, it, expect, beforeEach, vi } from 'vitest'
+import { expireSession, getSessionToken } from '@/lib/session'
 import { useAuthStore } from './authStore'
 
 // Mock axios module
@@ -36,14 +37,14 @@ describe('authStore', () => {
     useAuthStore.getState().setToken('test-token-123')
     const state = useAuthStore.getState()
     expect(state.token).toBe('test-token-123')
-    expect(localStorage.getItem('token')).toBe('test-token-123')
+    expect(getSessionToken()).toBe('test-token-123')
   })
 
   it('should remove token from localStorage when setToken(null)', () => {
-    localStorage.setItem('token', 'old-token')
+    useAuthStore.getState().setToken('old-token')
     useAuthStore.getState().setToken(null)
     expect(useAuthStore.getState().token).toBeNull()
-    expect(localStorage.getItem('token')).toBeNull()
+    expect(getSessionToken()).toBeNull()
   })
 
   it('should set user via setUser', () => {
@@ -102,6 +103,20 @@ describe('authStore', () => {
     expect(state.isLoading).toBe(false)
   })
 
+  it('stores a session from setup/invite registration like a login', () => {
+    useAuthStore.setState({ error: 'old' })
+    useAuthStore.getState().setSession({
+      token: 'setup-token',
+      user: { id: '2', email: 'owner@example.com', name: 'Owner' },
+    })
+
+    const state = useAuthStore.getState()
+    expect(state.token).toBe('setup-token')
+    expect(state.user?.email).toBe('owner@example.com')
+    expect(state.error).toBeNull()
+    expect(getSessionToken()).toBe('setup-token')
+  })
+
   it('should set error on login failure', async () => {
     const { default: api } = await import('@/lib/axios')
     const error = new Error('Invalid credentials')
@@ -113,5 +128,20 @@ describe('authStore', () => {
     const state = useAuthStore.getState()
     expect(state.error).toBe('Invalid credentials')
     expect(state.isLoading).toBe(false)
+  })
+
+  it('logs out in memory and on disk when the session expires', () => {
+    useAuthStore.getState().setSession({
+      token: 'dead',
+      user: { id: '1', email: 'a@b.c', name: 'A' },
+    })
+    const redirect = vi.fn()
+
+    expireSession(redirect)
+
+    expect(useAuthStore.getState()).toMatchObject({ token: null, user: null })
+    expect(localStorage.getItem('auth-storage')).toBeNull()
+    expect(getSessionToken()).toBeNull()
+    expect(redirect).toHaveBeenCalledWith('/login')
   })
 })

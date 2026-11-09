@@ -1,5 +1,5 @@
-# Stage 2: Runtime
-FROM node:20-slim AS runner
+# Stage 1: Build
+FROM node:20-slim AS builder
 
 WORKDIR /app
 
@@ -8,23 +8,40 @@ RUN apt-get update && \
     apt-get install -y openssl ca-certificates && \
     rm -rf /var/lib/apt/lists/*
 
-# Copy package files
 COPY package*.json ./
-RUN npm install --include=dev --legacy-peer-deps
+RUN npm ci --legacy-peer-deps
 
-# Install nest CLI globally for build
-RUN npm install -g @nestjs/cli
-
-# Copy prisma schema
 COPY prisma ./prisma/
 RUN npx prisma generate
 
-# Copy source
 COPY . .
+RUN npm run build && npm prune --omit=dev --legacy-peer-deps
 
-# Build
-RUN npm run build
+# Stage 2: Runtime (no dev dependencies, non-root user)
+FROM node:20-slim AS runner
+
+WORKDIR /app
+ENV NODE_ENV=production
+
+RUN apt-get update && \
+    apt-get install -y openssl ca-certificates && \
+    rm -rf /var/lib/apt/lists/* && \
+    mkdir -p /app/uploads && chown node:node /app/uploads
+
+COPY --from=builder --chown=node:node /app/package*.json ./
+COPY --from=builder --chown=node:node /app/node_modules ./node_modules
+COPY --from=builder --chown=node:node /app/dist ./dist
+COPY --from=builder --chown=node:node /app/prisma ./prisma
+
+USER node
 
 EXPOSE 4000
 
-CMD ["npm", "run", "start:prod"]
+# Prisma CLI: no update checks / telemetry calls on start
+ENV CHECKPOINT_DISABLE=1
+
+# Sync the schema (collections and indexes, e.g. changed unique indexes)
+# before starting. No --accept-data-loss: a push that would lose data fails,
+# and so does the deploy, visibly. SKIP_DB_PUSH=true skips the sync.
+# Inline instead of a script file, so Windows checkouts (CRLF) cannot break it.
+CMD ["sh", "-c", "if [ \"$SKIP_DB_PUSH\" = \"true\" ]; then echo 'SKIP_DB_PUSH=true: skipping prisma db push'; else npx prisma db push --skip-generate || { echo 'prisma db push failed: database schema is not in sync, refusing to start' >&2; exit 1; }; fi; exec node dist/main"]

@@ -10,7 +10,8 @@ services:
     volumes:
       - mongodb_data:/data/db
     ports:
-      - "27017:27017"
+      # Local access only; MongoDB runs without authentication
+      - "127.0.0.1:27017:27017"
     healthcheck:
       test: echo "try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb:27017'}]}) }" | mongosh --port 27017 --quiet
       interval: 5s
@@ -25,7 +26,7 @@ services:
     volumes:
       - redis_data:/data
     ports:
-      - "6379:6379"
+      - "127.0.0.1:6379:6379"
     healthcheck:
       test: ["CMD", "redis-cli", "ping"]
       interval: 5s
@@ -41,10 +42,24 @@ services:
       NODE_ENV: production
       DATABASE_URL: mongodb://mongodb:27017/togglely?replicaSet=rs0
       REDIS_URL: redis://redis:6379
-      JWT_SECRET: your-super-secret-jwt-key-change-in-production
+      JWT_SECRET: ${JWT_SECRET:?JWT_SECRET is required (min. 32 chars, e.g. openssl rand -hex 32)}
       PORT: 4000
+      FRONTEND_URL: ${FRONTEND_URL:-http://localhost:3000}
+      CORS_ORIGINS: ${CORS_ORIGINS:-http://localhost:3000}
+      # Recommended when the instance is publicly reachable before setup
+      SETUP_TOKEN: ${SETUP_TOKEN:-}
+      SKIP_DB_PUSH: ${SKIP_DB_PUSH:-false}
+      # Webhooks: private/http targets are blocked unless explicitly allowed
+      WEBHOOK_ALLOW_PRIVATE: ${WEBHOOK_ALLOW_PRIVATE:-false}
+      WEBHOOK_ALLOW_INSECURE: ${WEBHOOK_ALLOW_INSECURE:-false}
+      WEBHOOK_WORKER_DISABLED: ${WEBHOOK_WORKER_DISABLED:-false}
+      # Live change stream limits (CLIENT keys vs. SERVER/SDK keys)
+      SSE_MAX_PER_CLIENT_KEY: ${SSE_MAX_PER_CLIENT_KEY:-10000}
+      SSE_MAX_PER_CLIENT_IP: ${SSE_MAX_PER_CLIENT_IP:-50}
+      SSE_MAX_PER_SERVER_KEY: ${SSE_MAX_PER_SERVER_KEY:-50}
+      SSE_MAX_PER_IP: ${SSE_MAX_PER_IP:-20}
     ports:
-      - "4000:4000"
+      - "127.0.0.1:4000:4000"
     depends_on:
       mongodb:
         condition: service_healthy

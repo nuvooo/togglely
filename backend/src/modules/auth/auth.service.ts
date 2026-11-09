@@ -1,4 +1,5 @@
 import {
+  ConflictException,
   Injectable,
   InternalServerErrorException,
   Logger,
@@ -6,9 +7,17 @@ import {
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
 import * as bcrypt from 'bcryptjs'
-import { randomUUID } from 'crypto'
+import { randomBytes } from 'crypto'
 import * as jwt from 'jsonwebtoken'
 import { PrismaService } from '../../shared/prisma.service'
+import { findUserByEmail } from '../../shared/users'
+import { BCRYPT_ROUNDS, hashToken } from '../../shared/utils'
+import { normalizeEmail } from '../../shared/validation/normalize-email'
+
+// Pre-computed hash used to equalize login timing for unknown emails,
+// so response times do not reveal which accounts exist.
+const DUMMY_PASSWORD_HASH =
+  '$2a$12$9BQvanbQvtm09gxAxqPElO1AbdWrGbzR1iBja8eT.GvihPq.Qj2py'
 
 @Injectable()
 export class AuthService {
@@ -20,8 +29,9 @@ export class AuthService {
   ) {}
 
   async login(email: string, password: string) {
-    const user = await this.prisma.user.findUnique({ where: { email } })
+    const user = await findUserByEmail(this.prisma, email)
     if (!user) {
+      await bcrypt.compare(password, DUMMY_PASSWORD_HASH)
       this.logger.warn('Login failed: user not found')
       throw new UnauthorizedException('Invalid credentials')
     }
@@ -32,23 +42,21 @@ export class AuthService {
       throw new UnauthorizedException('Invalid credentials')
     }
 
+    if (user.isActive === false) {
+      this.logger.warn('Login failed: user is deactivated')
+      throw new UnauthorizedException('Invalid credentials')
+    }
+
     // Get user's organization
     const membership = await this.prisma.organizationMember.findFirst({
       where: { userId: user.id },
     })
 
-    const token = jwt.sign(
-      {
-        userId: user.id,
-        email: user.email,
-        organizationId: membership?.organizationId,
-      },
-      this.getJwtSecret(),
-      {
-        expiresIn: (this.config.get<string>('JWT_EXPIRY') ||
-          '7d') as jwt.SignOptions['expiresIn'],
-      }
-    )
+    const token = this.signToken({
+      userId: user.id,
+      email: user.email,
+      organizationId: membership?.organizationId,
+    })
 
     return {
       token,
@@ -60,6 +68,11 @@ export class AuthService {
     }
   }
 
+  /**
+   * Creates a user. The plain email verification token is returned
+   * separately so the caller can email it; it must never be sent back
+   * to the HTTP client.
+   */
   async register(
     email: string,
     password: string,
@@ -68,16 +81,19 @@ export class AuthService {
     lastName?: string,
     emailVerified: boolean = false
   ) {
-    const existing = await this.prisma.user.findUnique({ where: { email } })
-    if (existing) throw new UnauthorizedException('Email already exists')
+    email = normalizeEmail(email)
+    const existing = await findUserByEmail(this.prisma, email)
+    if (existing) throw new ConflictException('Email already exists')
 
-    const passwordHash = await bcrypt.hash(password, 10)
+    const passwordHash = await bcrypt.hash(password, BCRYPT_ROUNDS)
     const [parsedFirstName, ...lastNameParts] = name.split(' ')
     const finalFirstName = firstName || parsedFirstName
     const finalLastName = lastName || lastNameParts.join(' ') || ''
 
-    // Create verification token if email not verified
-    const emailVerifyToken = emailVerified ? null : randomUUID()
+    // Create verification token if email not verified (stored hashed)
+    const emailVerifyToken = emailVerified
+      ? null
+      : randomBytes(32).toString('hex')
 
     // Create user
     const user = await this.prisma.user.create({
@@ -87,31 +103,44 @@ export class AuthService {
         firstName: finalFirstName,
         lastName: finalLastName,
         emailVerified,
-        emailVerifyToken,
+        emailVerifyToken: emailVerifyToken ? hashToken(emailVerifyToken) : null,
       },
     })
 
     // No automatic organization creation - user must create one manually
 
-    const token = jwt.sign(
-      { userId: user.id, email: user.email },
-      this.getJwtSecret(),
-      {
-        expiresIn: (this.config.get<string>('JWT_EXPIRY') ||
-          '7d') as jwt.SignOptions['expiresIn'],
-      }
-    )
+    const token = this.signToken({ userId: user.id, email: user.email })
 
     return {
       token,
+      emailVerifyToken,
       user: {
         id: user.id,
         email: user.email,
         name: `${finalFirstName} ${finalLastName}`,
         emailVerified,
-        emailVerifyToken: emailVerified ? undefined : emailVerifyToken, // Return token for testing
       },
     }
+  }
+
+  /** Issues a fresh session token, e.g. after a password change. */
+  async issueToken(user: { id: string; email: string }) {
+    const membership = await this.prisma.organizationMember.findFirst({
+      where: { userId: user.id },
+    })
+    return this.signToken({
+      userId: user.id,
+      email: user.email,
+      organizationId: membership?.organizationId,
+    })
+  }
+
+  private signToken(payload: Record<string, unknown>): string {
+    return jwt.sign(payload, this.getJwtSecret(), {
+      algorithm: 'HS256',
+      expiresIn: (this.config.get<string>('JWT_EXPIRY') ||
+        '7d') as jwt.SignOptions['expiresIn'],
+    })
   }
 
   private getJwtSecret(): string {

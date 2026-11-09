@@ -2,12 +2,20 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import api from '@/lib/axios'
 import { getErrorMessage } from '@/lib/errors'
+import { AUTH_STORAGE_KEY, onSessionExpired } from '@/lib/session'
 
 export interface User {
   id: string
   email: string
   name: string
-  role: string
+  role?: string
+  emailVerified?: boolean
+}
+
+/** `{ token, user }` as returned by login, setup and invite registration. */
+export interface SessionResponse {
+  token: string
+  user: User
 }
 
 interface AuthState {
@@ -16,12 +24,8 @@ interface AuthState {
   isLoading: boolean
   error: string | null
   login: (email: string, password: string) => Promise<void>
-  register: (
-    firstName: string,
-    lastName: string,
-    email: string,
-    password: string
-  ) => Promise<void>
+  /** Stores a session returned by the API (login, setup, invite registration). */
+  setSession: (session: SessionResponse) => void
   logout: () => void
   setToken: (token: string | null) => void
   setUser: (user: User | null) => void
@@ -31,7 +35,7 @@ interface AuthState {
 
 export const useAuthStore = create<AuthState>()(
   persist(
-    (set) => ({
+    (set, get) => ({
       token: null,
       user: null,
       isLoading: false,
@@ -41,9 +45,8 @@ export const useAuthStore = create<AuthState>()(
         set({ isLoading: true, error: null })
         try {
           const response = await api.post('/auth/login', { email, password })
-          const { token, user } = response.data
-          set({ token, user, isLoading: false })
-          localStorage.setItem('token', token)
+          get().setSession(response.data)
+          set({ isLoading: false })
         } catch (error: unknown) {
           set({
             error: getErrorMessage(error),
@@ -53,44 +56,18 @@ export const useAuthStore = create<AuthState>()(
         }
       },
 
-      register: async (
-        firstName: string,
-        lastName: string,
-        email: string,
-        password: string
-      ) => {
-        set({ isLoading: true, error: null })
-        try {
-          const response = await api.post('/auth/register', {
-            firstName,
-            lastName,
-            email,
-            password,
-          })
-          const { token, user } = response.data
-          set({ token, user, isLoading: false })
-          localStorage.setItem('token', token)
-        } catch (error: unknown) {
-          set({
-            error: getErrorMessage(error),
-            isLoading: false,
-          })
-          throw error
-        }
+      setSession: ({ token, user }) => {
+        set({ token, user, error: null })
       },
 
       logout: () => {
         set({ token: null, user: null, error: null })
+        // Token key of older builds; the persisted store is the only source now.
         localStorage.removeItem('token')
       },
 
       setToken: (token) => {
         set({ token })
-        if (token) {
-          localStorage.setItem('token', token)
-        } else {
-          localStorage.removeItem('token')
-        }
       },
 
       setUser: (user) => {
@@ -108,8 +85,13 @@ export const useAuthStore = create<AuthState>()(
       },
     }),
     {
-      name: 'auth-storage',
+      // The persisted token is what the API client sends (lib/session).
+      name: AUTH_STORAGE_KEY,
       partialize: (state) => ({ token: state.token, user: state.user }),
     }
   )
 )
+
+// An expired session (401 from the API) also logs out in memory; otherwise the
+// store would keep the dead token and GuestOnly would bounce /login back.
+onSessionExpired(() => useAuthStore.getState().logout())

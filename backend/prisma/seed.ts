@@ -73,6 +73,7 @@ async function main() {
       key: 'development',
       projectId: project.id,
       organizationId: org.id,
+      sortOrder: 0,
     },
   })
 
@@ -82,6 +83,7 @@ async function main() {
       key: 'production',
       projectId: project.id,
       organizationId: org.id,
+      sortOrder: 1,
     },
   })
 
