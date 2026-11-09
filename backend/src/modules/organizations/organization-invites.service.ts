@@ -14,7 +14,9 @@ import {
 } from '../../shared/invites'
 import { MailService } from '../../shared/mail.service'
 import { PrismaService } from '../../shared/prisma.service'
+import { findUserByEmail } from '../../shared/users'
 import { hashToken } from '../../shared/utils'
+import { normalizeEmail } from '../../shared/validation/normalize-email'
 import { AuditLogsService } from '../audit-logs/audit-logs.service'
 import { assertCanGrantRole } from './roles'
 
@@ -54,38 +56,41 @@ export class OrganizationInvitesService {
   ) {
     const role = body.role ?? 'MEMBER'
     assertCanGrantRole(actor.role, role)
-    const email = body.email?.trim() || null
+    const email = (body.email && normalizeEmail(body.email)) || null
 
     if (email) {
-      const existingUser = await this.prisma.user.findUnique({
-        where: { email },
-      })
+      const existingUser = await findUserByEmail(this.prisma, email)
       if (existingUser) {
         const member = await this.prisma.organizationMember.findFirst({
           where: { organizationId, userId: existingUser.id },
         })
         if (member) throw new ConflictException('User is already a member')
       }
-
-      // At most one open invite per (organization, email): replace it
-      await this.prisma.organizationInvite.updateMany({
-        where: { organizationId, email, ...openInviteWhere() },
-        data: { revokedAt: new Date() },
-      })
     }
 
     const token = randomBytes(32).toString('hex')
     const expiresAt = new Date(Date.now() + INVITE_TTL_DAYS * DAY_MS)
 
-    const invite = await this.prisma.organizationInvite.create({
-      data: {
-        email,
-        organizationId,
-        role,
-        tokenHash: hashToken(token),
-        expiresAt,
-        createdById: actor.userId,
-      },
+    // Revoking the previous invite and creating the new one in one
+    // transaction keeps at most one open invite per (organization, email),
+    // also when two admins invite the same address at the same time.
+    const invite = await this.prisma.$transaction(async (tx) => {
+      if (email) {
+        await tx.organizationInvite.updateMany({
+          where: { organizationId, email, ...openInviteWhere() },
+          data: { revokedAt: new Date() },
+        })
+      }
+      return tx.organizationInvite.create({
+        data: {
+          email,
+          organizationId,
+          role,
+          tokenHash: hashToken(token),
+          expiresAt,
+          createdById: actor.userId,
+        },
+      })
     })
 
     let emailSent = false

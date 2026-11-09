@@ -3,6 +3,7 @@ import { ConfigService } from '@nestjs/config'
 import * as bcrypt from 'bcryptjs'
 import * as crypto from 'crypto'
 import { PrismaService } from '../../shared/prisma.service'
+import { findUserByEmail } from '../../shared/users'
 import { BCRYPT_ROUNDS, hashToken } from '../../shared/utils'
 import { MailService } from '../mail/mail.service'
 
@@ -17,7 +18,7 @@ export class PasswordResetService {
   ) {}
 
   async requestReset(email: string) {
-    const user = await this.prisma.user.findUnique({ where: { email } })
+    const user = await findUserByEmail(this.prisma, email)
     if (!user) {
       return
     }
@@ -38,7 +39,10 @@ export class PasswordResetService {
     this.logger.debug(`Password reset requested for user ${user.id}`)
 
     try {
-      const sent = await this.mailService.sendPasswordResetEmail(email, token)
+      const sent = await this.mailService.sendPasswordResetEmail(
+        user.email,
+        token
+      )
       if (!sent) {
         // The client still gets the generic response (no account leak)
         this.logger.warn(

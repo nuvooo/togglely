@@ -39,6 +39,7 @@ function createService() {
     },
     user: {
       findUnique: jest.fn(),
+      findFirst: jest.fn().mockResolvedValue(null),
     },
     project: {
       findMany: jest.fn(),

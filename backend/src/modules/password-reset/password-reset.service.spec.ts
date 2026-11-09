@@ -78,6 +78,24 @@ describe('PasswordResetService', () => {
       expect(stored).not.toBe(emailedToken)
     })
 
+    it('finds legacy mixed-case accounts and mails their stored address', async () => {
+      const { service, prisma, mailService } = createService()
+      prisma.user.findUnique.mockResolvedValue(null)
+      prisma.user.findFirst.mockResolvedValue({
+        ...mockUser,
+        email: 'Test@Example.com',
+      })
+      prisma.user.update.mockResolvedValue({})
+
+      await service.requestReset('test@example.com')
+
+      expect(prisma.user.update).toHaveBeenCalled()
+      expect(mailService.sendPasswordResetEmail).toHaveBeenCalledWith(
+        'Test@Example.com',
+        expect.any(String)
+      )
+    })
+
     it('silently returns for unknown email (no information leak)', async () => {
       const { service, prisma, mailService } = createService()
       prisma.user.findUnique.mockResolvedValue(null)

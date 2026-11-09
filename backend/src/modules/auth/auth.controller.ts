@@ -11,14 +11,15 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common'
+import { ConfigService } from '@nestjs/config'
 import { ApiTags } from '@nestjs/swagger'
 import { Throttle } from '@nestjs/throttler'
 import * as bcrypt from 'bcryptjs'
-import { ConfigService } from '@nestjs/config'
 import { randomBytes } from 'crypto'
 import { AuthGuard } from '../../shared/auth.guard'
 import { MailService } from '../../shared/mail.service'
 import { PrismaService } from '../../shared/prisma.service'
+import { findUserByEmail } from '../../shared/users'
 import { BCRYPT_ROUNDS, hashToken } from '../../shared/utils'
 import { AuthService } from './auth.service'
 import { ChangePasswordDto } from './dto/change-password.dto'
@@ -164,6 +165,7 @@ export class AuthController {
   /** Joins the invite's organization as the logged-in user. */
   @Post('invite/:token/accept')
   @UseGuards(AuthGuard)
+  @Throttle({ default: { ttl: 900000, limit: 20 } })
   async acceptInvite(@Param('token') token: string, @Req() req: any) {
     return this.invites.accept(token, req.user.userId)
   }
@@ -188,6 +190,7 @@ export class AuthController {
   /** Accepts a pending (email-bound) invite by id, no link token needed. */
   @Post('pending-invites/:inviteId/accept')
   @UseGuards(AuthGuard)
+  @Throttle({ default: { ttl: 900000, limit: 20 } })
   async acceptPendingInvite(
     @Param('inviteId') inviteId: string,
     @Req() req: any
@@ -225,9 +228,7 @@ export class AuthController {
   @Post('resend-verification')
   @Throttle({ default: { ttl: 900000, limit: 3 } })
   async resendVerification(@Body() body: ResendVerificationDto) {
-    const user = await this.prisma.user.findUnique({
-      where: { email: body.email },
-    })
+    const user = await findUserByEmail(this.prisma, body.email)
 
     // Same response whether or not the account exists (no user enumeration).
     // Without SMTP there is nothing to send, so the token is left untouched.
@@ -239,7 +240,7 @@ export class AuthController {
       })
 
       await this.mailService.sendVerificationEmail(
-        body.email,
+        user.email,
         token,
         this.frontendUrl
       )

@@ -14,7 +14,10 @@ const DAY = 24 * 60 * 60 * 1000
 
 function createService(opts: { mailEnabled?: boolean } = {}) {
   const prisma = {
-    user: { findUnique: jest.fn().mockResolvedValue(null) },
+    user: {
+      findUnique: jest.fn().mockResolvedValue(null),
+      findFirst: jest.fn().mockResolvedValue(null),
+    },
     organization: {
       findUnique: jest.fn().mockResolvedValue({ id: ORG, name: 'Acme' }),
     },
@@ -32,6 +35,25 @@ function createService(opts: { mailEnabled?: boolean } = {}) {
       findFirst: jest.fn().mockResolvedValue(null),
     },
   } as any
+  // Runs the callback with a tx client that records which calls ran inside
+  prisma.$transaction = jest.fn(async (fn: any) => {
+    const tx = {
+      ...prisma,
+      organizationInvite: {
+        ...prisma.organizationInvite,
+        updateMany: jest.fn(async (args: any) => {
+          txCalls.push('updateMany')
+          return prisma.organizationInvite.updateMany(args)
+        }),
+        create: jest.fn(async (args: any) => {
+          txCalls.push('create')
+          return prisma.organizationInvite.create(args)
+        }),
+      },
+    }
+    return fn(tx)
+  })
+  const txCalls: string[] = []
   const mail = {
     isEnabled: jest.fn().mockReturnValue(opts.mailEnabled ?? false),
     sendInviteEmail: jest.fn().mockResolvedValue(true),
@@ -43,7 +65,7 @@ function createService(opts: { mailEnabled?: boolean } = {}) {
   } as any
   const audit = { create: jest.fn().mockResolvedValue({}) } as any
   const service = new OrganizationInvitesService(prisma, mail, config, audit)
-  return { service, prisma, mail, audit }
+  return { service, prisma, mail, audit, txCalls }
 }
 
 const admin = { userId: ADMIN_ID, role: 'ADMIN' as const }
@@ -150,6 +172,42 @@ describe('OrganizationInvitesService', () => {
       })
       expect(revoke.data.revokedAt).toBeInstanceOf(Date)
       expect(prisma.organizationInvite.create).toHaveBeenCalledTimes(1)
+    })
+
+    it('revokes the previous invite and creates the new one atomically', async () => {
+      const { service, prisma, txCalls } = createService()
+      await service.create(ORG, admin, { email: 'again@example.com' })
+      expect(prisma.$transaction).toHaveBeenCalledTimes(1)
+      expect(txCalls).toEqual(['updateMany', 'create'])
+    })
+
+    it('stores and matches the email normalized', async () => {
+      const { service, prisma } = createService()
+      const result = await service.create(ORG, admin, {
+        email: '  Again@Example.COM ',
+      })
+      expect(prisma.user.findUnique).toHaveBeenCalledWith({
+        where: { email: 'again@example.com' },
+      })
+      expect(
+        prisma.organizationInvite.updateMany.mock.calls[0][0].where.email
+      ).toBe('again@example.com')
+      expect(prisma.organizationInvite.create.mock.calls[0][0].data.email).toBe(
+        'again@example.com'
+      )
+      expect(result.invite.email).toBe('again@example.com')
+    })
+
+    it('finds legacy mixed-case members of the organization (409)', async () => {
+      const { service, prisma } = createService()
+      prisma.user.findFirst.mockResolvedValue({
+        id: 'u1',
+        email: 'Member@Example.com',
+      })
+      prisma.organizationMember.findFirst.mockResolvedValue({ id: 'm1' })
+      await expect(
+        service.create(ORG, admin, { email: 'member@example.com' })
+      ).rejects.toBeInstanceOf(ConflictException)
     })
 
     it('does not revoke anything for unbound invites', async () => {

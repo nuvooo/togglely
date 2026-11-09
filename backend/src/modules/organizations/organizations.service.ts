@@ -7,6 +7,7 @@ import {
 import { Organization, OrganizationRole } from '@prisma/client'
 import { randomUUID } from 'crypto'
 import { PrismaService } from '../../shared/prisma.service'
+import { findUserByEmail } from '../../shared/users'
 
 @Injectable()
 export class OrganizationsService {
@@ -238,7 +239,7 @@ export class OrganizationsService {
     })
     if (!organization) throw new NotFoundException('Organization not found')
 
-    const user = await this.prisma.user.findUnique({ where: { email } })
+    const user = await findUserByEmail(this.prisma, email)
     if (!user) throw new NotFoundException('User not found')
 
     const existing = await this.prisma.organizationMember.findFirst({

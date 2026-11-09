@@ -4,8 +4,14 @@ import {
   ForbiddenException,
   NotFoundException,
 } from '@nestjs/common'
-import { hashToken } from '../../shared/utils'
+import { Prisma } from '@prisma/client'
+import { AsyncLocalStorage } from 'async_hooks'
+import * as bcrypt from 'bcryptjs'
+import { BCRYPT_ROUNDS, hashToken } from '../../shared/utils'
 import { InvitesService } from './invites.service'
+
+jest.mock('bcryptjs')
+const mockBcrypt = bcrypt as jest.Mocked<typeof bcrypt>
 
 const ORG = 'aaaaaaaaaaaaaaaaaaaaaaaa'
 const DAY = 24 * 60 * 60 * 1000
@@ -43,6 +49,13 @@ function makeInvite(overrides: Partial<Invite> = {}): Invite {
   }
 }
 
+function prismaError(code: string) {
+  return new Prisma.PrismaClientKnownRequestError(code, {
+    code,
+    clientVersion: 'test',
+  })
+}
+
 function createService(opts: { mailEnabled?: boolean } = {}) {
   const state = {
     invites: [] as Invite[],
@@ -51,6 +64,28 @@ function createService(opts: { mailEnabled?: boolean } = {}) {
   }
   const org = { id: ORG, name: 'Acme' }
   const isOpen = (i: Invite) => !i.acceptedAt && !i.revokedAt
+
+  // Writes inside $transaction register an undo step, so a failing
+  // transaction rolls back only its own writes (also when run in parallel).
+  const tx = new AsyncLocalStorage<Array<() => void>>()
+  const onRollback = (undo: () => void) => tx.getStore()?.push(undo)
+  const remove = (list: any[], item: any) => () => {
+    const index = list.indexOf(item)
+    if (index >= 0) list.splice(index, 1)
+  }
+  const assign = (target: any, data: any) => {
+    const previous = Object.fromEntries(
+      Object.keys(data).map((key) => [key, target[key]])
+    )
+    Object.assign(target, data)
+    onRollback(() => Object.assign(target, previous))
+  }
+  const emailMatches = (actual: string, filter: any) =>
+    typeof filter === 'string'
+      ? actual === filter
+      : filter.mode === 'insensitive'
+        ? actual?.toLowerCase() === filter.equals.toLowerCase()
+        : actual === filter.equals
 
   const prisma = {
     organizationInvite: {
@@ -70,7 +105,10 @@ function createService(opts: { mailEnabled?: boolean } = {}) {
         state.invites
           .filter(
             (i) =>
-              i.email === where.email && isOpen(i) && i.expiresAt > new Date()
+              i.email != null &&
+              emailMatches(i.email, where.email) &&
+              isOpen(i) &&
+              i.expiresAt > new Date()
           )
           .map((i) => ({ ...i, organization: org }))
       ),
@@ -82,7 +120,7 @@ function createService(opts: { mailEnabled?: boolean } = {}) {
             (!where.AND || isOpen(i)) &&
             (!where.expiresAt || i.expiresAt > where.expiresAt.gt)
         )
-        for (const t of targets) Object.assign(t, data)
+        for (const t of targets) assign(t, data)
         return { count: targets.length }
       }),
     },
@@ -93,6 +131,25 @@ function createService(opts: { mailEnabled?: boolean } = {}) {
             where.id ? u.id === where.id : u.email === where.email
           ) ?? null
       ),
+      findFirst: jest.fn(
+        async ({ where }: any) =>
+          state.users.find((u) => emailMatches(u.email, where.email)) ?? null
+      ),
+      create: jest.fn(async ({ data }: any) => {
+        if (state.users.some((u) => u.email === data.email)) {
+          throw prismaError('P2002')
+        }
+        const user = { id: `user-${state.users.length + 1}`, ...data }
+        state.users.push(user)
+        onRollback(remove(state.users, user))
+        return { ...user }
+      }),
+      update: jest.fn(async ({ where, data }: any) => {
+        const user = state.users.find((u) => u.id === where.id)
+        if (!user) throw prismaError('P2025')
+        assign(user, data)
+        return { ...user }
+      }),
     },
     organizationMember: {
       findFirst: jest.fn(
@@ -106,41 +163,39 @@ function createService(opts: { mailEnabled?: boolean } = {}) {
       findMany: jest.fn(async ({ where }: any) =>
         state.members.filter((m) => m.userId === where.userId)
       ),
+      count: jest.fn(
+        async ({ where }: any) =>
+          state.members.filter((m) => m.userId === where.userId).length
+      ),
       create: jest.fn(async ({ data }: any) => {
+        if (
+          state.members.some(
+            (m) =>
+              m.userId === data.userId &&
+              m.organizationId === data.organizationId
+          )
+        ) {
+          throw prismaError('P2002')
+        }
         state.members.push(data)
+        onRollback(remove(state.members, data))
         return data
       }),
     },
+    $transaction: jest.fn(async (fn: any) => {
+      const undo: Array<() => void> = []
+      return tx.run(undo, async () => {
+        try {
+          return await fn(prisma)
+        } catch (error) {
+          for (const step of undo.reverse()) step()
+          throw error
+        }
+      })
+    }),
   } as any
 
   const authService = {
-    register: jest.fn(
-      async (
-        email: string,
-        _password: string,
-        name: string,
-        firstName: string,
-        lastName: string,
-        emailVerified: boolean
-      ) => {
-        if (state.users.some((u) => u.email === email)) {
-          throw new ConflictException('Email already exists')
-        }
-        const user = {
-          id: `user-${state.users.length + 1}`,
-          email,
-          firstName,
-          lastName,
-          emailVerified,
-        }
-        state.users.push(user)
-        return {
-          token: 'register-token',
-          emailVerifyToken: emailVerified ? null : 'verify-token',
-          user: { id: user.id, email, name, emailVerified },
-        }
-      }
-    ),
     issueToken: jest.fn().mockResolvedValue('session-token'),
   } as any
   const mail = {
@@ -169,6 +224,11 @@ const registerBody = {
 }
 
 describe('InvitesService', () => {
+  beforeEach(() => {
+    jest.clearAllMocks()
+    mockBcrypt.hash.mockResolvedValue('hashed' as never)
+  })
+
   describe('findValidInvite', () => {
     it('finds an invite by the hash of its token', async () => {
       const { service, state } = createService()
@@ -236,7 +296,7 @@ describe('InvitesService', () => {
         email: 'bound@example.com',
         existingUser: false,
       })
-      addUser({ id: 'u1', email: 'bound@example.com' })
+      addUser({ id: 'u1', email: 'Bound@Example.com', emailVerified: true })
       await expect(service.getInfo(TOKEN)).resolves.toMatchObject({
         existingUser: true,
       })
@@ -255,14 +315,18 @@ describe('InvitesService', () => {
         email: 'ignored@example.com',
       })
 
-      expect(authService.register).toHaveBeenCalledWith(
-        'bound@example.com',
-        PASSWORD,
-        'Grace Hopper',
-        'Grace',
-        'Hopper',
-        true
-      )
+      expect(mockBcrypt.hash).toHaveBeenCalledWith(PASSWORD, BCRYPT_ROUNDS)
+      expect(state.users).toEqual([
+        expect.objectContaining({
+          id: 'user-1',
+          email: 'bound@example.com',
+          password: 'hashed',
+          firstName: 'Grace',
+          lastName: 'Hopper',
+          emailVerified: true,
+          emailVerifyToken: null,
+        }),
+      ])
       expect(state.members).toEqual([
         { userId: 'user-1', organizationId: ORG, role: 'ADMIN' },
       ])
@@ -273,11 +337,14 @@ describe('InvitesService', () => {
       )
       expect(result).toEqual({
         token: 'session-token',
-        user: expect.objectContaining({
+        user: {
           id: 'user-1',
           email: 'bound@example.com',
-        }),
+          name: 'Grace Hopper',
+          emailVerified: true,
+        },
       })
+      expect(JSON.stringify(result)).not.toContain('hashed')
       expect(audit.create).toHaveBeenCalledWith(
         expect.objectContaining({
           action: 'invite.accepted',
@@ -289,24 +356,27 @@ describe('InvitesService', () => {
     })
 
     it('unbound: requires an email (400)', async () => {
-      const { service, state, authService } = createService()
+      const { service, state, prisma } = createService()
       state.invites.push(makeInvite())
       await expect(
         service.register(TOKEN, registerBody)
       ).rejects.toBeInstanceOf(BadRequestException)
-      expect(authService.register).not.toHaveBeenCalled()
+      expect(prisma.user.create).not.toHaveBeenCalled()
       expect(state.invites[0].acceptedAt).toBeNull()
     })
 
     it('unbound: creates an unverified user with the given email', async () => {
-      const { service, state, authService, mail } = createService()
+      const { service, state, mail } = createService()
       state.invites.push(makeInvite())
       const result = await service.register(TOKEN, {
         ...registerBody,
         email: 'linked@example.com',
       })
-      expect(authService.register.mock.calls[0][0]).toBe('linked@example.com')
-      expect(authService.register.mock.calls[0][5]).toBe(false)
+      expect(state.users[0]).toMatchObject({
+        email: 'linked@example.com',
+        emailVerified: false,
+        emailVerifyToken: expect.any(String),
+      })
       expect(state.members).toHaveLength(1)
       expect(result.user.email).toBe('linked@example.com')
       // No SMTP: nothing is sent
@@ -322,9 +392,12 @@ describe('InvitesService', () => {
       })
       expect(mail.sendVerificationEmail).toHaveBeenCalledWith(
         'linked@example.com',
-        'verify-token',
+        expect.stringMatching(/^[a-f0-9]{64}$/),
         'http://localhost:3000'
       )
+      // Only the hash of the mailed token is stored
+      const mailed = mail.sendVerificationEmail.mock.calls[0][1]
+      expect(state.users[0].emailVerifyToken).toBe(hashToken(mailed))
     })
 
     it('unbound: rejects an existing email (409) without using the invite', async () => {
@@ -338,14 +411,161 @@ describe('InvitesService', () => {
       expect(state.members).toHaveLength(0)
     })
 
-    it('releases the invite if creating the user fails', async () => {
-      const { service, state, authService } = createService()
+    it('unbound: rejects a legacy mixed-case account with the same email (409)', async () => {
+      const { service, state, addUser } = createService()
+      addUser({ id: 'u1', email: 'Taken@Example.com', emailVerified: true })
       state.invites.push(makeInvite())
-      authService.register.mockRejectedValueOnce(new Error('db down'))
+      await expect(
+        service.register(TOKEN, { ...registerBody, email: 'taken@example.com' })
+      ).rejects.toBeInstanceOf(ConflictException)
+      expect(state.users).toHaveLength(1)
+      expect(state.invites[0].acceptedAt).toBeNull()
+    })
+
+    it('normalizes the email of open-link registrations', async () => {
+      const { service, state } = createService()
+      state.invites.push(makeInvite())
+      const result = await service.register(TOKEN, {
+        ...registerBody,
+        email: '  Linked@Example.COM ',
+      })
+      expect(state.users[0].email).toBe('linked@example.com')
+      expect(result.user.email).toBe('linked@example.com')
+    })
+
+    it('releases the invite if creating the user fails', async () => {
+      const { service, state, prisma } = createService()
+      state.invites.push(makeInvite())
+      prisma.user.create.mockRejectedValueOnce(new Error('db down'))
       await expect(
         service.register(TOKEN, { ...registerBody, email: 'x@example.com' })
       ).rejects.toThrow('db down')
       expect(state.invites[0].acceptedAt).toBeNull()
+    })
+
+    it('leaves neither a user nor a used invite if joining fails', async () => {
+      const { service, state, prisma } = createService()
+      state.invites.push(makeInvite())
+      prisma.organizationMember.create.mockRejectedValueOnce(
+        new Error('db down')
+      )
+      await expect(
+        service.register(TOKEN, { ...registerBody, email: 'x@example.com' })
+      ).rejects.toThrow('db down')
+      expect(state.users).toHaveLength(0)
+      expect(state.members).toHaveLength(0)
+      expect(state.invites[0].acceptedAt).toBeNull()
+      expect(state.invites[0].acceptedById).toBeNull()
+
+      // The link still works afterwards
+      await service.register(TOKEN, { ...registerBody, email: 'x@example.com' })
+      expect(state.members).toHaveLength(1)
+    })
+
+    it('runs user, claim and membership in one transaction', async () => {
+      const { service, state, prisma } = createService()
+      state.invites.push(makeInvite())
+      await service.register(TOKEN, { ...registerBody, email: 'x@example.com' })
+      expect(prisma.$transaction).toHaveBeenCalledWith(expect.any(Function), {
+        timeout: 10_000,
+      })
+    })
+
+    it('maps a parallel registration of the same email to 409', async () => {
+      const { service, state, prisma } = createService()
+      state.invites.push(makeInvite())
+      prisma.user.create.mockRejectedValueOnce(prismaError('P2002'))
+      await expect(
+        service.register(TOKEN, { ...registerBody, email: 'x@example.com' })
+      ).rejects.toBeInstanceOf(ConflictException)
+      expect(state.invites[0].acceptedAt).toBeNull()
+    })
+
+    describe('bound invite for an email squatted by an unverified account', () => {
+      const squatter = () => ({
+        id: 'squat',
+        email: 'bound@example.com',
+        password: 'attacker-hash',
+        firstName: 'Mal',
+        lastName: 'Lory',
+        emailVerified: false,
+        emailVerifyToken: 'pending',
+        resetToken: 'attacker-reset',
+      })
+
+      it('takes over the account in place: new password, name, verified', async () => {
+        const { service, state, addUser } = createService()
+        addUser(squatter())
+        state.invites.push(makeInvite({ email: 'bound@example.com' }))
+
+        const result = await service.register(TOKEN, registerBody)
+
+        expect(state.users).toHaveLength(1)
+        expect(state.users[0]).toMatchObject({
+          id: 'squat',
+          email: 'bound@example.com',
+          password: 'hashed',
+          firstName: 'Grace',
+          lastName: 'Hopper',
+          emailVerified: true,
+          emailVerifyToken: null,
+          resetToken: null,
+          passwordChangedAt: expect.any(Date),
+        })
+        expect(state.members).toEqual([
+          { userId: 'squat', organizationId: ORG, role: 'MEMBER' },
+        ])
+        expect(state.invites[0].acceptedById).toBe('squat')
+        expect(result.user).toMatchObject({ id: 'squat', emailVerified: true })
+      })
+
+      it('reports the address as free in the invite info', async () => {
+        const { service, state, addUser } = createService()
+        addUser(squatter())
+        state.invites.push(makeInvite({ email: 'bound@example.com' }))
+        await expect(service.getInfo(TOKEN)).resolves.toMatchObject({
+          existingUser: false,
+        })
+      })
+
+      it('keeps verified accounts (409)', async () => {
+        const { service, state, addUser } = createService()
+        addUser({ ...squatter(), emailVerified: true })
+        state.invites.push(makeInvite({ email: 'bound@example.com' }))
+        await expect(
+          service.register(TOKEN, registerBody)
+        ).rejects.toBeInstanceOf(ConflictException)
+        expect(state.users[0].password).toBe('attacker-hash')
+        expect(state.invites[0].acceptedAt).toBeNull()
+      })
+
+      it('keeps unverified accounts that belong to an organization (409)', async () => {
+        const { service, state, addUser } = createService()
+        addUser(squatter())
+        state.members.push({
+          userId: 'squat',
+          organizationId: 'other-org',
+          role: 'MEMBER',
+        })
+        state.invites.push(makeInvite({ email: 'bound@example.com' }))
+        await expect(
+          service.register(TOKEN, registerBody)
+        ).rejects.toBeInstanceOf(ConflictException)
+        expect(state.users[0].password).toBe('attacker-hash')
+      })
+
+      it('does not take over accounts via open links (409)', async () => {
+        const { service, state, addUser } = createService()
+        addUser(squatter())
+        state.invites.push(makeInvite())
+        await expect(
+          service.register(TOKEN, {
+            ...registerBody,
+            email: 'bound@example.com',
+          })
+        ).rejects.toBeInstanceOf(ConflictException)
+        expect(state.users[0].password).toBe('attacker-hash')
+      })
     })
 
     it('cannot use the same link twice (409)', async () => {
@@ -468,6 +688,60 @@ describe('InvitesService', () => {
       expect(state.members).toHaveLength(0)
     })
 
+    it('keeps the invite valid when the membership already exists (409)', async () => {
+      const { service, state, addUser, prisma } = createService()
+      addUser(verified('m@example.com'))
+      state.invites.push(makeInvite())
+      // Joined in parallel after the pre-check: the unique index fires
+      prisma.organizationMember.findFirst.mockResolvedValueOnce(null)
+      state.members.push({
+        userId: 'u-verified',
+        organizationId: ORG,
+        role: 'MEMBER',
+      })
+      const error = await service.accept(TOKEN, 'u-verified').catch((e) => e)
+      expect(error).toBeInstanceOf(ConflictException)
+      expect(error.message).toMatch(/already a member/)
+      expect(state.invites[0].acceptedAt).toBeNull()
+      expect(state.invites[0].acceptedById).toBeNull()
+      expect(state.members).toHaveLength(1)
+    })
+
+    it('releases the invite when joining fails', async () => {
+      const { service, state, addUser, prisma } = createService()
+      addUser(verified('m@example.com'))
+      state.invites.push(makeInvite())
+      prisma.organizationMember.create.mockRejectedValueOnce(
+        new Error('db down')
+      )
+      await expect(service.accept(TOKEN, 'u-verified')).rejects.toThrow(
+        'db down'
+      )
+      expect(state.invites[0].acceptedAt).toBeNull()
+      await service.accept(TOKEN, 'u-verified')
+      expect(state.members).toHaveLength(1)
+    })
+
+    it('maps a transaction write conflict to 409', async () => {
+      const { service, state, addUser, prisma } = createService()
+      addUser(verified('m@example.com'))
+      state.invites.push(makeInvite())
+      prisma.organizationInvite.updateMany.mockRejectedValueOnce(
+        prismaError('P2034')
+      )
+      await expect(service.accept(TOKEN, 'u-verified')).rejects.toBeInstanceOf(
+        ConflictException
+      )
+    })
+
+    it('bound: matches the invite email case-insensitively', async () => {
+      const { service, state, addUser } = createService()
+      addUser(verified('Bound@Example.com'))
+      state.invites.push(makeInvite({ email: 'bound@example.com' }))
+      await service.accept(TOKEN, 'u-verified')
+      expect(state.members).toHaveLength(1)
+    })
+
     it('accepts legacy invites', async () => {
       const { service, state, addUser } = createService()
       addUser(verified('old@example.com'))
@@ -506,6 +780,14 @@ describe('InvitesService', () => {
         organizationName: 'Acme',
       })
       expect(JSON.stringify(result)).not.toContain(hashToken(TOKEN))
+    })
+
+    it('lists invites of legacy mixed-case accounts', async () => {
+      const { service, state, addUser } = createService()
+      addUser({ id: 'u1', email: 'Me@Example.com', emailVerified: true })
+      state.invites.push(makeInvite({ email: 'me@example.com' }))
+      const result = await service.getPendingForUser('u1')
+      expect(result.invites).toHaveLength(1)
     })
 
     it('hides invites from unverified users', async () => {

@@ -3,15 +3,20 @@ import {
   ConflictException,
   ForbiddenException,
   Injectable,
+  Logger,
   NotFoundException,
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
-import { Organization, OrganizationInvite } from '@prisma/client'
+import { Organization, OrganizationInvite, Prisma, User } from '@prisma/client'
+import * as bcrypt from 'bcryptjs'
+import { randomBytes } from 'crypto'
 import { isObjectId } from '../../shared/access/access.service'
 import { openInviteWhere } from '../../shared/invites'
 import { MailService } from '../../shared/mail.service'
 import { PrismaService } from '../../shared/prisma.service'
-import { hashToken } from '../../shared/utils'
+import { findUserByEmail } from '../../shared/users'
+import { BCRYPT_ROUNDS, hashToken } from '../../shared/utils'
+import { normalizeEmail } from '../../shared/validation/normalize-email'
 import { AuditLogsService } from '../audit-logs/audit-logs.service'
 import { AuthService } from './auth.service'
 import { InviteRegisterDto } from './dto/invite-register.dto'
@@ -22,9 +27,21 @@ type InviteWithOrg = OrganizationInvite & {
 
 /** Tokens are 64 hex chars (legacy: UUIDs); anything much longer is bogus. */
 const MAX_TOKEN_LENGTH = 200
+const TRANSACTION_TIMEOUT_MS = 10_000
 
 const sameEmail = (a: string, b: string) =>
   a.trim().toLowerCase() === b.trim().toLowerCase()
+
+const prismaCode = (error: unknown) =>
+  error instanceof Prisma.PrismaClientKnownRequestError ? error.code : null
+
+const inviteUsed = () => new ConflictException('Invite already used')
+const accountExists = () =>
+  new ConflictException(
+    'An account with this email already exists. Please log in and accept the invite.'
+  )
+const alreadyMember = () =>
+  new ConflictException('You are already a member of this organization')
 
 /**
  * Using invite links: lookup, registration via link and joining an
@@ -32,6 +49,8 @@ const sameEmail = (a: string, b: string) =>
  */
 @Injectable()
 export class InvitesService {
+  private readonly logger = new Logger(InvitesService.name)
+
   constructor(
     private readonly prisma: PrismaService,
     private readonly authService: AuthService,
@@ -74,7 +93,7 @@ export class InvitesService {
     if (!invite || invite.revokedAt) {
       throw new NotFoundException('Invite not found')
     }
-    if (invite.acceptedAt) throw new ConflictException('Invite already used')
+    if (invite.acceptedAt) throw inviteUsed()
     if (invite.expiresAt <= new Date()) {
       throw new NotFoundException('Invite expired')
     }
@@ -83,12 +102,13 @@ export class InvitesService {
 
   async getInfo(token: string) {
     const invite = await this.findValidInvite(token)
-    const existingUser = invite.email
-      ? !!(await this.prisma.user.findUnique({
-          where: { email: invite.email },
-          select: { id: true },
-        }))
-      : false
+    let existingUser = false
+    if (invite.email) {
+      const user = await findUserByEmail(this.prisma, invite.email)
+      // An account the bound invite may take over counts as free, so the
+      // invitee is offered registration instead of a login they cannot do.
+      existingUser = !!user && !(await this.isReplaceable(user))
+    }
 
     return {
       organizationName: invite.organization.name,
@@ -98,45 +118,59 @@ export class InvitesService {
     }
   }
 
-  /** Creates an account via an invite link and joins the organization. */
+  /**
+   * Creates an account via an invite link and joins the organization.
+   * User, invite claim and membership are written in one transaction, so a
+   * failure leaves neither an orphaned account nor a used invite behind.
+   */
   async register(token: string, body: InviteRegisterDto) {
     const invite = await this.findValidInvite(token)
 
     // A bound invite proves the address (the link was sent to it); an open
     // link proves nothing about the address the user types in.
     const bound = !!invite.email
-    const email = invite.email || body.email?.trim()
+    const email = normalizeEmail(invite.email || body.email || '')
     if (!email) throw new BadRequestException('Email is required')
 
-    const existing = await this.prisma.user.findUnique({
-      where: { email },
-      select: { id: true },
-    })
-    if (existing) {
-      throw new ConflictException(
-        'An account with this email already exists. Please log in and accept the invite.'
-      )
+    const existing = await findUserByEmail(this.prisma, email)
+    // Only a bound invite may take over an account: it proves the address
+    if (existing && !(bound && (await this.isReplaceable(existing)))) {
+      throw accountExists()
     }
 
-    await this.claim(invite)
+    const firstName = body.firstName.trim()
+    const lastName = body.lastName.trim()
+    const passwordHash = await bcrypt.hash(body.password, BCRYPT_ROUNDS)
+    // Open links create unverified accounts (verification token stored hashed)
+    const emailVerifyToken = bound ? null : randomBytes(32).toString('hex')
+    const profile = {
+      password: passwordHash,
+      firstName,
+      lastName,
+      emailVerified: bound,
+      emailVerifyToken: emailVerifyToken ? hashToken(emailVerifyToken) : null,
+    }
 
-    let registered: Awaited<ReturnType<AuthService['register']>>
+    let user: User
     try {
-      registered = await this.authService.register(
-        email,
-        body.password,
-        `${body.firstName} ${body.lastName}`.trim(),
-        body.firstName,
-        body.lastName,
-        bound
+      user = await this.prisma.$transaction(
+        async (tx) => {
+          const created = existing
+            ? await this.takeOver(tx, existing.id, email, profile)
+            : await tx.user.create({ data: { email, ...profile } })
+          await this.claimAndJoin(tx, invite, created.id)
+          return created
+        },
+        { timeout: TRANSACTION_TIMEOUT_MS }
       )
     } catch (error) {
-      await this.release(invite.id)
+      // P2002: the email was registered in parallel
+      if (prismaCode(error) === 'P2002') throw accountExists()
+      if (prismaCode(error) === 'P2034') throw inviteUsed()
       throw error
     }
 
-    const { emailVerifyToken, user } = registered
-    await this.join(invite, user.id)
+    await this.auditAccepted(invite, user.id)
 
     if (emailVerifyToken && this.mailService.isEnabled()) {
       await this.mailService.sendVerificationEmail(
@@ -147,7 +181,15 @@ export class InvitesService {
     }
 
     const sessionToken = await this.authService.issueToken(user)
-    return { token: sessionToken, user }
+    return {
+      token: sessionToken,
+      user: {
+        id: user.id,
+        email: user.email,
+        name: `${firstName} ${lastName}`.trim(),
+        emailVerified: user.emailVerified,
+      },
+    }
   }
 
   /** Joins the organization of an invite link as the logged-in user. */
@@ -194,7 +236,9 @@ export class InvitesService {
     const [pending, memberships] = await Promise.all([
       this.prisma.organizationInvite.findMany({
         where: {
-          email: user.email,
+          // Accounts and invites from before email normalization may differ
+          // in case only
+          email: { equals: normalizeEmail(user.email), mode: 'insensitive' },
           expiresAt: { gt: new Date() },
           ...openInviteWhere(),
         },
@@ -246,14 +290,21 @@ export class InvitesService {
     const existingMember = await this.prisma.organizationMember.findFirst({
       where: { organizationId: invite.organizationId, userId: user.id },
     })
-    if (existingMember) {
-      throw new ConflictException(
-        'You are already a member of this organization'
+    if (existingMember) throw alreadyMember()
+
+    try {
+      await this.prisma.$transaction(
+        (tx) => this.claimAndJoin(tx, invite, user.id),
+        { timeout: TRANSACTION_TIMEOUT_MS }
       )
+    } catch (error) {
+      // The claim was rolled back, so the invite stays usable
+      if (prismaCode(error) === 'P2002') throw alreadyMember()
+      if (prismaCode(error) === 'P2034') throw inviteUsed()
+      throw error
     }
 
-    await this.claim(invite, user.id)
-    await this.join(invite, user.id)
+    await this.auditAccepted(invite, user.id)
 
     return {
       success: true,
@@ -263,40 +314,88 @@ export class InvitesService {
   }
 
   /**
-   * Atomically marks the invite as used. Only one caller can win the
-   * update, which prevents a link from being used twice.
+   * An unverified account without any membership never proved its address
+   * and has no access to anything: someone may have registered the address
+   * via an open link before its owner got a bound invite.
    */
-  private async claim(invite: OrganizationInvite, userId?: string) {
-    const { count } = await this.prisma.organizationInvite.updateMany({
+  private async isReplaceable(
+    user: Pick<User, 'id' | 'emailVerified'>,
+    client: Prisma.TransactionClient = this.prisma
+  ): Promise<boolean> {
+    if (user.emailVerified) return false
+    const memberships = await client.organizationMember.count({
+      where: { userId: user.id },
+    })
+    return memberships === 0
+  }
+
+  /**
+   * Hands an unverified, membership-less account to the owner of the
+   * address (proven by the bound invite). It is updated in place rather
+   * than deleted, so references (audit logs, ...) stay intact; the new
+   * password and `passwordChangedAt` revoke the previous holder's access.
+   */
+  private async takeOver(
+    tx: Prisma.TransactionClient,
+    userId: string,
+    email: string,
+    profile: Pick<
+      User,
+      'password' | 'firstName' | 'lastName' | 'emailVerified'
+    > & { emailVerifyToken: string | null }
+  ): Promise<User> {
+    const current = await tx.user.findUnique({ where: { id: userId } })
+    if (!current || !(await this.isReplaceable(current, tx))) {
+      throw accountExists()
+    }
+
+    this.logger.warn(
+      `Unverified account ${userId} taken over via a bound invite`
+    )
+    return tx.user.update({
+      where: { id: userId },
+      data: {
+        ...profile,
+        email,
+        emailVerified: true,
+        emailVerifyToken: null,
+        resetToken: null,
+        resetTokenExpiry: null,
+        passwordChangedAt: new Date(),
+      },
+    })
+  }
+
+  /**
+   * Marks the invite as used and creates the membership; must run inside a
+   * transaction. The conditional update lets only one caller win the claim,
+   * which prevents a link from being used twice.
+   */
+  private async claimAndJoin(
+    tx: Prisma.TransactionClient,
+    invite: OrganizationInvite,
+    userId: string
+  ) {
+    const { count } = await tx.organizationInvite.updateMany({
       where: {
         id: invite.id,
         expiresAt: { gt: new Date() },
         ...openInviteWhere(),
       },
-      data: { acceptedAt: new Date(), acceptedById: userId ?? null },
+      data: { acceptedAt: new Date(), acceptedById: userId },
     })
-    if (count !== 1) throw new ConflictException('Invite already used')
-  }
+    if (count !== 1) throw inviteUsed()
 
-  private async release(inviteId: string) {
-    await this.prisma.organizationInvite.updateMany({
-      where: { id: inviteId },
-      data: { acceptedAt: null, acceptedById: null },
-    })
-  }
-
-  private async join(invite: OrganizationInvite, userId: string) {
-    await this.prisma.organizationMember.create({
+    await tx.organizationMember.create({
       data: {
         userId,
         organizationId: invite.organizationId,
         role: invite.role,
       },
     })
-    await this.prisma.organizationInvite.updateMany({
-      where: { id: invite.id },
-      data: { acceptedById: userId },
-    })
+  }
+
+  private async auditAccepted(invite: OrganizationInvite, userId: string) {
     await this.auditLogs.create({
       action: 'invite.accepted',
       entityType: 'OrganizationInvite',

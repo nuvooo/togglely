@@ -48,6 +48,7 @@ function setup(roles: Record<string, OrganizationRole>) {
           ? { id: OUTSIDER, email: 'new@example.com' }
           : null
       ),
+      findFirst: jest.fn().mockResolvedValue(null),
     },
     organizationMember: {
       findFirst: jest.fn(
@@ -73,6 +74,7 @@ function setup(roles: Record<string, OrganizationRole>) {
       create: jest.fn(async ({ data }: any) => ({ id: 'inv-1', ...data })),
       updateMany: jest.fn().mockResolvedValue({ count: 0 }),
     },
+    $transaction: jest.fn(async (fn: any) => fn(prisma)),
   } as any
 
   const mail = {

@@ -5,9 +5,11 @@ import {
   Length,
   MaxLength,
 } from 'class-validator'
+import { NormalizeEmail } from '../../../shared/validation/normalize-email'
 import { IsPasswordPolicy } from '../../auth/dto/password-policy.decorator'
 
 export class RequestPasswordResetDto {
+  @NormalizeEmail()
   @IsEmail({}, { message: 'Please provide a valid email address' })
   @MaxLength(254)
   email: string
