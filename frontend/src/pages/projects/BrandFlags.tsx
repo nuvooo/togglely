@@ -119,10 +119,10 @@ export default function BrandFlags() {
 
     setIsSavingValue(true)
     try {
-      await api.patch(`/brands/${brandId}/flags/${editingFlag.id}`, {
-        environmentId: editingEnv.environmentId,
-        defaultValue: editValue,
-      })
+      await api.patch(
+        `/feature-flags/${editingFlag.id}/environments/${editingEnv.environmentId}/value`,
+        { value: editValue, brandId }
+      )
 
       // Refresh data
       const response = await api.get(`/brands/${brandId}/flags`)

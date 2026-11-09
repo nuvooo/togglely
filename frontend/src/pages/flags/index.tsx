@@ -102,14 +102,28 @@ export default function FeatureFlags() {
     setCreateSuccess(null)
 
     try {
+      // The API expects the initial value per environment key
+      const project = projects.find((p) => p.id === newFlagData.projectId)
+      const initialValues = Object.fromEntries(
+        (project?.environments || []).map((env) => [
+          env.key,
+          {
+            enabled:
+              newFlagData.type === 'BOOLEAN' &&
+              newFlagData.defaultValue === 'true',
+            value: newFlagData.defaultValue,
+          },
+        ])
+      )
+
       const response = await api.post(
         `/feature-flags/project/${newFlagData.projectId}`,
         {
           name: newFlagData.name,
           key: newFlagData.key,
           description: newFlagData.description || undefined,
-          flagType: newFlagData.type,
-          defaultValue: newFlagData.defaultValue,
+          type: newFlagData.type,
+          initialValues,
         }
       )
 
