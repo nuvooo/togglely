@@ -23,18 +23,7 @@ export class PasswordResetService {
       return
     }
 
-    const token = crypto.randomBytes(32).toString('hex')
-    const expiryHours = this.config.get<number>('RESET_TOKEN_EXPIRY_HOURS', 1)
-    const expires = new Date()
-    expires.setHours(expires.getHours() + expiryHours)
-
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: {
-        resetToken: hashToken(token),
-        resetTokenExpiry: expires,
-      },
-    })
+    const { token } = await this.issueToken(user.id)
 
     this.logger.debug(`Password reset requested for user ${user.id}`)
 
@@ -54,6 +43,42 @@ export class PasswordResetService {
         `Failed to send password reset email for user ${user.id}`
       )
     }
+  }
+
+  /**
+   * Creates a reset link without sending mail (admin UI / server CLI).
+   * The caller is responsible for authorization. A new link invalidates any
+   * previously issued one, since only the latest token hash is stored.
+   */
+  async createResetLink(
+    userId: string
+  ): Promise<{ resetUrl: string; expiresAt: Date }> {
+    const { token, expiresAt } = await this.issueToken(userId)
+    const frontendUrl = this.config.get<string>(
+      'FRONTEND_URL',
+      'http://localhost:3000'
+    )
+    return {
+      resetUrl: `${frontendUrl}/reset-password?token=${token}`,
+      expiresAt,
+    }
+  }
+
+  /** Generates a token, stores only its hash and returns the plain token. */
+  private async issueToken(userId: string) {
+    const token = crypto.randomBytes(32).toString('hex')
+    const expiryHours =
+      Number(this.config.get('RESET_TOKEN_EXPIRY_HOURS', 1)) || 1
+    const expiresAt = new Date(Date.now() + expiryHours * 60 * 60 * 1000)
+
+    await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        resetToken: hashToken(token),
+        resetTokenExpiry: expiresAt,
+      },
+    })
+    return { token, expiresAt }
   }
 
   private findUserByToken(token: string) {

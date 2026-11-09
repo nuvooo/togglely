@@ -31,7 +31,8 @@ function createService() {
   const config = {
     get: jest.fn().mockImplementation((key: string, defaultValue?: any) => {
       if (key === 'RESET_TOKEN_EXPIRY_HOURS') return defaultValue ?? 1
-      return undefined
+      if (key === 'FRONTEND_URL') return 'https://togglely.example.com'
+      return defaultValue
     }),
   } as any
 
@@ -136,6 +137,62 @@ describe('PasswordResetService', () => {
       expect(warn).toHaveBeenCalledWith(
         expect.stringContaining('SMTP is not configured')
       )
+    })
+  })
+
+  describe('createResetLink', () => {
+    it('returns a reset URL with a fresh token and stores only its hash', async () => {
+      const { service, prisma, mailService } = createService()
+      prisma.user.update.mockResolvedValue({})
+
+      const { resetUrl } = await service.createResetLink('user-1')
+
+      const match = resetUrl.match(
+        /^https:\/\/togglely\.example\.com\/reset-password\?token=([a-f0-9]{64})$/
+      )
+      expect(match).not.toBeNull()
+      const token = match![1]
+      const data = prisma.user.update.mock.calls[0][0].data
+      expect(prisma.user.update.mock.calls[0][0].where).toEqual({
+        id: 'user-1',
+      })
+      expect(data.resetToken).toBe(hashToken(token))
+      expect(data.resetToken).not.toBe(token)
+      // no mail for admin/CLI generated links
+      expect(mailService.sendPasswordResetEmail).not.toHaveBeenCalled()
+    })
+
+    it('expires after one hour', async () => {
+      const { service, prisma } = createService()
+      prisma.user.update.mockResolvedValue({})
+      const before = Date.now()
+
+      const { expiresAt } = await service.createResetLink('user-1')
+
+      const stored = prisma.user.update.mock.calls[0][0].data.resetTokenExpiry
+      expect(stored).toEqual(expiresAt)
+      const delta = expiresAt.getTime() - before
+      expect(delta).toBeGreaterThanOrEqual(3600000 - 1000)
+      expect(delta).toBeLessThanOrEqual(3600000 + 1000)
+    })
+
+    it('invalidates the previous link by overwriting the stored hash', async () => {
+      const { service, prisma } = createService()
+      prisma.user.update.mockResolvedValue({})
+
+      const first = await service.createResetLink('user-1')
+      const second = await service.createResetLink('user-1')
+
+      expect(first.resetUrl).not.toBe(second.resetUrl)
+      const [firstCall, secondCall] = prisma.user.update.mock.calls
+      expect(secondCall[0].data.resetToken).not.toBe(
+        firstCall[0].data.resetToken
+      )
+      // the single resetToken field means only the latest hash is valid
+      expect(Object.keys(secondCall[0].data).sort()).toEqual([
+        'resetToken',
+        'resetTokenExpiry',
+      ])
     })
   })
 
