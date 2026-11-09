@@ -223,6 +223,8 @@ export default function ExperimentsList() {
           rows={visible}
           getRowId={(e) => e.id}
           onRowClick={(e) => navigate(experimentPath(projectId, e.id))}
+          // The name is a link: rows need no extra tab stop.
+          rowFocusable={false}
           label={t('experiments-page.title')}
           empty={
             <EmptyState

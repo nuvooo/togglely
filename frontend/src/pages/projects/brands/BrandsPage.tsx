@@ -266,6 +266,8 @@ export default function BrandsPage() {
           rows={brands}
           getRowId={(b) => b.id}
           onRowClick={(brand) => navigate(brandPath(projectId, brand.id))}
+          // The name is a link: rows need no extra tab stop.
+          rowFocusable={false}
           label={t('brands-page.title')}
         />
       </div>
