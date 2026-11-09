@@ -125,18 +125,21 @@ export default function ApiKeysPage() {
       const apiKey: ApiKey | undefined = response.data.apiKey
       setCreateOpen(false)
       if (apiKey?.key) {
+        // The command is a convenience: if it cannot be built, the plaintext
+        // key must still be shown (it is never shown again for MCP keys).
+        let command: string | undefined
+        if (apiKey.type === 'MCP') {
+          try {
+            command = mcpAddCommand(api.defaults?.baseURL ?? '/api', apiKey.key)
+          } catch {
+            command = undefined
+          }
+        }
         setCreated({
           name: apiKey.name,
           type: apiKey.type,
           key: apiKey.key,
-          ...(apiKey.type === 'MCP'
-            ? {
-                command: mcpAddCommand(
-                  api.defaults?.baseURL ?? '/api',
-                  apiKey.key
-                ),
-              }
-            : {}),
+          ...(command ? { command } : {}),
         })
       }
       load()

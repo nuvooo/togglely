@@ -28,10 +28,10 @@ interface ApiKeyCreatedDialogProps {
 }
 
 /**
- * Shows a new API key in plain text. Admins can copy it later from the list
- * (others only see it masked), so the dialog says that instead of "only
- * once". Escape, outside clicks and the X cannot close it; "Done" is enabled
- * after the user confirmed saving the key.
+ * Shows a new API key in plain text. CLIENT/SERVER keys: admins can copy them
+ * later from the list (others only see them masked), so the dialog says that.
+ * MCP keys are shown only once. Escape, outside clicks and the X cannot close
+ * it; "Done" is enabled after the user confirmed saving the key.
  */
 export function ApiKeyCreatedDialog({
   created,

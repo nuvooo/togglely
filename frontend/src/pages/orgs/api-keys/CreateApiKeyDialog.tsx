@@ -23,7 +23,7 @@ export interface NewApiKey {
   expiresInDays?: number
   /** MCP only: the project the key works in. */
   projectId?: string
-  /** MCP only: the environments the key may toggle flags in. */
+  /** MCP only: the environments the key may toggle flags in (may be empty). */
   allowedEnvironmentIds?: string[]
 }
 
@@ -64,6 +64,7 @@ export function CreateApiKeyDialog({
   const [projectId, setProjectId] = useState('')
   const [envs, setEnvs] = useState<ProjectEnvironment[] | null>(null)
   const [selectedEnvs, setSelectedEnvs] = useState<string[]>([])
+  const [envsError, setEnvsError] = useState(false)
   const [busy, setBusy] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
@@ -79,6 +80,7 @@ export function CreateApiKeyDialog({
   useEffect(() => {
     setEnvs(null)
     setSelectedEnvs([])
+    setEnvsError(false)
     if (!projectId) return
     let current = true
     loadEnvironments(projectId)
@@ -89,7 +91,7 @@ export function CreateApiKeyDialog({
         setSelectedEnvs(dev ? [dev.id] : [])
       })
       .catch(() => {
-        if (current) setEnvs([])
+        if (current) setEnvsError(true)
       })
     return () => {
       current = false
@@ -97,11 +99,12 @@ export function CreateApiKeyDialog({
   }, [projectId, loadEnvironments])
 
   const isMcp = type === 'MCP'
-  const noEnvSelected = isMcp && envs !== null && selectedEnvs.length === 0
+  // MCP: the environments must be loaded; selecting none is allowed and
+  // yields a key that can read, create and delete flags but not toggle them.
   const canSubmit =
     !busy &&
     Boolean(name.trim()) &&
-    (!isMcp || (Boolean(projectId) && !noEnvSelected))
+    (!isMcp || (Boolean(projectId) && envs !== null))
 
   const toggleEnv = (id: string, checked: boolean) =>
     setSelectedEnvs((list) =>
@@ -110,7 +113,7 @@ export function CreateApiKeyDialog({
 
   const submit = async (event: FormEvent) => {
     event.preventDefault()
-    if (!canSubmit || (isMcp && envs === null)) return
+    if (!canSubmit) return
     setBusy(true)
     setError(null)
     try {
@@ -239,7 +242,11 @@ export function CreateApiKeyDialog({
                   <p className="text-xs text-muted-foreground">
                     {t('org-pages.api-keys.toggle-envs-hint')}
                   </p>
-                  {envs === null ? (
+                  {envsError ? (
+                    <p role="alert" className="text-sm text-destructive">
+                      {t('org-pages.api-keys.envs-load-failed')}
+                    </p>
+                  ) : envs === null ? (
                     <p className="text-sm text-muted-foreground">
                       {t('org-pages.api-keys.envs-loading')}
                     </p>
@@ -261,6 +268,11 @@ export function CreateApiKeyDialog({
                         </Label>
                       </div>
                     ))
+                  )}
+                  {envs !== null && selectedEnvs.length === 0 && (
+                    <p className="text-xs text-muted-foreground">
+                      {t('org-pages.api-keys.no-envs-hint')}
+                    </p>
                   )}
                 </fieldset>
               )}

@@ -293,9 +293,81 @@ describe('ApiKeysPage', () => {
         within(dialog).getByRole('button', { name: 'Create' })
       ).toBeDisabled()
       await user.selectOptions(within(dialog).getByLabelText('Project'), 'p1')
+      await waitFor(() =>
+        expect(
+          within(dialog).getByRole('button', { name: 'Create' })
+        ).toBeEnabled()
+      )
+    })
+
+    it('Create stays disabled while the environments are loading', async () => {
+      state.role = 'MEMBER'
+      const base = api.get.getMockImplementation()
+      api.get.mockImplementation((url: string) =>
+        url === '/environments/project/p1' ? new Promise(() => {}) : base?.(url)
+      )
+      const user = userEvent.setup()
+      renderPage()
+      const dialog = await openCreate(user)
+      await user.type(within(dialog).getByLabelText('Name'), 'Agent')
+      await user.selectOptions(within(dialog).getByLabelText('Project'), 'p1')
+      expect(
+        within(dialog).getByText('Loading environments…')
+      ).toBeInTheDocument()
       expect(
         within(dialog).getByRole('button', { name: 'Create' })
-      ).toBeEnabled()
+      ).toBeDisabled()
+    })
+
+    it('shows an error when the environments cannot be loaded', async () => {
+      state.role = 'MEMBER'
+      const base = api.get.getMockImplementation()
+      api.get.mockImplementation((url: string) =>
+        url === '/environments/project/p1'
+          ? Promise.reject(new Error('down'))
+          : base?.(url)
+      )
+      const user = userEvent.setup()
+      renderPage()
+      const dialog = await openCreate(user)
+      await user.type(within(dialog).getByLabelText('Name'), 'Agent')
+      await user.selectOptions(within(dialog).getByLabelText('Project'), 'p1')
+      expect(
+        await within(dialog).findByText('The environments could not be loaded.')
+      ).toBeInTheDocument()
+      expect(
+        within(dialog).getByRole('button', { name: 'Create' })
+      ).toBeDisabled()
+    })
+
+    it('submits an MCP key without environments as read/create-only', async () => {
+      state.role = 'MEMBER'
+      api.post.mockResolvedValue(created)
+      const user = userEvent.setup()
+      renderPage()
+      const dialog = await openCreate(user)
+      await fillAgent(user, dialog)
+      await user.click(
+        within(dialog).getByRole('checkbox', { name: /Development/ })
+      )
+      expect(
+        within(dialog).getByText(/can only read, create and delete flags/i)
+      ).toBeInTheDocument()
+      const submit = within(dialog).getByRole('button', { name: 'Create' })
+      expect(submit).toBeEnabled()
+      await user.click(submit)
+      await waitFor(() =>
+        expect(api.post).toHaveBeenCalledWith(
+          `/api-keys/organization/${ORG_ID}`,
+          {
+            name: 'Agent',
+            type: 'MCP',
+            projectId: 'p1',
+            allowedEnvironmentIds: [],
+            expiresInDays: 365,
+          }
+        )
+      )
     })
 
     it('development environment is preselected', async () => {
@@ -355,6 +427,27 @@ describe('ApiKeysPage', () => {
       ).toBeInTheDocument()
       expect(within(shown).getByText(/shown only once/i)).toBeInTheDocument()
       expect(shown).not.toHaveTextContent(/admins can copy/i)
+    })
+
+    it('still shows the plaintext key when the command cannot be built', async () => {
+      state.role = 'MEMBER'
+      api.post.mockResolvedValue(created)
+      const original = api.defaults.baseURL
+      api.defaults.baseURL = 'http://['
+      try {
+        const user = userEvent.setup()
+        renderPage()
+        const dialog = await openCreate(user)
+        await fillAgent(user, dialog)
+        await user.click(within(dialog).getByRole('button', { name: 'Create' }))
+        const shown = await screen.findByRole('dialog', {
+          name: 'API key created',
+        })
+        expect(within(shown).getByDisplayValue('tkm_plain')).toBeInTheDocument()
+        expect(shown).not.toHaveTextContent(/claude mcp add/)
+      } finally {
+        api.defaults.baseURL = original
+      }
     })
 
     it('member sees delete only on own MCP key', async () => {

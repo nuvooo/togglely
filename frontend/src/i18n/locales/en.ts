@@ -361,6 +361,8 @@ export const en = {
   'org-pages.api-keys.toggle-envs-label': 'May toggle in',
   'org-pages.api-keys.toggle-envs-hint': 'The agent can only change flags in the selected environments.',
   'org-pages.api-keys.envs-loading': 'Loading environments…',
+  'org-pages.api-keys.envs-load-failed': 'The environments could not be loaded.',
+  'org-pages.api-keys.no-envs-hint': 'Without a selection the key can only read, create and delete flags, but not toggle them.',
   'org-pages.api-keys.created-warning-mcp':
     'This key lets an AI agent change flags. Store it like a password and never commit it.',
   'org-pages.api-keys.created-once': 'Shown only once: afterwards the key is masked for everyone.',

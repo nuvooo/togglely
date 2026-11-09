@@ -362,6 +362,8 @@ export const de = {
   'org-pages.api-keys.toggle-envs-label': 'Darf schalten in',
   'org-pages.api-keys.toggle-envs-hint': 'Der Agent kann Flags nur in den gewählten Environments ändern.',
   'org-pages.api-keys.envs-loading': 'Environments werden geladen…',
+  'org-pages.api-keys.envs-load-failed': 'Die Environments konnten nicht geladen werden.',
+  'org-pages.api-keys.no-envs-hint': 'Ohne Auswahl kann der Schlüssel Flags nur lesen, anlegen und löschen, aber nicht schalten.',
   'org-pages.api-keys.created-warning-mcp':
     'Dieser Key erlaubt einem KI-Agenten, Flags zu ändern. Bewahre ihn wie ein Passwort auf und committe ihn nie.',
   'org-pages.api-keys.created-once': 'Wird nur einmal angezeigt: danach ist der Key für alle maskiert.',
