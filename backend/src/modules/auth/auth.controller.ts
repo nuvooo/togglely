@@ -1,6 +1,5 @@
 import {
   Body,
-  ConflictException,
   Controller,
   ForbiddenException,
   Get,
@@ -27,6 +26,7 @@ import { InviteRegisterDto } from './dto/invite-register.dto'
 import { LoginDto } from './dto/login.dto'
 import { ResendVerificationDto } from './dto/resend-verification.dto'
 import { UpdateProfileDto } from './dto/update-profile.dto'
+import { InvitesService } from './invites.service'
 
 @ApiTags('Auth')
 @Controller('auth')
@@ -35,7 +35,8 @@ export class AuthController {
     private readonly authService: AuthService,
     private readonly prisma: PrismaService,
     private readonly mailService: MailService,
-    private readonly config: ConfigService
+    private readonly config: ConfigService,
+    private readonly invites: InvitesService
   ) {}
 
   /**
@@ -154,206 +155,44 @@ export class AuthController {
     return { success: true, token }
   }
 
-  // Invite-based registration
+  // Invite links (logic in InvitesService)
   @Get('invite/:token')
   async getInviteInfo(@Param('token') token: string) {
-    const invite = await this.prisma.organizationInvite.findFirst({
-      where: { token },
-      include: { organization: true },
-    })
-
-    if (!invite) throw new NotFoundException('Invite not found')
-    if (invite.expiresAt < new Date())
-      throw new NotFoundException('Invite expired')
-    if (invite.acceptedAt) throw new ConflictException('Invite already used')
-
-    // Check if user already exists
-    const existingUser = invite.email
-      ? await this.prisma.user.findUnique({ where: { email: invite.email } })
-      : null
-
-    return {
-      email: invite.email,
-      organizationName: invite.organization.name,
-      role: invite.role,
-      existingUser: !!existingUser,
-    }
+    return this.invites.getInfo(token)
   }
 
-  // Accept invite for existing users
+  /** Joins the invite's organization as the logged-in user. */
   @Post('invite/:token/accept')
   @UseGuards(AuthGuard)
   async acceptInvite(@Param('token') token: string, @Req() req: any) {
-    const invite = await this.prisma.organizationInvite.findFirst({
-      where: { token },
-      include: { organization: true },
-    })
-
-    if (!invite) throw new NotFoundException('Invite not found')
-    if (invite.expiresAt < new Date())
-      throw new NotFoundException('Invite expired')
-    if (invite.acceptedAt) throw new ConflictException('Invite already used')
-
-    // Verify the logged-in user matches the invite email
-    const user = await this.prisma.user.findUnique({
-      where: { id: req.user.userId },
-    })
-
-    if (!user || user.email !== invite.email) {
-      throw new ForbiddenException(
-        'This invite is for a different email address'
-      )
-    }
-
-    // Without a verified email, anyone could register the invitee's address
-    // and take over the invite.
-    if (!user.emailVerified) {
-      throw new ForbiddenException(
-        'Please verify your email address before accepting invites'
-      )
-    }
-
-    // Check if already a member
-    const existingMember = await this.prisma.organizationMember.findFirst({
-      where: { organizationId: invite.organizationId, userId: user.id },
-    })
-
-    if (existingMember) {
-      throw new ConflictException(
-        'You are already a member of this organization'
-      )
-    }
-
-    // Add user to organization
-    await this.prisma.organizationMember.create({
-      data: {
-        userId: user.id,
-        organizationId: invite.organizationId,
-        role: invite.role,
-      },
-    })
-
-    // Mark invite as accepted
-    await this.prisma.organizationInvite.update({
-      where: { id: invite.id },
-      data: {
-        acceptedAt: new Date(),
-        acceptedById: user.id,
-      },
-    })
-
-    return { success: true, message: 'You have joined the organization' }
+    return this.invites.accept(token, req.user.userId)
   }
 
+  /** Creates an account via an invite link; the response logs the user in. */
   @Post('invite/:token/register')
+  @Throttle({ default: { ttl: 900000, limit: 10 } })
   async registerWithInvite(
     @Param('token') token: string,
     @Body() body: InviteRegisterDto
   ) {
-    const invite = await this.prisma.organizationInvite.findFirst({
-      where: { token },
-      include: { organization: true },
-    })
-
-    if (!invite) throw new NotFoundException('Invite not found')
-    if (invite.expiresAt < new Date())
-      throw new NotFoundException('Invite expired')
-    if (invite.acceptedAt) throw new ConflictException('Invite already used')
-    if (!invite.email) throw new NotFoundException('Invite not found')
-
-    // Create user
-    await this.authService.register(
-      invite.email,
-      body.password,
-      `${body.firstName} ${body.lastName}`,
-      body.firstName,
-      body.lastName,
-      true // possession of the emailed invite token proves the address
-    )
-
-    // Get the created user
-    const newUser = await this.prisma.user.findUnique({
-      where: { email: invite.email },
-    })
-
-    if (!newUser) throw new NotFoundException('User creation failed')
-
-    // Add user to organization
-    await this.prisma.organizationMember.create({
-      data: {
-        userId: newUser.id,
-        organizationId: invite.organizationId,
-        role: invite.role,
-      },
-    })
-
-    // Mark invite as accepted
-    await this.prisma.organizationInvite.update({
-      where: { id: invite.id },
-      data: {
-        acceptedAt: new Date(),
-        acceptedById: newUser.id,
-      },
-    })
-
-    return { success: true, message: 'Account created and joined organization' }
+    return this.invites.register(token, body)
   }
 
-  // Get pending invites for current user
+  // Bound invites addressed to the current user's verified email
   @Get('pending-invites')
   @UseGuards(AuthGuard)
   async getPendingInvites(@Req() req: any) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: req.user.userId },
-      select: { email: true, emailVerified: true },
-    })
+    return this.invites.getPendingForUser(req.user.userId)
+  }
 
-    if (!user) {
-      throw new NotFoundException('User not found')
-    }
-
-    // Invite tokens are only handed out to verified addresses
-    if (!user.emailVerified) {
-      return { invites: [], emailVerificationRequired: true }
-    }
-
-    // Get all pending invites for this user's email
-    const pendingInvites = await this.prisma.organizationInvite.findMany({
-      where: {
-        email: user.email,
-        acceptedAt: null,
-        expiresAt: { gt: new Date() },
-      },
-      include: {
-        organization: {
-          select: { id: true, name: true },
-        },
-      },
-      orderBy: { createdAt: 'desc' },
-    })
-
-    // Filter out invites where user is already a member
-    const memberships = await this.prisma.organizationMember.findMany({
-      where: { userId: req.user.userId },
-      select: { organizationId: true },
-    })
-    const memberOrgIds = new Set(memberships.map((m) => m.organizationId))
-
-    const filteredInvites = pendingInvites.filter(
-      (invite) => !memberOrgIds.has(invite.organizationId)
-    )
-
-    return {
-      invites: filteredInvites.map((invite) => ({
-        id: invite.id,
-        token: invite.token,
-        organizationId: invite.organizationId,
-        organizationName: invite.organization.name,
-        role: invite.role,
-        createdAt: invite.createdAt,
-        expiresAt: invite.expiresAt,
-      })),
-    }
+  /** Accepts a pending (email-bound) invite by id, no link token needed. */
+  @Post('pending-invites/:inviteId/accept')
+  @UseGuards(AuthGuard)
+  async acceptPendingInvite(
+    @Param('inviteId') inviteId: string,
+    @Req() req: any
+  ) {
+    return this.invites.acceptPending(inviteId, req.user.userId)
   }
 
   // Email verification

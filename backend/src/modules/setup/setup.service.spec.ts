@@ -166,9 +166,7 @@ describe('SetupService', () => {
 
     it('rejects setup on an instance with existing users', async () => {
       const { service, prisma } = createService({ users: 1 })
-      await expect(service.setup(DTO)).rejects.toBeInstanceOf(
-        ConflictException
-      )
+      await expect(service.setup(DTO)).rejects.toBeInstanceOf(ConflictException)
       expect(prisma.instanceLock.create).not.toHaveBeenCalled()
       expect(prisma.user.create).not.toHaveBeenCalled()
     })
@@ -176,9 +174,7 @@ describe('SetupService', () => {
     it('maps a lock collision to 409 without creating anything', async () => {
       const { service, prisma, state } = createService()
       state.locks.push({ key: 'setup' })
-      await expect(service.setup(DTO)).rejects.toBeInstanceOf(
-        ConflictException
-      )
+      await expect(service.setup(DTO)).rejects.toBeInstanceOf(ConflictException)
       expect(prisma.user.create).not.toHaveBeenCalled()
     })
 
@@ -199,12 +195,8 @@ describe('SetupService', () => {
     it('re-checks the user count inside the transaction', async () => {
       const { service, prisma } = createService()
       // Outside the transaction no user exists, inside one appeared
-      prisma.user.count
-        .mockResolvedValueOnce(0)
-        .mockResolvedValueOnce(1)
-      await expect(service.setup(DTO)).rejects.toBeInstanceOf(
-        ConflictException
-      )
+      prisma.user.count.mockResolvedValueOnce(0).mockResolvedValueOnce(1)
+      await expect(service.setup(DTO)).rejects.toBeInstanceOf(ConflictException)
       expect(prisma.user.create).not.toHaveBeenCalled()
     })
 

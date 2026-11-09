@@ -1,4 +1,10 @@
-import { IsString, MaxLength, MinLength } from 'class-validator'
+import {
+  IsEmail,
+  IsOptional,
+  IsString,
+  MaxLength,
+  MinLength,
+} from 'class-validator'
 import { IsPasswordPolicy } from './password-policy.decorator'
 
 export class InviteRegisterDto {
@@ -13,4 +19,13 @@ export class InviteRegisterDto {
   @IsString()
   @MaxLength(100)
   lastName: string
+
+  /**
+   * Required for open (unbound) invite links; ignored when the invite is
+   * bound to an email address.
+   */
+  @IsOptional()
+  @IsEmail({}, { message: 'Please provide a valid email address' })
+  @MaxLength(254)
+  email?: string
 }

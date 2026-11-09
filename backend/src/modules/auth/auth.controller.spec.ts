@@ -12,7 +12,8 @@ function createController(userCount = 1) {
     authService,
     prisma,
     mailService,
-    config
+    config,
+    {} as any
   )
   return { controller, authService }
 }

@@ -48,9 +48,11 @@ export class AddMemberDto {
 }
 
 export class CreateInviteDto {
+  /** Optional: without an email the invite is an open link. */
+  @IsOptional()
   @IsEmail()
   @MaxLength(254)
-  email: string
+  email?: string
 
   @IsOptional()
   @IsEnum(OrganizationRole)
