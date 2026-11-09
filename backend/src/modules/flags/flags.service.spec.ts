@@ -645,3 +645,182 @@ describe('FlagsService change events', () => {
     expect(changes.recordChange).not.toHaveBeenCalled()
   })
 })
+
+describe('FlagsService audit entries for the flag history', () => {
+  it('toggle logs a FeatureFlag entry with the acting user', async () => {
+    const { service, prisma, auditLogs } = createService()
+    prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+    prisma.flagEnvironment.findFirst.mockResolvedValue({
+      id: 'fe-1',
+      enabled: false,
+    })
+    prisma.flagEnvironment.update.mockResolvedValue({})
+
+    await service.toggle('flag-1', 'env-1', true, 'user-9')
+
+    expect(auditLogs.create).toHaveBeenCalledWith({
+      action: 'flag.toggled',
+      entityType: 'FeatureFlag',
+      entityId: 'flag-1',
+      userId: 'user-9',
+      organizationId: 'org-1',
+      projectId: 'proj-1',
+      oldValues: {
+        flagId: 'flag-1',
+        flagKey: 'my-flag',
+        environmentId: 'env-1',
+        enabled: false,
+      },
+      newValues: {
+        flagId: 'flag-1',
+        flagKey: 'my-flag',
+        environmentId: 'env-1',
+        enabled: true,
+      },
+    })
+  })
+
+  it('toggle without a user logs nothing', async () => {
+    const { service, prisma, auditLogs } = createService()
+    prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+    prisma.flagEnvironment.findFirst.mockResolvedValue({ id: 'fe-1' })
+    prisma.flagEnvironment.update.mockResolvedValue({})
+
+    await service.toggle('flag-1', 'env-1', true)
+    expect(auditLogs.create).not.toHaveBeenCalled()
+  })
+
+  it('updateValue logs old and new value incl. the brand', async () => {
+    const { service, prisma, auditLogs } = createService()
+    prisma.featureFlag.findUnique.mockResolvedValue({
+      ...mockFlag,
+      flagType: 'STRING',
+    })
+    prisma.flagEnvironment.findFirst.mockResolvedValue({
+      id: 'fe-b',
+      enabled: true,
+      defaultValue: 'old',
+    })
+    prisma.flagEnvironment.update.mockResolvedValue({
+      id: 'fe-b',
+      enabled: true,
+      defaultValue: 'new',
+    })
+
+    await service.updateValue(
+      'flag-1',
+      'env-1',
+      { value: 'new', brandId: 'brand-1' },
+      'user-9'
+    )
+
+    expect(auditLogs.create).toHaveBeenCalledWith({
+      action: 'flag.value_updated',
+      entityType: 'FeatureFlag',
+      entityId: 'flag-1',
+      userId: 'user-9',
+      organizationId: 'org-1',
+      projectId: 'proj-1',
+      oldValues: {
+        flagId: 'flag-1',
+        flagKey: 'my-flag',
+        environmentId: 'env-1',
+        brandId: 'brand-1',
+        enabled: true,
+        defaultValue: 'old',
+      },
+      newValues: {
+        flagId: 'flag-1',
+        flagKey: 'my-flag',
+        environmentId: 'env-1',
+        brandId: 'brand-1',
+        enabled: true,
+        defaultValue: 'new',
+      },
+    })
+  })
+
+  it('updateValue of a new override logs it as inherited before', async () => {
+    const { service, prisma, auditLogs } = createService()
+    prisma.featureFlag.findUnique.mockResolvedValue({
+      ...mockFlag,
+      flagType: 'STRING',
+    })
+    prisma.flagEnvironment.findFirst
+      .mockResolvedValueOnce(null)
+      .mockResolvedValueOnce({ enabled: false, defaultValue: 'base' })
+    prisma.flagEnvironment.create.mockResolvedValue({
+      id: 'fe-new',
+      enabled: false,
+      defaultValue: 'x',
+    })
+
+    await service.updateValue(
+      'flag-1',
+      'env-1',
+      { value: 'x', brandId: 'brand-1' },
+      'user-9'
+    )
+
+    const entry = auditLogs.create.mock.calls[0][0]
+    expect(entry.oldValues).toEqual({
+      flagId: 'flag-1',
+      flagKey: 'my-flag',
+      environmentId: 'env-1',
+      brandId: 'brand-1',
+      inherited: true,
+    })
+    expect(entry.newValues.defaultValue).toBe('x')
+  })
+
+  it('updateEnvironment logs the change', async () => {
+    const { service, prisma, auditLogs } = createService()
+    prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+    prisma.flagEnvironment.findFirst.mockResolvedValue({
+      id: 'fe-1',
+      environmentId: 'env-1',
+      brandId: null,
+      enabled: false,
+      defaultValue: 'false',
+    })
+    prisma.flagEnvironment.update.mockResolvedValue({
+      id: 'fe-1',
+      environmentId: 'env-1',
+      brandId: null,
+      enabled: true,
+      defaultValue: 'true',
+    })
+
+    await service.updateEnvironment(
+      'flag-1',
+      'fe-1',
+      { isEnabled: true },
+      'user-9'
+    )
+
+    expect(auditLogs.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'flag.environment_updated',
+        entityType: 'FeatureFlag',
+        entityId: 'flag-1',
+        userId: 'user-9',
+        oldValues: {
+          flagId: 'flag-1',
+          flagKey: 'my-flag',
+          environmentId: 'env-1',
+          brandId: null,
+          enabled: false,
+          defaultValue: 'false',
+        },
+        newValues: {
+          flagId: 'flag-1',
+          flagKey: 'my-flag',
+          environmentId: 'env-1',
+          brandId: null,
+          enabled: true,
+          defaultValue: 'true',
+        },
+      })
+    )
+  })
+})

@@ -331,7 +331,12 @@ export class FlagsService {
     }
   }
 
-  async toggle(flagId: string, environmentId: string, enabled?: boolean) {
+  async toggle(
+    flagId: string,
+    environmentId: string,
+    enabled?: boolean,
+    userId?: string
+  ) {
     // Find the flag to check its type
     const flag = await this.prisma.featureFlag.findUnique({
       where: { id: flagId },
@@ -369,7 +374,45 @@ export class FlagsService {
       changes: [{ flagKey: flag.key, action: 'toggled' }],
     })
 
+    await this.auditFlag(
+      'flag.toggled',
+      flag,
+      userId,
+      { environmentId, enabled: globalEnv?.enabled ?? false },
+      { environmentId, enabled: newEnabled }
+    )
+
     return result
+  }
+
+  /**
+   * Audit entry of a change to one flag (entity = the flag), so the flag's
+   * history can be queried by entityId. Skipped without an acting user.
+   */
+  private async auditFlag(
+    action: string,
+    flag: {
+      id: string
+      key: string
+      organizationId: string
+      projectId: string
+    },
+    userId: string | undefined,
+    oldValues: Record<string, unknown> | undefined,
+    newValues: Record<string, unknown>
+  ) {
+    if (!userId) return
+    const ref = { flagId: flag.id, flagKey: flag.key }
+    await this.auditLogs.create({
+      action,
+      entityType: 'FeatureFlag',
+      entityId: flag.id,
+      userId,
+      organizationId: flag.organizationId,
+      projectId: flag.projectId,
+      oldValues: oldValues ? { ...ref, ...oldValues } : undefined,
+      newValues: { ...ref, ...newValues },
+    })
   }
 
   private async writeToggle(
@@ -432,7 +475,8 @@ export class FlagsService {
   async updateEnvironment(
     flagId: string,
     envId: string,
-    data: { isEnabled?: boolean; defaultValue?: string }
+    data: { isEnabled?: boolean; defaultValue?: string },
+    userId?: string
   ) {
     this.logger.debug(`[updateEnvironment] flagId=${flagId}, envId=${envId}`)
 
@@ -513,6 +557,25 @@ export class FlagsService {
         environmentIds: [existing.environmentId],
         changes: [{ flagKey: flag.key, action: 'updated' }],
       })
+      if (userId) {
+        await this.auditFlag(
+          'flag.environment_updated',
+          flag,
+          userId,
+          {
+            environmentId: existing.environmentId,
+            brandId: existing.brandId,
+            enabled: existing.enabled,
+            defaultValue: existing.defaultValue,
+          },
+          {
+            environmentId: updated.environmentId,
+            brandId: updated.brandId,
+            enabled: updated.enabled,
+            defaultValue: updated.defaultValue,
+          }
+        )
+      }
       return updated
     }
 
@@ -525,7 +588,8 @@ export class FlagsService {
   async updateValue(
     flagId: string,
     environmentId: string,
-    dto: UpdateFlagValueDto
+    dto: UpdateFlagValueDto,
+    userId?: string
   ) {
     const brandId = dto.brandId || null
 
@@ -562,6 +626,25 @@ export class FlagsService {
         changes: [{ flagKey: flag.key, action: 'updated' }],
       })
 
+    const auditValueChange = async (
+      oldValues: Record<string, unknown>,
+      row: { enabled: boolean; defaultValue: string }
+    ) => {
+      if (!userId) return
+      await this.auditFlag(
+        'flag.value_updated',
+        flag,
+        userId,
+        { environmentId, ...(brandId ? { brandId } : {}), ...oldValues },
+        {
+          environmentId,
+          ...(brandId ? { brandId } : {}),
+          enabled: row.enabled,
+          defaultValue: row.defaultValue,
+        }
+      )
+    }
+
     if (existing) {
       const updated = await this.prisma.flagEnvironment.update({
         where: { id: existing.id },
@@ -571,6 +654,10 @@ export class FlagsService {
         },
       })
       recordValueChange()
+      await auditValueChange(
+        { enabled: existing.enabled, defaultValue: existing.defaultValue },
+        updated
+      )
       return updated
     }
 
@@ -595,6 +682,13 @@ export class FlagsService {
       },
     })
     recordValueChange()
+    await auditValueChange(
+      brandId
+        ? { inherited: true }
+        : // A missing environment default: nothing to compare with
+          {},
+      created
+    )
     return created
   }
 

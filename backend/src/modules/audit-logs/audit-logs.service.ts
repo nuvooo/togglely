@@ -13,6 +13,41 @@ const AUDIT_LOG_USER_INCLUDE = {
   },
 } as const
 
+export const AUDIT_LOG_DEFAULT_LIMIT = 100
+export const AUDIT_LOG_MAX_LIMIT = 200
+/** Longest string kept in old/new values (e.g. large JSON flag values). */
+export const AUDIT_VALUE_MAX_LENGTH = 1024
+const TRUNCATED = '…[truncated]'
+
+/** Copies `value` with every string longer than 1 KB cut off. */
+export function truncateAuditValues(value: unknown): unknown {
+  if (typeof value === 'string') {
+    return value.length > AUDIT_VALUE_MAX_LENGTH
+      ? value.slice(0, AUDIT_VALUE_MAX_LENGTH) + TRUNCATED
+      : value
+  }
+  if (Array.isArray(value)) return value.map(truncateAuditValues)
+  if (value && typeof value === 'object' && !(value instanceof Date)) {
+    return Object.fromEntries(
+      Object.entries(value).map(([key, v]) => [key, truncateAuditValues(v)])
+    )
+  }
+  return value
+}
+
+export interface AuditLogQuery {
+  /**
+   * Entries of one entity: its own entries plus entries of related entities
+   * whose old/new values name it as `flagId` (targeting rules, brand values).
+   */
+  entityId?: string
+  /** Default 100, at most 200. */
+  limit?: number
+}
+
+const clampLimit = (limit?: number) =>
+  Math.min(Math.max(limit ?? AUDIT_LOG_DEFAULT_LIMIT, 1), AUDIT_LOG_MAX_LIMIT)
+
 @Injectable()
 export class AuditLogsService {
   constructor(private prisma: PrismaService) {}
@@ -35,16 +70,35 @@ export class AuditLogsService {
         userId: data.userId,
         organizationId: data.organizationId,
         projectId: data.projectId,
-        oldValues: data.oldValues,
-        newValues: data.newValues,
+        oldValues: truncateAuditValues(data.oldValues) as any,
+        newValues: truncateAuditValues(data.newValues) as any,
       },
     })
   }
 
   /** Latest logs of one project. Never queries without a project filter. */
-  async findAll(projectId: string) {
+  async findAll(projectId: string, query: AuditLogQuery = {}) {
     if (!projectId) return []
-    return this.findLatest({ projectId })
+    const take = clampLimit(query.limit)
+    if (!query.entityId) return this.findLatest({ projectId }, take)
+
+    // Prisma has no JSON path filters for MongoDB: match the ids raw, then
+    // load the entries with their user through the typed client.
+    const entityId = query.entityId
+    const matches = (await this.prisma.auditLog.findRaw({
+      filter: {
+        projectId: { $oid: projectId },
+        $or: [
+          { entityId },
+          { 'newValues.flagId': entityId },
+          { 'oldValues.flagId': entityId },
+        ],
+      },
+      options: { projection: { _id: 1 }, sort: { createdAt: -1 }, limit: take },
+    })) as unknown as { _id: { $oid: string } }[]
+    const ids = matches.map((doc) => doc._id.$oid)
+    if (!ids.length) return []
+    return this.findLatest({ id: { in: ids } }, take)
   }
 
   async findByOrganization(organizationId: string) {
@@ -65,12 +119,15 @@ export class AuditLogsService {
     return this.findLatest({ organizationId: { in: organizationIds } })
   }
 
-  private findLatest(where: Prisma.AuditLogWhereInput) {
+  private findLatest(
+    where: Prisma.AuditLogWhereInput,
+    take = AUDIT_LOG_DEFAULT_LIMIT
+  ) {
     return this.prisma.auditLog.findMany({
       where,
       include: AUDIT_LOG_USER_INCLUDE,
       orderBy: { createdAt: 'desc' },
-      take: 100,
+      take,
     })
   }
 }

@@ -425,7 +425,51 @@ describe('BrandsService inheritance', () => {
       },
     })
     expect(auditLogs.create).toHaveBeenCalledWith(
-      expect.objectContaining({ action: 'flag.brand_toggled' })
+      expect.objectContaining({
+        action: 'flag.brand_toggled',
+        oldValues: { flagId: 'flag-1', flagKey: 'my-flag', inherited: true },
+        newValues: {
+          flagId: 'flag-1',
+          flagKey: 'my-flag',
+          brandId: 'brand-1',
+          environmentId: 'env-1',
+          enabled: false,
+        },
+      })
+    )
+  })
+
+  it('resetOverride logs the flag with the removed override', async () => {
+    const { service, prisma, auditLogs } = createService()
+    prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
+    prisma.flagEnvironment.findFirst.mockResolvedValue({
+      id: 'fe-1',
+      enabled: true,
+      defaultValue: 'true',
+    })
+
+    await service.resetOverride('brand-1', 'flag-1', 'env-1', 'user-1')
+
+    expect(auditLogs.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'flag.brand_override_reset',
+        userId: 'user-1',
+        oldValues: {
+          flagId: 'flag-1',
+          flagKey: 'my-flag',
+          brandId: 'brand-1',
+          environmentId: 'env-1',
+          enabled: true,
+          defaultValue: 'true',
+        },
+        newValues: {
+          flagId: 'flag-1',
+          flagKey: 'my-flag',
+          brandId: 'brand-1',
+          environmentId: 'env-1',
+          inherited: true,
+        },
+      })
     )
   })
 })

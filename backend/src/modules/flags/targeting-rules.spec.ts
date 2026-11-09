@@ -58,20 +58,18 @@ function setup(
         .mockResolvedValue({ id: PROJECT, organizationId: ORG }),
     },
     featureFlag: {
-      findUnique: jest
-        .fn()
-        .mockImplementation(({ select }: any) =>
-          Promise.resolve(
-            select?.flagType
-              ? { flagType: opts.flagType ?? 'BOOLEAN' }
-              : {
-                  id: FLAG,
-                  key: 'my-flag',
-                  projectId: PROJECT,
-                  organizationId: ORG,
-                }
-          )
-        ),
+      findUnique: jest.fn().mockImplementation(({ select }: any) =>
+        Promise.resolve(
+          select?.flagType
+            ? { flagType: opts.flagType ?? 'BOOLEAN' }
+            : {
+                id: FLAG,
+                key: 'my-flag',
+                projectId: PROJECT,
+                organizationId: ORG,
+              }
+        )
+      ),
     },
     organizationMember: {
       findFirst: jest
@@ -239,7 +237,34 @@ describe('TargetingRulesService behaviour', () => {
       expect.objectContaining({
         action: 'targeting_rule.created',
         organizationId: ORG,
+        newValues: expect.objectContaining({
+          flagId: FLAG,
+          flagKey: 'my-flag',
+        }),
       })
+    )
+  })
+
+  it('names the flag in update and delete audit entries', async () => {
+    const { controller, req, auditLogs } = setup('MEMBER')
+    await controller.update(FLAG, RULE, { enabled: false }, req)
+    await controller.delete(FLAG, RULE, req)
+
+    const [updated, deleted] = auditLogs.create.mock.calls.map(
+      (call: any[]) => call[0]
+    )
+    expect(updated.action).toBe('targeting_rule.updated')
+    expect(updated.newValues).toEqual({
+      flagId: FLAG,
+      flagKey: 'my-flag',
+      enabled: false,
+    })
+    expect(updated.oldValues).toEqual(
+      expect.objectContaining({ flagId: FLAG, flagKey: 'my-flag' })
+    )
+    expect(deleted.action).toBe('targeting_rule.deleted')
+    expect(deleted.oldValues).toEqual(
+      expect.objectContaining({ flagId: FLAG, flagKey: 'my-flag' })
     )
   })
 

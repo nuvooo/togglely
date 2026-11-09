@@ -210,9 +210,20 @@ export class BrandsService {
         organizationId: flag.organizationId,
         projectId: flag.projectId,
         oldValues: existing
-          ? { enabled: existing.enabled, inherited: false }
-          : { inherited: true },
-        newValues: { brandId, environmentId, enabled: result.enabled },
+          ? {
+              flagId,
+              flagKey: flag.key,
+              enabled: existing.enabled,
+              inherited: false,
+            }
+          : { flagId, flagKey: flag.key, inherited: true },
+        newValues: {
+          flagId,
+          flagKey: flag.key,
+          brandId,
+          environmentId,
+          enabled: result.enabled,
+        },
       })
     }
 
@@ -267,12 +278,20 @@ export class BrandsService {
         organizationId: flag.organizationId,
         projectId: flag.projectId,
         oldValues: {
+          flagId,
+          flagKey: flag.key,
           brandId,
           environmentId,
           enabled: existing.enabled,
           defaultValue: existing.defaultValue,
         },
-        newValues: { brandId, environmentId, inherited: true },
+        newValues: {
+          flagId,
+          flagKey: flag.key,
+          brandId,
+          environmentId,
+          inherited: true,
+        },
       })
     }
 

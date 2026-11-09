@@ -105,7 +105,12 @@ export class FlagsController {
       dto.environmentId,
       flag.projectId
     )
-    return this.flagsService.toggle(flagId, dto.environmentId, dto.enabled)
+    return this.flagsService.toggle(
+      flagId,
+      dto.environmentId,
+      dto.enabled,
+      req.user.userId
+    )
   }
 
   @Get(':flagId/environments')
@@ -130,7 +135,12 @@ export class FlagsController {
     if (!isObjectId(envId)) {
       throw new NotFoundException('Flag environment not found')
     }
-    return this.flagsService.updateEnvironment(flagId, envId, dto)
+    return this.flagsService.updateEnvironment(
+      flagId,
+      envId,
+      dto,
+      req.user.userId
+    )
   }
 
   @Patch(':flagId/environments/:envId/value')
@@ -149,7 +159,7 @@ export class FlagsController {
     if (dto.brandId) {
       await this.access.assertBrandInProject(dto.brandId, flag.projectId)
     }
-    return this.flagsService.updateValue(flagId, envId, dto)
+    return this.flagsService.updateValue(flagId, envId, dto, req.user.userId)
   }
 
   @Delete(':flagId')

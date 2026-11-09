@@ -170,7 +170,18 @@ export class TargetingRulesService {
       this.prisma.targetingRule.delete({ where: { id: ruleId } }),
     ])
     this.recordRulesChanged(flag, existing.flagEnvironment.environmentId)
-    await this.audit('targeting_rule.deleted', flag, ruleId, userId)
+    await this.audit(
+      'targeting_rule.deleted',
+      flag,
+      ruleId,
+      userId,
+      undefined,
+      {
+        name: existing.name,
+        serveValue: existing.serveValue,
+        enabled: existing.enabled,
+      }
+    )
   }
 
   /** Loads a rule and ensures it belongs to the given flag. */
@@ -310,6 +321,8 @@ export class TargetingRulesService {
     newValues?: unknown,
     oldValues?: unknown
   ) {
+    // Names the flag so the flag history finds rule changes
+    const ref = { flagId: flag.id, flagKey: flag.key }
     return this.auditLogs.create({
       action,
       entityType: 'TargetingRule',
@@ -317,8 +330,8 @@ export class TargetingRulesService {
       userId,
       organizationId: flag.organizationId,
       projectId: flag.projectId,
-      newValues,
-      oldValues,
+      newValues: newValues ? { ...ref, ...(newValues as object) } : undefined,
+      oldValues: { ...ref, ...((oldValues as object | undefined) ?? {}) },
     })
   }
 }
