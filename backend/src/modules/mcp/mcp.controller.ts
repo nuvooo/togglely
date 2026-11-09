@@ -10,12 +10,12 @@ import {
   UnauthorizedException,
   UseGuards,
 } from '@nestjs/common'
-import { SkipThrottle, Throttle } from '@nestjs/throttler'
+import { SkipThrottle } from '@nestjs/throttler'
 import { Request, Response } from 'express'
 import { runWithActor } from '../../shared/actor-context'
 import { McpContext, McpKeyResolver } from './mcp-key.resolver'
 import { createMcpServer } from './mcp-server.factory'
-import { MCP_THROTTLER, McpThrottlerGuard } from './mcp-throttler.guard'
+import { McpThrottlerGuard } from './mcp-throttler.guard'
 import { McpToolsService } from './mcp-tools.service'
 
 function jsonRpcError(
@@ -34,11 +34,9 @@ function jsonRpcError(
  * and transport bound to the calling MCP key; there are no sessions.
  */
 @Controller('mcp')
-// Not counted by the global per-IP limit; limited per key by McpThrottlerGuard
+// Not counted by the global "default" limit; McpThrottlerGuard applies its
+// own per-IP (600/min) and per-key (120/min) buckets before authentication
 @SkipThrottle()
-@Throttle({
-  [MCP_THROTTLER.name]: { limit: MCP_THROTTLER.limit, ttl: MCP_THROTTLER.ttl },
-})
 @UseGuards(McpThrottlerGuard)
 export class McpController {
   private readonly logger = new Logger(McpController.name)

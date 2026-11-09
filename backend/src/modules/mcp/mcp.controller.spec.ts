@@ -52,7 +52,9 @@ describe('McpController (e2e with MCP SDK client)', () => {
     deleteFlag: jest.fn(),
   }
 
-  beforeAll(async () => {
+  /** Boots a fresh app (fresh in-memory throttler storage). */
+  async function startApp() {
+    await app?.close()
     const moduleRef = await Test.createTestingModule({
       imports: [
         // Same global throttler setup as AppModule: 100 req/min per IP
@@ -75,7 +77,9 @@ describe('McpController (e2e with MCP SDK client)', () => {
     await app.listen(0, '127.0.0.1')
     const address = app.getHttpServer().address()
     baseUrl = `http://127.0.0.1:${address.port}`
-  })
+  }
+
+  beforeAll(startApp)
 
   afterAll(async () => {
     await app.close()
@@ -280,17 +284,34 @@ describe('McpController (e2e with MCP SDK client)', () => {
     })
   })
 
-  it('limits each token to 120 requests per minute, independent of the per-IP default', async () => {
-    const statuses: number[] = []
-    for (let i = 0; i < 121; i++) {
-      statuses.push((await ping('tkm_rate_a')).status)
-    }
+  describe('rate limits', () => {
+    // Each test gets its own app so the throttler buckets do not couple
+    beforeEach(startApp)
 
-    // The global default (100/min per IP) must not apply to /api/mcp
-    expect(statuses.slice(0, 120).every((s) => s === 200)).toBe(true)
-    expect(statuses[120]).toBe(429)
+    it('limits each token to 120 requests per minute, independent of the per-IP default', async () => {
+      const statuses: number[] = []
+      for (let i = 0; i < 121; i++) {
+        statuses.push((await ping('tkm_rate_a')).status)
+      }
 
-    // Same IP, different token → separate bucket
-    expect((await ping('tkm_rate_b')).status).toBe(200)
+      // The global default (100/min per IP) must not apply to /api/mcp
+      expect(statuses.slice(0, 120).every((s) => s === 200)).toBe(true)
+      expect(statuses[120]).toBe(429)
+
+      // Same IP, different token → separate bucket
+      expect((await ping('tkm_rate_b')).status).toBe(200)
+    })
+
+    it('limits each IP to 600 requests per minute, even with distinct invalid tokens', async () => {
+      const statuses: number[] = []
+      for (let i = 0; i < 601; i++) {
+        statuses.push((await ping(`bogus-${i}-${Math.random()}`)).status)
+      }
+
+      expect(statuses.slice(0, 600).every((s) => s === 401)).toBe(true)
+      expect(statuses[600]).toBe(429)
+      // The IP limit is checked before authentication (no key lookup)
+      expect(resolver.resolve).toHaveBeenCalledTimes(600)
+    })
   })
 })
