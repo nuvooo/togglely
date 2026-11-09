@@ -123,6 +123,25 @@ describe('AuditLogPage', () => {
     )
   })
 
+  it('shows the MCP key as acting agent', async () => {
+    state.pages = [
+      {
+        auditLogs: [
+          log('k', { apiKeyId: 'key1', apiKeyName: 'Claude Laptop' }),
+        ],
+        nextCursor: null,
+      },
+    ]
+    renderPage()
+    expect(
+      await screen.findByText('Ada L via MCP key "Claude Laptop"')
+    ).toBeInTheDocument()
+    await i18n.changeLanguage('de')
+    expect(
+      await screen.findByText('Ada L via MCP-Schlüssel „Claude Laptop“')
+    ).toBeInTheDocument()
+  })
+
   it('shows translated actions, user, object and project', async () => {
     renderPage()
     const table = await screen.findByRole('table', { name: 'Audit log' })
@@ -207,7 +226,9 @@ describe('AuditLogPage', () => {
     const search = screen.getByRole('searchbox', { name: /search/i })
     await user.type(search, 'secret')
     await waitFor(() => expect(within(table).queryByText('Flag a')).toBeNull())
-    expect(within(table).getByText('Webhook secret rotated')).toBeInTheDocument()
+    expect(
+      within(table).getByText('Webhook secret rotated')
+    ).toBeInTheDocument()
 
     await user.clear(search)
     await user.type(search, 'nothing-like-this')
@@ -215,7 +236,9 @@ describe('AuditLogPage', () => {
       await screen.findByText(/only covers the entries loaded so far/i)
     ).toBeInTheDocument()
     // more entries can still be loaded into the search
-    expect(screen.getByRole('button', { name: 'Load more' })).toBeInTheDocument()
+    expect(
+      screen.getByRole('button', { name: 'Load more' })
+    ).toBeInTheDocument()
     // search is client-side: no extra request
     expect(auditCalls()).toHaveLength(1)
   })

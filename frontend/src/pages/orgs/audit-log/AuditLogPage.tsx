@@ -22,7 +22,7 @@ import {
   describeEntity,
   formatAction,
   formatActionFilter,
-  formatAuditUser,
+  formatAuditActor,
   formatValues,
   matchesAuditSearch,
   type OrgAuditLogEntry,
@@ -225,7 +225,7 @@ export default function AuditLogPage() {
       hideBelow: 'md',
       cell: (log) => (
         <span className="block truncate">
-          {formatAuditUser(log.user) ?? (
+          {formatAuditActor(log, t) ?? (
             <span className="text-muted-foreground">
               {t('org-pages.audit.system')}
             </span>

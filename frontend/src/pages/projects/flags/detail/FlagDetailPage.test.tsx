@@ -401,6 +401,31 @@ describe('Flag detail page', () => {
     })
   })
 
+  it('shows the MCP key in the history', async () => {
+    state.auditLogs = [
+      {
+        id: 'l1',
+        action: 'flag.toggled',
+        entityType: 'FeatureFlag',
+        entityId: FLAG,
+        newValues: { enabled: true },
+        createdAt: '2026-11-09T09:00:00.000Z',
+        user: {
+          id: 'u1',
+          email: 'ada@example.com',
+          firstName: 'Ada',
+          lastName: 'Lovelace',
+        },
+        apiKeyId: 'key1',
+        apiKeyName: 'Claude Laptop',
+      },
+    ]
+    renderPage('?tab=history')
+    expect(
+      await screen.findByText('Ada Lovelace via MCP key "Claude Laptop"')
+    ).toBeInTheDocument()
+  })
+
   it('shows an empty history', async () => {
     renderPage('?tab=history')
     expect(await screen.findByText('No entries yet')).toBeInTheDocument()

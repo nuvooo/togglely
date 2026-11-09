@@ -434,6 +434,7 @@ export const de = {
   'org-pages.audit.col-action': 'Aktion',
   'org-pages.audit.col-object': 'Objekt',
   'org-pages.audit.col-project': 'Projekt',
+  'audit.via-mcp-key': '{{user}} via MCP-Schlüssel „{{name}}“',
   'org-pages.audit.system': 'System',
   'org-pages.audit.show-details': 'Details zu {{action}} anzeigen',
   'org-pages.audit.hide-details': 'Details zu {{action}} ausblenden',

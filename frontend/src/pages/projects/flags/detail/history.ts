@@ -8,6 +8,8 @@ export interface AuditLogEntry {
   oldValues?: unknown
   newValues?: unknown
   createdAt: string
+  apiKeyId?: string | null
+  apiKeyName?: string | null
   user?: {
     id: string
     email: string
