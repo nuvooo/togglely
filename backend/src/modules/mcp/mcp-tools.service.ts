@@ -1,16 +1,19 @@
-import { Injectable } from '@nestjs/common'
+import { HttpException, Injectable } from '@nestjs/common'
 import { OrganizationRole } from '@prisma/client'
 import { plainToInstance } from 'class-transformer'
 import { validate } from 'class-validator'
 import { hasRole } from '../../shared/access/access.service'
 import { PrismaService } from '../../shared/prisma.service'
+import { isPrismaUniqueConstraintError } from '../../shared/prisma-errors'
 import { ENVIRONMENT_ORDER_BY } from '../environments/environment-order'
 import { CreateFlagDto } from '../flags/dto/create-flag.dto'
 import { UpdateFlagDto } from '../flags/dto/update-flag.dto'
 import { UpdateFlagValueDto } from '../flags/dto/update-flag-value.dto'
 import { FlagsService } from '../flags/flags.service'
+import { getDefaultFlagValue } from '../sdk/sdk.helpers'
 import {
   collectFlagStates,
+  describeDeleteBlockers,
   FlagStateRow,
   findDivergentStates,
 } from './flag-state'
@@ -113,6 +116,15 @@ export class McpToolsService {
       description,
       type,
     })
+    // Every environment starts disabled with the type's default value. The
+    // value is identical everywhere, so no environment is treated specially.
+    const environments = await this.loadEnvironments(ctx)
+    dto.initialValues = Object.fromEntries(
+      environments.map((e) => [
+        e.key,
+        { enabled: false, value: getDefaultFlagValue(dto.type) },
+      ])
+    )
     const created = await this.run(() =>
       this.flags.create(ctx.projectId, ctx.userId, dto)
     )
@@ -162,7 +174,7 @@ export class McpToolsService {
         .map((e) => e.key)
         .join(', ')
       throw new McpToolError(
-        `This key may not change environment "${env.key}". Allowed: ${allowed}`
+        `This key may not change environment "${env.key}". Allowed: ${allowed || '(none)'}`
       )
     }
     const updated = await this.run(() =>
@@ -185,14 +197,33 @@ export class McpToolsService {
     const brands = await this.loadBrands(ctx)
     const states = collectFlagStates(flag, environments, brands)
     const divergent = findDivergentStates(states)
+    const [enabledRules, openExperiments] = await Promise.all([
+      this.prisma.targetingRule.findMany({
+        where: {
+          flagEnvId: { in: flag.flagEnvironments.map((fe) => fe.id) },
+          enabled: true,
+        },
+        select: { flagEnvId: true },
+      }),
+      this.prisma.experiment.findMany({
+        where: {
+          flagId: flag.id,
+          status: { notIn: ['COMPLETED', 'ARCHIVED'] },
+        },
+        select: { key: true, status: true },
+      }),
+    ])
+    const blockers = describeDeleteBlockers(
+      flag.flagEnvironments,
+      enabledRules,
+      openExperiments,
+      environments,
+      brands
+    )
+    const canDelete = divergent.length === 0 && blockers.length === 0
 
     if (input.confirm !== true) {
-      return {
-        deleted: false,
-        canDelete: divergent.length === 0,
-        states,
-        divergent,
-      }
+      return { deleted: false, canDelete, states, divergent, blockers }
     }
     if (divergent.length > 0) {
       const list = divergent
@@ -204,8 +235,13 @@ export class McpToolsService {
         `Flag "${flag.key}" is not in a uniform state; it differs in: ${list}. Align these states before deleting.`
       )
     }
+    if (blockers.length > 0) {
+      throw new McpToolError(
+        `Flag "${flag.key}" cannot be deleted yet: ${blockers.join('; ')}.`
+      )
+    }
     await this.run(() => this.flags.delete(flag.id, ctx.userId))
-    return { deleted: true, canDelete: true, states, divergent }
+    return { deleted: true, canDelete: true, states, divergent, blockers }
   }
 
   private requireRole(ctx: McpContext, min: OrganizationRole) {
@@ -215,13 +251,15 @@ export class McpToolsService {
   }
 
   private async findFlag(ctx: McpContext, flagKey: string) {
-    const flag =
-      typeof flagKey === 'string' && flagKey
-        ? await this.prisma.featureFlag.findFirst({
-            where: { projectId: ctx.projectId, key: flagKey },
-            include: { flagEnvironments: true },
-          })
-        : null
+    // Same normalisation as FlagsService.create, so "New-Checkout" finds
+    // the stored "new-checkout".
+    const key = typeof flagKey === 'string' ? flagKey.trim().toLowerCase() : ''
+    const flag = key
+      ? await this.prisma.featureFlag.findFirst({
+          where: { projectId: ctx.projectId, key },
+          include: { flagEnvironments: true },
+        })
+      : null
     if (!flag) {
       throw new McpToolError(`Flag "${flagKey}" not found in this project`)
     }
@@ -288,13 +326,20 @@ export class McpToolsService {
     return instance
   }
 
+  /**
+   * Maps expected domain errors to McpToolError. Anything else is rethrown so
+   * runTool logs it and returns a generic message (no internals leak).
+   */
   private async run<R>(fn: () => Promise<R>): Promise<R> {
     try {
       return await fn()
     } catch (error) {
       if (error instanceof McpToolError) throw error
-      if (error instanceof Error) throw new McpToolError(error.message)
-      throw new McpToolError('Unexpected error')
+      if (error instanceof HttpException) throw new McpToolError(error.message)
+      if (isPrismaUniqueConstraintError(error)) {
+        throw new McpToolError('Flag key already exists in this project')
+      }
+      throw error
     }
   }
 }

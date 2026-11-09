@@ -69,3 +69,40 @@ export function findDivergentStates(rows: FlagStateRow[]): FlagStateRow[] {
   }
   return rows.filter((r) => stateOf(r) !== best)
 }
+
+/**
+ * Human readable reasons that block deleting a flag: enabled targeting rules
+ * (per environment/brand row) and experiments that have not ended.
+ */
+export function describeDeleteBlockers(
+  flagEnvironments: {
+    id: string
+    environmentId: string
+    brandId: string | null
+  }[],
+  enabledRules: { flagEnvId: string }[],
+  openExperiments: { key: string; status: string }[],
+  environments: { id: string; key: string }[],
+  brands: { id: string; key: string }[]
+): string[] {
+  const blockers: string[] = []
+  const envKeyById = new Map(environments.map((e) => [e.id, e.key]))
+  const brandKeyById = new Map(brands.map((b) => [b.id, b.key]))
+  const ruleRows = new Set(enabledRules.map((r) => r.flagEnvId))
+  const locations = flagEnvironments
+    .filter((fe) => ruleRows.has(fe.id))
+    .map((fe) => {
+      const env = envKeyById.get(fe.environmentId) ?? fe.environmentId
+      if (!fe.brandId) return env
+      return `${env}/${brandKeyById.get(fe.brandId) ?? fe.brandId}`
+    })
+  if (locations.length > 0) {
+    blockers.push(
+      `enabled targeting rules in: ${locations.join(', ')} (disable or remove them first)`
+    )
+  }
+  for (const exp of openExperiments) {
+    blockers.push(`experiment "${exp.key}" is ${exp.status} (end it first)`)
+  }
+  return blockers
+}

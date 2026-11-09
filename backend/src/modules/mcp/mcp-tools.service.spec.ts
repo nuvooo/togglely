@@ -1,4 +1,5 @@
 import { ConflictException } from '@nestjs/common'
+import { Prisma } from '@prisma/client'
 import { FLAG_KEY_MAX_LENGTH, FLAG_VALUE_MAX_LENGTH } from '../flags/dto/limits'
 import { McpContext } from './mcp-key.resolver'
 import { McpToolError, McpToolsService } from './mcp-tools.service'
@@ -49,6 +50,12 @@ describe('McpToolsService', () => {
       },
       featureFlag: {
         findFirst: jest.fn().mockResolvedValue(flag()),
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      targetingRule: {
+        findMany: jest.fn().mockResolvedValue([]),
+      },
+      experiment: {
         findMany: jest.fn().mockResolvedValue([]),
       },
     }
@@ -130,7 +137,72 @@ describe('McpToolsService', () => {
       name: 'n',
       description: 'd',
       type: 'BOOLEAN',
+      initialValues: {
+        dev: { enabled: false, value: 'false' },
+        prod: { enabled: false, value: 'false' },
+      },
     })
+  })
+
+  it('createFlag NUMBER passes type default value 0 disabled for every environment', async () => {
+    await service.createFlag(ctx, { key: 'limit', name: 'n', type: 'NUMBER' })
+    expect(flags.create.mock.calls[0][2].initialValues).toEqual({
+      dev: { enabled: false, value: '0' },
+      prod: { enabled: false, value: '0' },
+    })
+  })
+
+  it('createFlag maps a Prisma unique-constraint error to a friendly McpToolError', async () => {
+    flags.create.mockRejectedValue(
+      new Prisma.PrismaClientKnownRequestError('Unique constraint failed', {
+        code: 'P2002',
+        clientVersion: '5',
+      })
+    )
+    await expect(
+      service.createFlag(ctx, { key: 'dup', name: 'n', type: 'BOOLEAN' })
+    ).rejects.toThrow(
+      new McpToolError('Flag key already exists in this project')
+    )
+  })
+
+  it('createFlag rethrows unexpected errors unchanged (not as McpToolError)', async () => {
+    const boom = new Error('connection refused at 10.0.0.1')
+    flags.create.mockRejectedValue(boom)
+    const err = await service
+      .createFlag(ctx, { key: 'k', name: 'n', type: 'BOOLEAN' })
+      .catch((e) => e)
+    expect(err).toBe(boom)
+    expect(err).not.toBeInstanceOf(McpToolError)
+  })
+
+  it('getFlag normalises the key (trim + lowercase)', async () => {
+    await service.getFlag(ctx, { flagKey: ' New-Checkout ' })
+    expect(prisma.featureFlag.findFirst.mock.calls[0][0].where).toMatchObject({
+      projectId: 'p1',
+      key: 'new-checkout',
+    })
+  })
+
+  it('setFlagState normalises the flag key', async () => {
+    await service.setFlagState(ctx, {
+      flagKey: 'New-Checkout',
+      environmentKey: 'dev',
+      enabled: true,
+    })
+    expect(prisma.featureFlag.findFirst.mock.calls[0][0].where).toMatchObject({
+      key: 'new-checkout',
+    })
+  })
+
+  it('setFlagState with an empty allowlist reports Allowed: (none)', async () => {
+    await expect(
+      service.setFlagState(
+        { ...ctx, allowedEnvironmentIds: [] },
+        { flagKey: 'my-flag', environmentKey: 'dev', enabled: true }
+      )
+    ).rejects.toThrow(/may not change environment "dev"\. Allowed: \(none\)$/)
+    expect(flags.updateValue).not.toHaveBeenCalled()
   })
 
   it('VIEWER cannot createFlag', async () => {
@@ -190,12 +262,14 @@ describe('McpToolsService', () => {
     const uniform = flag({
       flagEnvironments: [
         {
+          id: 'fe1',
           environmentId: 'e1',
           brandId: null,
           enabled: false,
           defaultValue: 'false',
         },
         {
+          id: 'fe2',
           environmentId: 'e2',
           brandId: null,
           enabled: false,
@@ -255,6 +329,61 @@ describe('McpToolsService', () => {
       })
       expect(flags.delete).toHaveBeenCalledWith('f1', 'u1')
       expect(res.deleted).toBe(true)
+    })
+
+    it('with confirm, uniform states and an enabled targeting rule refuses and does not delete', async () => {
+      prisma.featureFlag.findFirst.mockResolvedValue(uniform)
+      prisma.targetingRule.findMany.mockResolvedValue([{ flagEnvId: 'fe2' }])
+      await expect(
+        service.deleteFlag(ctx, { flagKey: 'my-flag', confirm: true })
+      ).rejects.toThrow(/targeting rule.*prod/i)
+      expect(prisma.targetingRule.findMany.mock.calls[0][0].where).toEqual({
+        flagEnvId: { in: ['fe1', 'fe2'] },
+        enabled: true,
+      })
+      expect(flags.delete).not.toHaveBeenCalled()
+    })
+
+    it('with confirm, uniform states and a running experiment refuses and does not delete', async () => {
+      prisma.featureFlag.findFirst.mockResolvedValue(uniform)
+      prisma.experiment.findMany.mockResolvedValue([
+        { key: 'checkout-test', status: 'RUNNING' },
+      ])
+      await expect(
+        service.deleteFlag(ctx, { flagKey: 'my-flag', confirm: true })
+      ).rejects.toThrow(/checkout-test.*RUNNING/)
+      expect(prisma.experiment.findMany.mock.calls[0][0].where).toEqual({
+        flagId: 'f1',
+        status: { notIn: ['COMPLETED', 'ARCHIVED'] },
+      })
+      expect(flags.delete).not.toHaveBeenCalled()
+    })
+
+    it('without confirm lists blockers and canDelete false', async () => {
+      prisma.featureFlag.findFirst.mockResolvedValue(uniform)
+      prisma.targetingRule.findMany.mockResolvedValue([{ flagEnvId: 'fe1' }])
+      prisma.experiment.findMany.mockResolvedValue([
+        { key: 'exp', status: 'PAUSED' },
+      ])
+      const res = await service.deleteFlag(ctx, {
+        flagKey: 'my-flag',
+        confirm: false,
+      })
+      expect(res.canDelete).toBe(false)
+      expect(res.blockers).toHaveLength(2)
+      expect(res.blockers.join(' ')).toMatch(/dev/)
+      expect(res.blockers.join(' ')).toMatch(/exp.*PAUSED/)
+      expect(flags.delete).not.toHaveBeenCalled()
+    })
+
+    it('with confirm, uniform states and no blockers deletes and reports no blockers', async () => {
+      prisma.featureFlag.findFirst.mockResolvedValue(uniform)
+      const res = await service.deleteFlag(ctx, {
+        flagKey: 'my-flag',
+        confirm: true,
+      })
+      expect(flags.delete).toHaveBeenCalledWith('f1', 'u1')
+      expect(res.blockers).toEqual([])
     })
   })
 })

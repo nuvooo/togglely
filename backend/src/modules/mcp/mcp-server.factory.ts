@@ -14,7 +14,7 @@ Workflow:
 - Before create_flag, ALWAYS call list_flags with a search term to check whether a similar flag already exists. Reuse existing flags instead of creating duplicates.
 - Flag keys are kebab-case (e.g. "new-checkout-flow").
 - New flags start disabled everywhere; use set_flag_state to change them in an environment this key is allowed to toggle.
-- Cleaning up a flag: first remove every usage of the flag from the code, then call delete_flag WITHOUT confirm to inspect its states, and only then call delete_flag again with confirm: true. Deletion is refused while the flag's states differ between environments/brands.`
+- Cleaning up a flag: first remove every usage of the flag from the code, then call delete_flag WITHOUT confirm to inspect its states, and only then call delete_flag again with confirm: true. Deletion is refused while the flag's states differ between environments/brands, while it has enabled targeting rules, or while an experiment using it has not ended.`
 
 function ok(result: unknown): CallToolResult {
   return { content: [{ type: 'text', text: JSON.stringify(result, null, 2) }] }
@@ -138,7 +138,7 @@ export function createMcpServer(
     'set_flag_state',
     {
       description:
-        'Enables/disables a flag and/or sets its value in one environment. Only environments with canToggle (see get_project) are allowed.',
+        'Enables/disables a flag and/or sets its value in one environment. Changes only the environment default, not brand overrides. Only environments with canToggle (see get_project) are allowed.',
       inputSchema: z
         .object({
           flagKey,
@@ -161,7 +161,7 @@ export function createMcpServer(
     'delete_flag',
     {
       description:
-        'Deletes a flag. Remove all usages from the code first. Call without confirm (or confirm: false) to inspect the flag states, then with confirm: true to delete. Refused while states differ between environments/brands.',
+        'Deletes a flag. Remove all usages from the code first. Call without confirm (or confirm: false) to inspect the flag states, then with confirm: true to delete. Refused while states differ between environments/brands, while the flag has enabled targeting rules, or while an experiment using it has not ended (see blockers).',
       inputSchema: z
         .object({
           flagKey,
