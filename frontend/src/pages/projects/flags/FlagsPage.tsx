@@ -5,13 +5,14 @@ import { useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { EmptyState } from '@/components/feedback/EmptyState'
 import { ErrorState } from '@/components/feedback/ErrorState'
+import { RoleUnavailableNotice } from '@/components/feedback/RoleUnavailableNotice'
 import { FlagValueDialog } from '@/components/flags/FlagValueDialog'
 import { PageHeader } from '@/components/page/PageHeader'
 import { type FilterChip, PageToolbar } from '@/components/page/PageToolbar'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
-import { getErrorMessage } from '@/lib/errors'
+import { useProjectRole } from '@/lib/permissions'
 import { ROUTES } from '@/lib/routes'
 import { CreateFlagDialog } from './CreateFlagDialog'
 import { FlagsTable } from './FlagsTable'
@@ -36,6 +37,9 @@ export default function FlagsPage() {
   const projectId = isValidObjectId(rawProjectId) ? rawProjectId : null
   const data = useProjectFlags(projectId)
   const { project, flags, isMulti, isLoading, error } = data
+  // Backend: MEMBER+ creates/edits/toggles, ADMIN+ deletes flags.
+  const { canEdit, canManage, roleLoading, roleUnavailable } =
+    useProjectRole(projectId)
 
   const [searchParams, setSearchParams] = useSearchParams()
   const query = searchParams.get('q') ?? ''
@@ -71,13 +75,14 @@ export default function FlagsPage() {
       { replace: true }
     )
 
-  // `?new=1` (command palette "New flag") opens the create dialog once.
+  // `?new=1` (command palette "New flag") opens the create dialog once —
+  // after the project is loaded, so the initial values cover every environment.
   // biome-ignore lint/correctness/useExhaustiveDependencies: updateParams is stable enough (setSearchParams)
   useEffect(() => {
-    if (searchParams.get('new') !== '1') return
-    setCreateOpen(true)
+    if (searchParams.get('new') !== '1' || isLoading || roleLoading) return
+    if (project && canEdit) setCreateOpen(true)
     updateParams({ new: null })
-  }, [searchParams])
+  }, [searchParams, isLoading, roleLoading, project, canEdit])
 
   const environments = useMemo(
     () => environmentColumns(project?.environments, flags),
@@ -134,14 +139,11 @@ export default function FlagsPage() {
       return next
     })
 
+  /** Rejects on failure: the confirm dialog stays open with the error. */
   const confirmDelete = async () => {
     if (!flagToDelete) return
-    try {
-      await data.deleteFlag(flagToDelete)
-      toast.success(t('flags-page.deleted', { name: flagToDelete.name }))
-    } catch (err) {
-      toast.error(getErrorMessage(err))
-    }
+    await data.deleteFlag(flagToDelete)
+    toast.success(t('flags-page.deleted', { name: flagToDelete.name }))
   }
 
   const backToOrgs = (
@@ -181,7 +183,7 @@ export default function FlagsPage() {
         icon={<Flag className="h-5 w-5" />}
         title={t('project-detail.empty.title')}
         description={t('project-detail.empty.description')}
-        action={newFlagButton}
+        action={canEdit ? newFlagButton : undefined}
       />
     )
   } else {
@@ -212,6 +214,8 @@ export default function FlagsPage() {
           }}
           expanded={expanded}
           onToggleExpanded={toggleExpanded}
+          canEdit={canEdit}
+          canDelete={canManage}
           empty={
             <EmptyState
               bordered={false}
@@ -235,8 +239,9 @@ export default function FlagsPage() {
             <Badge variant="outline">{t('flags-page.multi-badge')}</Badge>
           ) : undefined
         }
-        actions={hasFlags && !error ? newFlagButton : undefined}
+        actions={hasFlags && !error && canEdit ? newFlagButton : undefined}
       />
+      <RoleUnavailableNotice show={roleUnavailable} />
       {content}
 
       <CreateFlagDialog

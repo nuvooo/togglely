@@ -168,6 +168,52 @@ describe('DataTable', () => {
     expect(rows[3]).toContainElement(cell)
   })
 
+  it('keeps a hidden, empty region for collapsed rows (aria-controls target)', () => {
+    const { container } = render(
+      <DataTable
+        columns={columns}
+        rows={ITEMS}
+        getRowId={(r) => r.id}
+        isExpanded={(row) => row.id === 'b'}
+        renderExpanded={(row) => <p>Details {row.name}</p>}
+        getExpandedId={(row) => `detail-${row.id}`}
+      />
+    )
+    const region = container.querySelector('#detail-a')
+    expect(region).not.toBeNull()
+    expect(region).toBeEmptyDOMElement()
+    expect(region?.closest('tr')).toHaveAttribute('hidden')
+    expect(container.querySelector('#detail-b')?.closest('tr')).not.toHaveAttribute('hidden')
+  })
+
+  it('labels focusable rows and can keep them out of the tab order', () => {
+    const { rerender } = render(
+      <DataTable
+        columns={columns}
+        rows={ITEMS}
+        getRowId={(r) => r.id}
+        onRowClick={() => {}}
+        getRowLabel={(row) => `Open ${row.name}`}
+      />
+    )
+    const focusable = screen.getByRole('row', { name: 'Open Dark mode' })
+    expect(focusable).toHaveAttribute('tabindex', '0')
+
+    rerender(
+      <DataTable
+        columns={columns}
+        rows={ITEMS}
+        getRowId={(r) => r.id}
+        onRowClick={() => {}}
+        rowFocusable={false}
+        getRowLabel={(row) => `Open ${row.name}`}
+      />
+    )
+    const row = screen.getByText('Dark mode').closest('tr')
+    expect(row).not.toHaveAttribute('tabindex')
+    expect(row).not.toHaveAttribute('aria-label')
+  })
+
   it('skips the expanded row when renderExpanded returns null', () => {
     render(
       <DataTable

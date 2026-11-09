@@ -32,6 +32,14 @@ export interface DataTableProps<T> {
    * Clicks on links, buttons, inputs etc. inside the row do not trigger it.
    */
   onRowClick?: (row: T) => void
+  /**
+   * With `onRowClick`: whether rows are tab stops (default true). Set false
+   * when every row already contains a primary link, so keyboard users do
+   * not tab through each row twice.
+   */
+  rowFocusable?: boolean
+  /** Accessible name of a focusable row, e.g. "Open Dark mode". */
+  getRowLabel?: (row: T) => string
   rowClassName?: string | ((row: T) => string | undefined)
   /** Shows skeleton rows instead of `rows`. */
   loading?: boolean
@@ -53,7 +61,8 @@ export interface DataTableProps<T> {
   isExpanded?: (row: T) => boolean
   /**
    * DOM id of the expanded row's cell, for `aria-controls` on a toggle button.
-   * Default: `${getRowId(row)}-expanded`.
+   * Default: `${getRowId(row)}-expanded`. Collapsed rows keep an empty,
+   * hidden cell with this id so `aria-controls` always resolves.
    */
   getExpandedId?: (row: T) => string
 }
@@ -95,6 +104,8 @@ export function DataTable<T>({
   rows,
   getRowId,
   onRowClick,
+  rowFocusable = true,
+  getRowLabel,
   rowClassName,
   loading = false,
   loadingRows = 5,
@@ -147,25 +158,33 @@ export function DataTable<T>({
       </tr>
     ) : null
   } else {
-    body = rows.map((row) => {
+    body = rows.map((row, index) => {
       const id = getRowId(row)
       const expanded =
         renderExpanded && (isExpanded?.(row) ?? true)
           ? renderExpanded(row)
           : null
       const open = expanded !== null && expanded !== undefined
+      const focusable = Boolean(onRowClick) && rowFocusable
       return (
         <Fragment key={id}>
           <tr
-            tabIndex={onRowClick ? 0 : undefined}
+            tabIndex={focusable ? 0 : undefined}
+            aria-label={focusable ? getRowLabel?.(row) : undefined}
             onClick={onRowClick ? handleClick(row) : undefined}
-            onKeyDown={onRowClick ? handleKeyDown(row) : undefined}
+            onKeyDown={focusable ? handleKeyDown(row) : undefined}
             data-clickable={onRowClick ? '' : undefined}
             className={cn(
               'h-11 border-b transition-colors hover:bg-accent/50',
-              open ? 'bg-accent/30' : 'last:border-0',
-              onRowClick &&
-                'cursor-pointer focus-visible:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
+              open
+                ? 'bg-accent/30'
+                : renderExpanded
+                  ? // the hidden detail row is the last child: drop the border by index
+                    index === rows.length - 1 && 'border-b-0'
+                  : 'last:border-0',
+              onRowClick && 'cursor-pointer',
+              focusable &&
+                'focus-visible:bg-accent/50 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring',
               typeof rowClassName === 'function'
                 ? rowClassName(row)
                 : rowClassName
@@ -180,14 +199,14 @@ export function DataTable<T>({
               </td>
             ))}
           </tr>
-          {open && (
-            <tr className="border-b last:border-0">
+          {renderExpanded && (
+            <tr className="border-b last:border-0" hidden={!open}>
               <td
                 id={getExpandedId ? getExpandedId(row) : `${id}-expanded`}
                 colSpan={columns.length}
-                className="bg-muted/20 px-3 py-3"
+                className={open ? 'bg-muted/20 px-3 py-3' : undefined}
               >
-                {expanded}
+                {open ? expanded : null}
               </td>
             </tr>
           )}

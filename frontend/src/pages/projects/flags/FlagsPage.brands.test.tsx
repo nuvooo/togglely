@@ -18,6 +18,16 @@ const api = vi.hoisted(() => ({
 vi.mock('@/lib/axios', () => ({ default: api }))
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }))
 vi.mock('sonner', () => ({ toast }))
+vi.mock('@/lib/workspace', () => ({
+  refreshWorkspace: vi.fn(() => Promise.resolve()),
+  useWorkspace: () => ({
+    projects: [{ id: PROJECT_ID, organizationId: 'o1', type: 'SINGLE' }],
+    organizations: [{ id: 'o1', name: 'Acme', role: role.current }],
+    isLoading: false,
+    error: null,
+  }),
+}))
+const role = vi.hoisted(() => ({ current: 'ADMIN' }))
 
 import FlagsPage from './FlagsPage'
 
@@ -320,6 +330,12 @@ describe('FlagsPage (multi-brand)', () => {
       name: 'Brand values of Banner',
     })
     expect(toggle).toHaveAttribute('aria-expanded', 'false')
+    // aria-controls always points at an existing (hidden, empty) region
+    const collapsed = document.getElementById(
+      toggle.getAttribute('aria-controls') ?? ''
+    )
+    expect(collapsed).toBeEmptyDOMElement()
+    expect(collapsed?.closest('tr')).toHaveAttribute('hidden')
     expect(screen.queryByTestId('flag-value-row')).not.toBeInTheDocument()
     expect(screen.getByText('1 override')).toBeInTheDocument()
 

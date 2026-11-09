@@ -27,6 +27,10 @@ interface FlagsTableProps {
   onDelete: (flag: FeatureFlag) => void
   expanded: ReadonlySet<string>
   onToggleExpanded: (flagId: string) => void
+  /** MEMBER+: toggle and edit values (otherwise read only). */
+  canEdit: boolean
+  /** ADMIN+: delete flags (otherwise the column is hidden). */
+  canDelete: boolean
 }
 
 const detailId = (flagId: string) => `flag-${flagId}-brands`
@@ -44,8 +48,11 @@ export function FlagsTable({
   onDelete,
   expanded,
   onToggleExpanded,
+  canEdit,
+  canDelete,
 }: FlagsTableProps) {
   const { t, i18n } = useTranslation()
+  const readOnlyTitle = canEdit ? undefined : t('common.read-only')
   const navigate = useNavigate()
 
   const columns: DataTableColumn<FeatureFlag>[] = [
@@ -62,7 +69,7 @@ export function FlagsTable({
                 type="button"
                 onClick={() => onToggleExpanded(flag.id)}
                 aria-expanded={open}
-                aria-controls={open ? detailId(flag.id) : undefined}
+                aria-controls={detailId(flag.id)}
                 aria-label={t('flags-page.brands-toggle', { name: flag.name })}
                 className="grid h-6 w-6 shrink-0 place-items-center rounded text-muted-foreground transition-colors hover:bg-accent hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
               >
@@ -114,28 +121,32 @@ export function FlagsTable({
             : 0
           return (
             <div className="inline-flex items-center justify-center gap-2">
-              <Switch
-                checked={env.enabled}
-                disabled={actions.isBusy(
-                  defaultRowKey(flag.id, env.environmentId)
-                )}
-                onCheckedChange={(next) =>
-                  actions.toggleDefault(flag, env, next)
-                }
-                aria-label={t(
-                  multi
-                    ? 'flags-page.toggle-default-label'
-                    : 'flags-page.toggle-label',
-                  names
-                )}
-              />
+              <span title={readOnlyTitle} className="inline-flex">
+                <Switch
+                  checked={env.enabled}
+                  disabled={
+                    !canEdit ||
+                    actions.isBusy(defaultRowKey(flag.id, env.environmentId))
+                  }
+                  onCheckedChange={(next) =>
+                    actions.toggleDefault(flag, env, next)
+                  }
+                  aria-label={t(
+                    multi
+                      ? 'flags-page.toggle-default-label'
+                      : 'flags-page.toggle-label',
+                    names
+                  )}
+                />
+              </span>
               {flag.flagType !== 'BOOLEAN' && (
                 <button
                   type="button"
                   onClick={() => onEdit({ flag, env })}
+                  disabled={!canEdit}
                   aria-label={t('flags-page.edit-value-label', names)}
-                  title={env.defaultValue}
-                  className="max-w-[7rem] truncate rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+                  title={readOnlyTitle ?? env.defaultValue}
+                  className="max-w-[7rem] truncate rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:hover:bg-muted"
                 >
                   {env.defaultValue === '' ? '""' : env.defaultValue}
                 </button>
@@ -169,7 +180,9 @@ export function FlagsTable({
         )
       },
     },
-    {
+  ]
+  if (canDelete) {
+    columns.push({
       key: 'actions',
       header: t('flags-page.col-actions'),
       srOnlyHeader: true,
@@ -189,8 +202,8 @@ export function FlagsTable({
           <Trash2 className="h-4 w-4" aria-hidden />
         </Button>
       ),
-    },
-  ]
+    })
+  }
 
   const open = (flag: FeatureFlag) => navigate(flagPath(projectId, flag.id))
   const label = t('flags-page.table-label')
@@ -207,6 +220,7 @@ export function FlagsTable({
                 flag={flag}
                 environments={environments}
                 onEdit={onEdit}
+                readOnly={!canEdit}
                 {...actions}
               />
             )
@@ -215,6 +229,8 @@ export function FlagsTable({
       isExpanded={(flag) => expanded.has(flag.id)}
       getExpandedId={(flag) => detailId(flag.id)}
       onRowClick={open}
+      // The flag name is a link: rows need no extra tab stop.
+      rowFocusable={false}
       loading={loading}
       loadingRows={4}
       empty={empty}

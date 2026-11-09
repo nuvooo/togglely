@@ -2,7 +2,8 @@ import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import api from '@/lib/axios'
-import { getErrorMessage, getErrorStatus } from '@/lib/errors'
+import { getErrorStatus } from '@/lib/errors'
+import { handleForbidden, notifyWriteError } from '@/lib/permissions'
 import type {
   BrandFlagValue,
   FeatureFlag,
@@ -11,7 +12,7 @@ import type {
   FlagType,
 } from './types'
 
-export type FlagsLoadError = 'not-found' | 'failed' | null
+type FlagsLoadError = 'not-found' | 'failed' | null
 
 export interface NewFlag {
   name: string
@@ -60,8 +61,12 @@ export function useProjectFlags(projectId: string | null) {
   const isMulti = project?.type === 'MULTI'
   const isMultiRef = useRef(isMulti)
   isMultiRef.current = isMulti
+  /** Id of the latest load; responses for a previous project are dropped. */
+  const loadId = useRef(0)
 
   const load = useCallback(async () => {
+    const id = ++loadId.current
+    const current = () => id === loadId.current
     if (!projectId) {
       setIsLoading(false)
       return
@@ -70,6 +75,7 @@ export function useProjectFlags(projectId: string | null) {
     setError(null)
     try {
       const projectRes = await api.get(`/projects/${projectId}`)
+      if (!current()) return
       const data = (projectRes.data?.project ?? projectRes.data) as
         | FlagsProject
         | undefined
@@ -78,13 +84,15 @@ export function useProjectFlags(projectId: string | null) {
         return
       }
       const list = await fetchFlags(projectId, data.type === 'MULTI')
+      if (!current()) return
       isMultiRef.current = data.type === 'MULTI'
       setProject(data)
       setFlags(Array.isArray(list) ? list : [])
     } catch (err) {
-      setError(getErrorStatus(err) === 404 ? 'not-found' : 'failed')
+      if (current())
+        setError(getErrorStatus(err) === 404 ? 'not-found' : 'failed')
     } finally {
-      setIsLoading(false)
+      if (current()) setIsLoading(false)
     }
   }, [projectId])
 
@@ -95,8 +103,10 @@ export function useProjectFlags(projectId: string | null) {
   /** Reloads only the flags (after a mutation), keeping the page mounted. */
   const refresh = async () => {
     if (!projectId) return
+    const id = loadId.current
     try {
       const list = await fetchFlags(projectId, isMultiRef.current)
+      if (id !== loadId.current) return // project changed meanwhile
       setFlags(Array.isArray(list) ? list : [])
     } catch (err) {
       console.error('Failed to refresh flags:', err)
@@ -136,7 +146,7 @@ export function useProjectFlags(projectId: string | null) {
       onSuccess?.()
       await refresh()
     } catch (err) {
-      toast.error(getErrorMessage(err))
+      notifyWriteError(err, t)
       await refresh()
     } finally {
       setBusyRows((prev) => {
@@ -289,10 +299,15 @@ export function useProjectFlags(projectId: string | null) {
     brand: BrandFlagValue | undefined,
     value: string
   ) => {
-    await api.patch(
-      `/feature-flags/${flag.id}/environments/${env.environmentId}/value`,
-      brand ? { value, brandId: brand.brandId } : { value }
-    )
+    try {
+      await api.patch(
+        `/feature-flags/${flag.id}/environments/${env.environmentId}/value`,
+        brand ? { value, brandId: brand.brandId } : { value }
+      )
+    } catch (err) {
+      handleForbidden(err, t) // the dialog shows the message
+      throw err
+    }
     await refresh()
   }
 
@@ -308,18 +323,28 @@ export function useProjectFlags(projectId: string | null) {
     const initialValues = Object.fromEntries(
       envKeys.map((envKey) => [envKey, { enabled: false, value }])
     )
-    await api.post(`/feature-flags/project/${projectId}`, {
-      name,
-      key,
-      type,
-      initialValues,
-    })
+    try {
+      await api.post(`/feature-flags/project/${projectId}`, {
+        name,
+        key,
+        type,
+        initialValues,
+      })
+    } catch (err) {
+      handleForbidden(err, t) // the dialog shows the message
+      throw err
+    }
     await refresh()
   }
 
   /** Deletes a flag; rejects on error. */
   const deleteFlag = async (flag: FeatureFlag) => {
-    await api.delete(`/feature-flags/${flag.id}`)
+    try {
+      await api.delete(`/feature-flags/${flag.id}`)
+    } catch (err) {
+      handleForbidden(err, t) // the confirm dialog shows the message
+      throw err
+    }
     setFlags((prev) => prev.filter((f) => f.id !== flag.id))
   }
 
@@ -341,4 +366,3 @@ export function useProjectFlags(projectId: string | null) {
   }
 }
 
-export type ProjectFlags = ReturnType<typeof useProjectFlags>

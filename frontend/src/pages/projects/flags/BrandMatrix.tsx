@@ -39,6 +39,8 @@ interface BrandMatrixProps extends BrandMatrixActions {
   /** Column order of the table (API order). */
   environments: ProjectEnvironment[]
   onEdit: (value: EditingValue) => void
+  /** No write permission (VIEWER): rows are read only. */
+  readOnly?: boolean
 }
 
 /** Orders a flag's environments like the table columns; unknown ones last. */
@@ -59,6 +61,7 @@ export function BrandMatrix({
   flag,
   environments,
   onEdit,
+  readOnly = false,
   isBusy,
   toggleDefault,
   toggleBrand,
@@ -101,6 +104,7 @@ export function BrandMatrix({
                 value={env.defaultValue}
                 busy={isBusy(defaultRowKey(flag.id, env.environmentId))}
                 onToggle={(next) => toggleDefault(flag, env, next)}
+                readOnly={readOnly}
                 onEdit={editable ? () => onEdit({ flag, env }) : undefined}
               />
               {env.brandValues?.map((brand) => (
@@ -121,6 +125,7 @@ export function BrandMatrix({
                     brandRowKey(flag.id, env.environmentId, brand.brandId)
                   )}
                   onToggle={(next) => toggleBrand(flag, env, brand, next)}
+                  readOnly={readOnly}
                   onEdit={
                     editable ? () => onEdit({ flag, env, brand }) : undefined
                   }
