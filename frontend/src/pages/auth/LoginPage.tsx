@@ -7,6 +7,7 @@ import {
   AuthCard,
   AuthLayout,
   FormError,
+  fieldErrorProps,
 } from '@/components/auth/AuthLayout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -69,11 +70,12 @@ export default function LoginPage() {
       <AuthCard title={t('login.title')} description={t('login.subtitle')}>
         {isDemo && <DemoHint />}
         <form onSubmit={handleSubmit} className="space-y-4">
-          {error && <FormError>{error}</FormError>}
+          {error && <FormError id="login-error">{error}</FormError>}
 
           <div className="space-y-2">
             <Label htmlFor="email">{t('login.email-label')}</Label>
             <Input
+              {...fieldErrorProps('login-error', Boolean(error))}
               id="email"
               type="email"
               autoComplete="email"
@@ -96,6 +98,7 @@ export default function LoginPage() {
               </Link>
             </div>
             <Input
+              {...fieldErrorProps('login-error', Boolean(error))}
               id="password"
               type="password"
               autoComplete="current-password"

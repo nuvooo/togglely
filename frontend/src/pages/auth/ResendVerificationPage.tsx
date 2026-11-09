@@ -7,6 +7,7 @@ import {
   AuthCard,
   AuthLayout,
   FormError,
+  fieldErrorProps,
 } from '@/components/auth/AuthLayout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -68,10 +69,11 @@ export default function ResendVerificationPage() {
         description={t('auth-pages.resend.subtitle')}
       >
         <form onSubmit={handleSubmit} className="space-y-4">
-          {error && <FormError>{error}</FormError>}
+          {error && <FormError id="resend-error">{error}</FormError>}
           <div className="space-y-2">
             <Label htmlFor="resend-email">{t('login.email-label')}</Label>
             <Input
+              {...fieldErrorProps('resend-error', Boolean(error))}
               id="resend-email"
               type="email"
               autoComplete="email"

@@ -63,6 +63,14 @@ describe('Login', () => {
     useAuthStore.setState({ token: null, user: null })
   })
 
+  it('marks no field invalid before an error', () => {
+    renderAt('/login')
+    expect(screen.getByLabelText(/e-?mail/i)).not.toHaveAttribute('aria-invalid')
+    expect(screen.getByLabelText(/e-?mail/i)).not.toHaveAttribute(
+      'aria-describedby'
+    )
+  })
+
   it('has no sign-up link and tells users to ask for an invite', () => {
     renderAt('/login')
     expect(screen.queryByRole('link', { name: /sign up|register/i })).toBeNull()
@@ -116,6 +124,16 @@ describe('Login', () => {
       /invalid credentials/i
     )
     expect(screen.queryByTestId('where')).toBeNull()
+    // the fields point to the error for screen readers
+    const alert = screen.getByRole('alert')
+    for (const field of [
+      screen.getByLabelText(/e-?mail/i),
+      screen.getByLabelText(/^password$/i),
+    ]) {
+      expect(field).toHaveAttribute('aria-invalid', 'true')
+      expect(field.getAttribute('aria-describedby')).toContain(alert.id)
+      expect(field).toHaveAccessibleDescription(/invalid credentials/i)
+    }
     expect(
       screen.getByRole('heading', { level: 1, name: /welcome back/i })
     ).toBeInTheDocument()

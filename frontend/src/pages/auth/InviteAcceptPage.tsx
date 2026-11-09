@@ -9,6 +9,7 @@ import {
   AuthLayout,
   AuthLoading,
   FormError,
+  fieldErrorProps,
 } from '@/components/auth/AuthLayout'
 import { useLogout } from '@/components/shell/useLogout'
 import { Button } from '@/components/ui/button'
@@ -174,7 +175,7 @@ export default function InviteAcceptPage() {
       <AuthLayout>
         <AuthCard title={title} description={description}>
           <div className="space-y-4">
-            {error && <FormError>{error}</FormError>}
+            {error && <FormError id="invite-error">{error}</FormError>}
             {user?.email && (
               <p className="text-sm text-muted-foreground">
                 {t('invite.logged-in-as', { email: user.email })}
@@ -241,12 +242,13 @@ export default function InviteAcceptPage() {
     >
       <AuthCard title={title} description={description}>
         <form onSubmit={handleRegister} noValidate className="space-y-4">
-          {error && <FormError>{error}</FormError>}
+          {error && <FormError id="invite-error">{error}</FormError>}
 
           <div className="space-y-2">
             <Label htmlFor="invite-email">{t('invite.email')}</Label>
             {bound ? (
               <Input
+                {...fieldErrorProps('invite-error', Boolean(error))}
                 id="invite-email"
                 type="email"
                 value={info.email ?? ''}
@@ -256,6 +258,7 @@ export default function InviteAcceptPage() {
             ) : (
               <>
                 <Input
+                  {...fieldErrorProps('invite-error', Boolean(error), 'invite-email-hint')}
                   id="invite-email"
                   type="email"
                   autoComplete="email"
@@ -263,7 +266,6 @@ export default function InviteAcceptPage() {
                   onChange={(e) => setEmail(e.target.value)}
                   placeholder={t('login.email-placeholder')}
                   maxLength={254}
-                  aria-describedby="invite-email-hint"
                   required
                 />
                 <p
@@ -282,6 +284,7 @@ export default function InviteAcceptPage() {
                 {t('invite.first-name')}
               </Label>
               <Input
+                {...fieldErrorProps('invite-error', Boolean(error))}
                 id="invite-first-name"
                 autoComplete="given-name"
                 value={firstName}
@@ -293,6 +296,7 @@ export default function InviteAcceptPage() {
             <div className="space-y-2">
               <Label htmlFor="invite-last-name">{t('invite.last-name')}</Label>
               <Input
+                {...fieldErrorProps('invite-error', Boolean(error))}
                 id="invite-last-name"
                 autoComplete="family-name"
                 value={lastName}
@@ -305,12 +309,12 @@ export default function InviteAcceptPage() {
           <div className="space-y-2">
             <Label htmlFor="invite-password">{t('invite.password')}</Label>
             <Input
+              {...fieldErrorProps('invite-error', Boolean(error), 'invite-password-hint')}
               id="invite-password"
               type="password"
               autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              aria-describedby="invite-password-hint"
               required
             />
             <p
@@ -326,6 +330,7 @@ export default function InviteAcceptPage() {
               {t('invite.confirm-password')}
             </Label>
             <Input
+              {...fieldErrorProps('invite-error', Boolean(error))}
               id="invite-confirm"
               type="password"
               autoComplete="new-password"

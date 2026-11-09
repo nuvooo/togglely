@@ -8,6 +8,7 @@ import {
   AuthLayout,
   AuthLoading,
   FormError,
+  fieldErrorProps,
 } from '@/components/auth/AuthLayout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -129,16 +130,16 @@ export default function ResetPasswordPage() {
     <AuthLayout>
       <AuthCard title={t('reset.title')} description={t('reset.subtitle')}>
         <form onSubmit={handleSubmit} noValidate className="space-y-4">
-          {error && <FormError>{error}</FormError>}
+          {error && <FormError id="reset-error">{error}</FormError>}
           <div className="space-y-2">
             <Label htmlFor="reset-password">{t('reset.password-label')}</Label>
             <Input
+              {...fieldErrorProps('reset-error', Boolean(error), 'reset-password-hint')}
               id="reset-password"
               type="password"
               autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              aria-describedby="reset-password-hint"
               required
             />
             <p
@@ -151,6 +152,7 @@ export default function ResetPasswordPage() {
           <div className="space-y-2">
             <Label htmlFor="reset-confirm">{t('reset.confirm-label')}</Label>
             <Input
+              {...fieldErrorProps('reset-error', Boolean(error))}
               id="reset-confirm"
               type="password"
               autoComplete="new-password"

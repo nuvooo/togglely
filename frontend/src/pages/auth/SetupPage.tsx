@@ -3,7 +3,8 @@ import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
-import { AuthCard, AuthLayout, FormError } from '@/components/auth/AuthLayout'
+import { AuthCard, AuthLayout, FormError,
+  fieldErrorProps, } from '@/components/auth/AuthLayout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
@@ -77,11 +78,12 @@ export default function SetupPage() {
     <AuthLayout>
       <AuthCard title={t('setup.title')} description={t('setup.subtitle')}>
         <form onSubmit={handleSubmit} noValidate className="space-y-4">
-          {error && <FormError>{error}</FormError>}
+          {error && <FormError id="setup-error">{error}</FormError>}
 
           <div className="space-y-2">
             <Label htmlFor="setup-name">{t('setup.name-label')}</Label>
             <Input
+              {...fieldErrorProps('setup-error', Boolean(error))}
               id="setup-name"
               autoComplete="name"
               value={name}
@@ -95,6 +97,7 @@ export default function SetupPage() {
           <div className="space-y-2">
             <Label htmlFor="setup-email">{t('setup.email-label')}</Label>
             <Input
+              {...fieldErrorProps('setup-error', Boolean(error))}
               id="setup-email"
               type="email"
               autoComplete="email"
@@ -109,12 +112,12 @@ export default function SetupPage() {
           <div className="space-y-2">
             <Label htmlFor="setup-password">{t('setup.password-label')}</Label>
             <Input
+              {...fieldErrorProps('setup-error', Boolean(error), 'setup-password-hint')}
               id="setup-password"
               type="password"
               autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
-              aria-describedby="setup-password-hint"
               required
             />
             <p
@@ -130,6 +133,7 @@ export default function SetupPage() {
               {t('setup.confirm-password-label')}
             </Label>
             <Input
+              {...fieldErrorProps('setup-error', Boolean(error))}
               id="setup-confirm"
               type="password"
               autoComplete="new-password"
@@ -142,6 +146,7 @@ export default function SetupPage() {
           <div className="space-y-2">
             <Label htmlFor="setup-org">{t('setup.organization-label')}</Label>
             <Input
+              {...fieldErrorProps('setup-error', Boolean(error))}
               id="setup-org"
               value={organizationName}
               onChange={(e) => setOrganizationName(e.target.value)}
@@ -155,12 +160,12 @@ export default function SetupPage() {
             <div className="space-y-2">
               <Label htmlFor="setup-token">{t('setup.token-label')}</Label>
               <Input
+                {...fieldErrorProps('setup-error', Boolean(error), 'setup-token-hint')}
                 id="setup-token"
                 type="password"
                 autoComplete="off"
                 value={setupToken}
                 onChange={(e) => setSetupToken(e.target.value)}
-                aria-describedby="setup-token-hint"
                 className="font-mono"
                 required
               />

@@ -115,12 +115,16 @@ export const AUTH_LINK_CLASS =
 export function FormError({
   children,
   className,
+  id,
 }: {
   children: ReactNode
   className?: string
+  /** Referenced by the fields via `aria-describedby` (see `fieldErrorProps`). */
+  id?: string
 }) {
   return (
     <div
+      id={id}
       role="alert"
       className={cn(
         'flex items-start gap-2 rounded-md border border-destructive/30 bg-destructive/10 px-3 py-2 text-left text-sm text-destructive',
@@ -146,4 +150,21 @@ export function AuthLoading() {
       <Loader2 className="h-6 w-6 animate-spin text-muted-foreground" />
     </div>
   )
+}
+
+/**
+ * Accessibility props of a form field: while the form shows an error
+ * (`FormError` with `errorId`) the field is invalid and described by it,
+ * after its own hints (`describedBy`).
+ */
+export function fieldErrorProps(
+  errorId: string,
+  hasError: boolean,
+  ...describedBy: (string | undefined)[]
+): { 'aria-invalid'?: true; 'aria-describedby'?: string } {
+  const ids = [...describedBy, hasError ? errorId : undefined].filter(Boolean)
+  return {
+    ...(hasError ? { 'aria-invalid': true as const } : {}),
+    ...(ids.length ? { 'aria-describedby': ids.join(' ') } : {}),
+  }
 }

@@ -8,6 +8,7 @@ import {
   AuthLayout,
   AuthLoading,
   FormError,
+  fieldErrorProps,
 } from '@/components/auth/AuthLayout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -120,10 +121,11 @@ export default function ForgotPasswordPage() {
     >
       <AuthCard title={t('forgot.title')} description={t('forgot.subtitle')}>
         <form onSubmit={handleSubmit} className="space-y-4">
-          {error && <FormError>{error}</FormError>}
+          {error && <FormError id="forgot-error">{error}</FormError>}
           <div className="space-y-2">
             <Label htmlFor="forgot-email">{t('login.email-label')}</Label>
             <Input
+              {...fieldErrorProps('forgot-error', Boolean(error))}
               id="forgot-email"
               type="email"
               autoComplete="email"
