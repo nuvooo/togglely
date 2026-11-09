@@ -17,6 +17,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { getErrorMessage } from '@/lib/errors'
 import { useAuthStore } from '@/store/authStore'
+import { ROUTES } from '@/lib/routes'
 
 export default function Register() {
   const { t } = useTranslation()
@@ -51,7 +52,7 @@ export default function Register() {
 
     try {
       await register(firstName, lastName, email, password)
-      navigate('/overview')
+      navigate(ROUTES.overview)
     } catch (err: unknown) {
       setError(getErrorMessage(err))
     } finally {

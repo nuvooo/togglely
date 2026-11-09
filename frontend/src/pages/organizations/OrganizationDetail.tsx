@@ -14,7 +14,7 @@ import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { refreshWorkspace } from '@/lib/workspace'
-import { orgPath, projectPath } from '@/lib/routes'
+import { orgPath, projectPath, ROUTES } from '@/lib/routes'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -153,7 +153,7 @@ export default function OrganizationDetail() {
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Link
-          to="/orgs"
+          to={ROUTES.orgs}
           className="hover:text-foreground transition-colors"
         >
           {t('organization-detail.breadcrumb.organizations')}
@@ -168,7 +168,7 @@ export default function OrganizationDetail() {
       <div className="flex flex-col sm:flex-row sm:items-center sm:justify-between gap-4">
         <div className="flex items-center gap-4">
           <Button variant="outline" size="icon" asChild>
-            <Link to="/orgs">
+            <Link to={ROUTES.orgs}>
               <ArrowLeft className="h-4 w-4" />
             </Link>
           </Button>

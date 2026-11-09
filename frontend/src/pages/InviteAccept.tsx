@@ -15,6 +15,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import api from '@/lib/axios'
 import { getErrorMessage } from '@/lib/errors'
+import { ROUTES } from '@/lib/routes'
 
 interface InviteInfo {
   email: string
@@ -79,7 +80,7 @@ export default function InviteAccept() {
 
       // Redirect to dashboard after 2 seconds
       setTimeout(() => {
-        navigate('/overview')
+        navigate(ROUTES.overview)
       }, 2000)
     } catch (err: unknown) {
       setError(getErrorMessage(err))

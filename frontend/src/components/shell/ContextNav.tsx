@@ -1,7 +1,7 @@
 import { type ReactNode, useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useLocation } from 'react-router-dom'
-import { getArea, orgPath, projectPath } from '@/lib/routes'
+import { getArea, orgPath, projectPath, ROUTES } from '@/lib/routes'
 import { cn } from '@/lib/utils'
 import { useWorkspace } from '@/lib/workspace'
 import { useWorkspaceStore } from '@/store/workspaceStore'
@@ -77,7 +77,7 @@ export function ContextNav({ onNavigate }: { onNavigate?: () => void } = {}) {
     if (orgId) rememberOrg(orgId)
   }, [orgId, rememberOrg])
 
-  if (area.area === 'overview') return null
+  if (area.area === 'overview' || area.area === 'project-picker') return null
 
   let content: ReactNode = null
 
@@ -122,17 +122,21 @@ export function ContextNav({ onNavigate }: { onNavigate?: () => void } = {}) {
     )
   } else {
     const items: NavItem[] = [
-      { key: '', label: t('nav.profile'), href: '/account' },
-      { key: '#security', label: t('nav.profile-security'), href: '/account#security' },
-      { key: '#appearance', label: t('nav.appearance'), href: '/account#appearance' },
+      { key: '', label: t('nav.profile'), href: ROUTES.account },
+      { key: '#security', label: t('nav.profile-security'), href: `${ROUTES.account}#security` },
+      { key: '#appearance', label: t('nav.appearance'), href: `${ROUTES.account}#appearance` },
     ]
     content = (
       <>
         <div className="px-2.5 pb-3 text-sm font-semibold">{t('nav.account')}</div>
-        <NavList items={items} activeKey={hash} onNavigate={onNavigate} />
+        <NavList items={items} activeKey={hash === '#profile' ? '' : hash} onNavigate={onNavigate} />
       </>
     )
   }
 
-  return <aside className="h-full w-60 overflow-y-auto border-r bg-sidebar p-3">{content}</aside>
+  return (
+    <aside className="h-full w-60 overflow-y-auto border-r bg-sidebar p-3">
+      <nav aria-label={t('nav.context')}>{content}</nav>
+    </aside>
+  )
 }

@@ -23,7 +23,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import api from '@/lib/axios'
-import { orgPath } from '@/lib/routes'
+import { orgPath, ROUTES } from '@/lib/routes'
 import { useOrganizationStore } from '@/store/organizationStore'
 import { useWorkspaceStore } from '@/store/workspaceStore'
 
@@ -133,7 +133,7 @@ export default function OrganizationSettings() {
       forgetOrg(orgId, projectsByOrg(orgId).map((p) => p.id))
       // Keep the workspace switcher in sync.
       refreshWorkspace().catch(() => {})
-      navigate('/orgs')
+      navigate(ROUTES.orgs)
     } catch (error: any) {
       console.error('Failed to delete organization:', error)
       setMessage({
@@ -157,7 +157,7 @@ export default function OrganizationSettings() {
     return (
       <div className="flex flex-col items-center justify-center py-12">
         <p className="text-destructive">Organization not found</p>
-        <Button className="mt-4" onClick={() => navigate('/orgs')}>
+        <Button className="mt-4" onClick={() => navigate(ROUTES.orgs)}>
           Back to Organizations
         </Button>
       </div>
@@ -169,7 +169,7 @@ export default function OrganizationSettings() {
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Link
-          to="/orgs"
+          to={ROUTES.orgs}
           className="hover:text-foreground transition-colors"
         >
           {t('organization-detail.breadcrumb.organizations')}

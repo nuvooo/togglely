@@ -14,11 +14,11 @@ import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate } from 'react-router-dom'
 import { Dialog, DialogContent, DialogTitle } from '@/components/ui/dialog'
 import api from '@/lib/axios'
-import { getArea, orgPath, projectPath } from '@/lib/routes'
+import { flagPath, getArea, orgPath, projectPath, ROUTES } from '@/lib/routes'
 import { useWorkspace } from '@/lib/workspace'
 import { useThemeStore } from '@/store/themeStore'
 import { useWorkspaceStore } from '@/store/workspaceStore'
-import { hasModKey } from './platform'
+import { isPaletteShortcut, OPEN_COMMAND_PALETTE_EVENT } from './commandPaletteEvents'
 import { useLogout } from './useLogout'
 
 interface FlagHit {
@@ -33,11 +33,6 @@ interface NavEntry {
   href: string
 }
 
-const OPEN_EVENT = 'togglely:open-command-palette'
-
-/** Opens the palette from anywhere (e.g. the search button in the top bar). */
-export const openCommandPalette = () => document.dispatchEvent(new Event(OPEN_EVENT))
-
 /**
  * Item values carry ids so they stay unique; matching uses the human-readable
  * keywords only, so typing never matches against ids.
@@ -50,8 +45,11 @@ const itemClass =
 const groupClass =
   '[&_[cmdk-group-heading]]:px-2 [&_[cmdk-group-heading]]:py-1.5 [&_[cmdk-group-heading]]:text-[10px] [&_[cmdk-group-heading]]:font-medium [&_[cmdk-group-heading]]:uppercase [&_[cmdk-group-heading]]:tracking-wider [&_[cmdk-group-heading]]:text-muted-foreground'
 
-/** Global Ctrl/Cmd+K palette: navigation, projects, flags, actions. */
-export function CommandPalette() {
+/**
+ * Global Ctrl/Cmd+K palette: navigation, projects, flags, actions.
+ * Loaded lazily by `CommandPaletteLauncher`; `initialOpen` opens it on first load.
+ */
+export function CommandPalette({ initialOpen = false }: { initialOpen?: boolean } = {}) {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { pathname } = useLocation()
@@ -59,7 +57,7 @@ export function CommandPalette() {
   const lastOrgId = useWorkspaceStore((s) => s.lastOrgId)
   const toggleTheme = useThemeStore((s) => s.toggleTheme)
   const logout = useLogout()
-  const [open, setOpen] = useState(false)
+  const [open, setOpen] = useState(initialOpen)
   const [flags, setFlags] = useState<FlagHit[]>([])
   const area = getArea(pathname)
   const projectId = area.area === 'project' ? area.id : undefined
@@ -67,16 +65,16 @@ export function CommandPalette() {
 
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.repeat || e.key.toLowerCase() !== 'k' || !hasModKey(e)) return
+      if (!isPaletteShortcut(e)) return
       e.preventDefault()
       setOpen((o) => !o)
     }
     const onOpen = () => setOpen(true)
     document.addEventListener('keydown', onKey)
-    document.addEventListener(OPEN_EVENT, onOpen)
+    document.addEventListener(OPEN_COMMAND_PALETTE_EVENT, onOpen)
     return () => {
       document.removeEventListener('keydown', onKey)
-      document.removeEventListener(OPEN_EVENT, onOpen)
+      document.removeEventListener(OPEN_COMMAND_PALETTE_EVENT, onOpen)
     }
   }, [])
 
@@ -102,7 +100,7 @@ export function CommandPalette() {
     fn()
   }
 
-  const nav: NavEntry[] = [{ id: 'overview', label: t('nav.overview'), href: '/overview' }]
+  const nav: NavEntry[] = [{ id: 'overview', label: t('nav.overview'), href: ROUTES.overview }]
   if (projectId) {
     const project = projects.find((p) => p.id === projectId)
     const prefix = project ? `${project.name} · ` : ''
@@ -130,7 +128,7 @@ export function CommandPalette() {
       { id: 'o-settings', label: prefix + t('nav.settings'), href: orgPath(orgId, 'settings') }
     )
   }
-  nav.push({ id: 'account', label: t('nav.account'), href: '/account' })
+  nav.push({ id: 'account', label: t('nav.account'), href: ROUTES.account })
 
   return (
     <Dialog open={open} onOpenChange={setOpen}>
@@ -156,7 +154,7 @@ export function CommandPalette() {
                     key={f.id}
                     value={`flag:${f.id}`}
                     keywords={[f.name, f.key]}
-                    onSelect={() => run(() => navigate(`${projectPath(projectId, 'flags')}/${f.id}`))}
+                    onSelect={() => run(() => navigate(flagPath(projectId, f.id)))}
                     className={itemClass}
                   >
                     <Flag className="h-4 w-4 text-muted-foreground" />
@@ -249,3 +247,5 @@ export function CommandPalette() {
     </Dialog>
   )
 }
+
+export default CommandPalette

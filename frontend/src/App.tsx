@@ -11,6 +11,7 @@ import {
 } from './components/routing/LegacyRedirects'
 import { ProjectQueryBridge } from './components/routing/ProjectQueryBridge'
 import AppShell from './components/shell/AppShell'
+import { ROUTES } from './lib/routes'
 import { useAuthStore } from './store/authStore'
 
 const ApiKeys = lazy(() => import('./pages/ApiKeys'))
@@ -26,6 +27,7 @@ const OrganizationList = lazy(() => import('./pages/organizations/OrganizationLi
 const OrganizationMembers = lazy(() => import('./pages/organizations/OrganizationMembers'))
 const OrganizationSettings = lazy(() => import('./pages/organizations/OrganizationSettings'))
 const ProjectDetail = lazy(() => import('./pages/ProjectDetail'))
+const ProjectPicker = lazy(() => import('./pages/ProjectPicker'))
 const BrandFlags = lazy(() => import('./pages/projects/BrandFlags'))
 const ProjectSettings = lazy(() => import('./pages/projects/ProjectSettings'))
 const Register = lazy(() => import('./pages/Register'))
@@ -45,32 +47,29 @@ function App() {
     <ErrorBoundary>
       <Suspense fallback={<div className="min-h-screen flex items-center justify-center"><div className="animate-spin rounded-full h-8 w-8 border-b-2 border-primary" /></div>}>
       <Routes>
-      {/* Public Routes */}
-      <Route
-        path="/"
-        element={token ? <Navigate to="/overview" /> : <Navigate to="/login" />}
-      />
+      {/* Public Routes. `/` itself is handled by the protected index route below:
+          logged-out users are sent to /login by ProtectedRoute. */}
       <Route
         path="/login"
-        element={!token ? <Login /> : <Navigate to="/overview" />}
+        element={!token ? <Login /> : <Navigate to={ROUTES.overview} />}
       />
       <Route
         path="/register"
-        element={!token ? <Register /> : <Navigate to="/overview" />}
+        element={!token ? <Register /> : <Navigate to={ROUTES.overview} />}
       />
       <Route
         path="/forgot-password"
-        element={!token ? <ForgotPassword /> : <Navigate to="/overview" />}
+        element={!token ? <ForgotPassword /> : <Navigate to={ROUTES.overview} />}
       />
       <Route
         path="/reset-password"
-        element={!token ? <ResetPassword /> : <Navigate to="/overview" />}
+        element={!token ? <ResetPassword /> : <Navigate to={ROUTES.overview} />}
       />
       <Route path="/invite/:token" element={<InviteAccept />} />
       <Route path="/verify-email/:token" element={<VerifyEmail />} />
       <Route
         path="/resend-verification"
-        element={!token ? <ResendVerification /> : <Navigate to="/overview" />}
+        element={!token ? <ResendVerification /> : <Navigate to={ROUTES.overview} />}
       />
       {/* Protected Routes */}
       <Route
@@ -81,14 +80,15 @@ function App() {
           </ProtectedRoute>
         }
       >
-        <Route index element={<Navigate to="/overview" replace />} />
+        <Route index element={<Navigate to={ROUTES.overview} replace />} />
         <Route path="overview" element={<Dashboard />} />
+        <Route path="projects" element={<ProjectPicker />} />
 
         {/* Project area */}
         <Route path="projects/:projectId">
           <Route index element={<ParamRedirect to="/projects/:projectId/flags" />} />
           <Route path="flags" element={<ProjectDetail />} />
-          <Route path="flags/:id" element={<FeatureFlagDetail />} />
+          <Route path="flags/:flagId" element={<FeatureFlagDetail />} />
           <Route path="experiments" element={<ProjectQueryBridge><ExperimentsList /></ProjectQueryBridge>} />
           <Route path="experiments/new" element={<ProjectQueryBridge><CreateExperiment /></ProjectQueryBridge>} />
           <Route path="experiments/:id" element={<ExperimentDetail />} />
@@ -114,24 +114,24 @@ function App() {
         <Route path="account" element={<Settings />} />
 
         {/* Legacy URLs (bookmarks, emails) */}
-        <Route path="dashboard" element={<Navigate to="/overview" replace />} />
-        <Route path="organizations" element={<Navigate to="/orgs" replace />} />
-        <Route path="organizations/new" element={<Navigate to="/orgs/new" replace />} />
+        <Route path="dashboard" element={<Navigate to={ROUTES.overview} replace />} />
+        <Route path="organizations" element={<Navigate to={ROUTES.orgs} replace />} />
+        <Route path="organizations/new" element={<Navigate to={ROUTES.newOrg} replace />} />
         <Route path="organizations/:orgId" element={<ParamRedirect to="/orgs/:orgId/projects" />} />
         <Route path="organizations/:orgId/settings" element={<ParamRedirect to="/orgs/:orgId/settings" />} />
         <Route path="organizations/:orgId/members" element={<ParamRedirect to="/orgs/:orgId/members" />} />
         <Route path="organizations/:orgId/projects/:projectId" element={<ParamRedirect to="/projects/:projectId/flags" />} />
         <Route path="projects/:projectId/brands/:brandId/flags" element={<ParamRedirect to="/projects/:projectId/brands/:brandId" />} />
-        <Route path="feature-flags" element={<Navigate to="/overview" replace />} />
+        <Route path="feature-flags" element={<Navigate to={ROUTES.overview} replace />} />
         <Route path="feature-flags/:id" element={<LegacyFlagRedirect />} />
         <Route path="experiments" element={<LegacyExperimentsRedirect />} />
         <Route path="experiments/new" element={<LegacyExperimentsRedirect create />} />
         <Route path="experiments/:id" element={<LegacyExperimentRedirect />} />
-        <Route path="api-keys" element={<Navigate to="/orgs" replace />} />
-        <Route path="sdk-tester" element={<Navigate to="/overview" replace />} />
-        <Route path="settings" element={<Navigate to="/account" replace />} />
+        <Route path="api-keys" element={<Navigate to={ROUTES.orgs} replace />} />
+        <Route path="sdk-tester" element={<Navigate to={ROUTES.overview} replace />} />
+        <Route path="settings" element={<Navigate to={ROUTES.account} replace />} />
 
-        <Route path="*" element={<Navigate to="/overview" replace />} />
+        <Route path="*" element={<Navigate to={ROUTES.overview} replace />} />
       </Route>
       </Routes>
       </Suspense>

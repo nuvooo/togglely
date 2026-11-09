@@ -30,7 +30,7 @@ import {
 } from '@/components/ui/select'
 import { Separator } from '@/components/ui/separator'
 import api from '@/lib/axios'
-import { orgPath } from '@/lib/routes'
+import { orgPath, ROUTES } from '@/lib/routes'
 
 interface Member {
   id: string
@@ -230,7 +230,7 @@ export default function OrganizationMembers() {
     return (
       <div className="flex flex-col items-center justify-center py-12">
         <p className="text-destructive">Organization not found</p>
-        <Button className="mt-4" onClick={() => navigate('/orgs')}>
+        <Button className="mt-4" onClick={() => navigate(ROUTES.orgs)}>
           Back to Organizations
         </Button>
       </div>
@@ -242,7 +242,7 @@ export default function OrganizationMembers() {
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Link
-          to="/orgs"
+          to={ROUTES.orgs}
           className="hover:text-foreground transition-colors"
         >
           Organizations

@@ -3,7 +3,9 @@ import { Menu, Search } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Outlet, useLocation, useNavigate } from 'react-router-dom'
+import { LanguageSwitcher } from '@/components/LanguageSwitcher'
 import PendingInvitesBanner from '@/components/PendingInvitesBanner'
+import { ThemeToggle } from '@/components/ThemeToggle'
 import { Button } from '@/components/ui/button'
 import {
   DropdownMenu,
@@ -15,9 +17,10 @@ import {
 } from '@/components/ui/dropdown-menu'
 import { Kbd } from '@/components/ui/kbd'
 import { TooltipProvider } from '@/components/ui/tooltip'
-import { getArea } from '@/lib/routes'
+import { getArea, ROUTES } from '@/lib/routes'
 import { useAuthStore } from '@/store/authStore'
-import { CommandPalette, openCommandPalette } from './CommandPalette'
+import { openCommandPalette } from './commandPaletteEvents'
+import { CommandPaletteLauncher } from './CommandPaletteLauncher'
 import { ContextNav } from './ContextNav'
 import { shortcutLabel } from './platform'
 import { Rail } from './Rail'
@@ -31,7 +34,8 @@ export default function AppShell() {
   const user = useAuthStore((s) => s.user)
   const handleLogout = useLogout()
   const [drawerOpen, setDrawerOpen] = useState(false)
-  const hasContext = getArea(pathname).area !== 'overview'
+  const area = getArea(pathname).area
+  const hasContext = area !== 'overview' && area !== 'project-picker'
 
   // Close the mobile drawer on navigation (account sections differ only by hash).
   // biome-ignore lint/correctness/useExhaustiveDependencies: pathname and hash are the triggers
@@ -50,6 +54,16 @@ export default function AppShell() {
 
   return (
     <TooltipProvider delayDuration={300}>
+      <a
+        href="#main-content"
+        className="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[60] focus:rounded-md focus:bg-background focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:shadow-md focus:ring-2 focus:ring-ring"
+        onClick={(e) => {
+          e.preventDefault()
+          document.getElementById('main-content')?.focus()
+        }}
+      >
+        {t('nav.skip-to-content')}
+      </a>
       <div className="flex h-dvh overflow-hidden bg-background text-foreground">
         <div className="hidden md:block">
           <Rail />
@@ -96,6 +110,8 @@ export default function AppShell() {
               <span className="flex-1 text-left">{t('cmd.search')}…</span>
               <Kbd>{shortcutLabel('k')}</Kbd>
             </button>
+            <LanguageSwitcher />
+            <ThemeToggle />
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
                 <button
@@ -112,7 +128,7 @@ export default function AppShell() {
                   <div className="truncate text-xs text-muted-foreground">{user?.email}</div>
                 </DropdownMenuLabel>
                 <DropdownMenuSeparator />
-                <DropdownMenuItem onClick={() => navigate('/account')}>{t('nav.account')}</DropdownMenuItem>
+                <DropdownMenuItem onClick={() => navigate(ROUTES.account)}>{t('nav.account')}</DropdownMenuItem>
                 <DropdownMenuItem onClick={handleLogout}>{t('nav.logout')}</DropdownMenuItem>
               </DropdownMenuContent>
             </DropdownMenu>
@@ -120,7 +136,7 @@ export default function AppShell() {
 
           <PendingInvitesBanner />
 
-          <main className="min-h-0 flex-1 overflow-y-auto">
+          <main id="main-content" tabIndex={-1} className="min-h-0 flex-1 overflow-y-auto outline-none">
             <div className="mx-auto w-full max-w-7xl px-4 py-5 md:px-8 md:py-6">
               <Outlet />
             </div>
@@ -131,7 +147,7 @@ export default function AppShell() {
           </div>
         </div>
       </div>
-      <CommandPalette />
+      <CommandPaletteLauncher />
     </TooltipProvider>
   )
 }

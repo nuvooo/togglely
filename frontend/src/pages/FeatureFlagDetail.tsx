@@ -20,7 +20,7 @@ import { useCallback, useEffect, useState } from 'react'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import api from '@/lib/api'
-import { projectPath } from '@/lib/routes'
+import { projectPath, ROUTES } from '@/lib/routes'
 import { getErrorMessage } from '@/lib/errors'
 import {
   CONDITION_OPERATORS,
@@ -97,12 +97,12 @@ const normalizeEnvironments = (raw: any[]): EnvironmentState[] =>
 const defaultServeValue = (type: FlagType) => (type === 'BOOLEAN' ? 'true' : '')
 
 export default function FeatureFlagDetail() {
-  const { id, projectId } = useParams<{ id: string; projectId: string }>()
-  const flagsHref = projectId ? projectPath(projectId, 'flags') : '/overview'
+  const { flagId: flagIdParam, projectId } = useParams<{ flagId: string; projectId: string }>()
+  const flagsHref = projectId ? projectPath(projectId, 'flags') : ROUTES.overview
   const navigate = useNavigate()
 
   // Validate flagId early
-  const flagId = isValidObjectId(id) ? id : null
+  const flagId = isValidObjectId(flagIdParam) ? flagIdParam : null
 
   const [flag, setFlag] = useState<FeatureFlag | null>(null)
   const [environmentStates, setEnvironmentStates] = useState<

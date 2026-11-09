@@ -1,5 +1,6 @@
 import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
+import { onSessionExpired } from '@/lib/session'
 
 interface WorkspaceState {
   lastProjectId: string | null
@@ -37,3 +38,6 @@ export const useWorkspaceStore = create<WorkspaceState>()(
     { name: 'togglely-workspace' }
   )
 )
+
+onSessionExpired(() => useWorkspaceStore.getState().reset())
+

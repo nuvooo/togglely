@@ -12,7 +12,7 @@ import {
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
-import { orgPath } from '@/lib/routes'
+import { orgPath, ROUTES } from '@/lib/routes'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -53,7 +53,7 @@ export default function OrganizationList() {
           </p>
         </div>
         <Button asChild>
-          <Link to="/orgs/new">
+          <Link to={ROUTES.newOrg}>
             <Plus className="w-4 h-4 mr-2" />
             {t('organizations.new-organization')}
           </Link>
@@ -87,7 +87,7 @@ export default function OrganizationList() {
               {t('organizations.no-organizations-description')}
             </p>
             <Button asChild size="lg">
-              <Link to="/orgs/new">
+              <Link to={ROUTES.newOrg}>
                 <Plus className="w-4 h-4 mr-2" />
                 {t('organizations.create-cta')}
               </Link>

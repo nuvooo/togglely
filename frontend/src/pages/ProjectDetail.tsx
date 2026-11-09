@@ -26,7 +26,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import api from '@/lib/axios'
-import { orgPath, projectPath } from '@/lib/routes'
+import { flagPath, orgPath, projectPath, ROUTES } from '@/lib/routes'
 
 // Helper to validate MongoDB ObjectID format (24-char hex)
 const isValidObjectId = (id: string | undefined | null): id is string => {
@@ -419,7 +419,7 @@ export default function ProjectDetail() {
     return (
       <div className="flex flex-col items-center justify-center py-12">
         <p className="text-destructive">Invalid project ID</p>
-        <Button className="mt-4" onClick={() => navigate('/orgs')}>
+        <Button className="mt-4" onClick={() => navigate(ROUTES.orgs)}>
           Back to Organizations
         </Button>
       </div>
@@ -440,7 +440,7 @@ export default function ProjectDetail() {
         <p className="text-muted-foreground">Project not found</p>
         <Button
           className="mt-4"
-          onClick={() => navigate('/orgs')}
+          onClick={() => navigate(ROUTES.orgs)}
         >
           Back to Organizations
         </Button>
@@ -453,7 +453,7 @@ export default function ProjectDetail() {
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Link
-          to="/orgs"
+          to={ROUTES.orgs}
           className="hover:text-foreground transition-colors"
         >
           {t('organization-detail.breadcrumb.organizations')}
@@ -630,7 +630,7 @@ export default function ProjectDetail() {
                     <div>
                       <h3 className="font-semibold text-lg">
                         <Link
-                          to={`${projectPath(projectId, 'flags')}/${flag.id}`}
+                          to={flagPath(projectId, flag.id)}
                           className="hover:underline"
                         >
                           {flag.name}

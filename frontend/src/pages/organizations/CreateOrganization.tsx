@@ -9,7 +9,7 @@ import { useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router-dom'
 import { refreshWorkspace } from '@/lib/workspace'
-import { orgPath } from '@/lib/routes'
+import { orgPath, ROUTES } from '@/lib/routes'
 import { Button } from '@/components/ui/button'
 import {
   Card,
@@ -55,7 +55,7 @@ export default function CreateOrganization() {
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Link
-          to="/orgs"
+          to={ROUTES.orgs}
           className="hover:text-foreground transition-colors"
         >
           {t('organization-detail.breadcrumb.organizations')}
@@ -69,7 +69,7 @@ export default function CreateOrganization() {
       {/* Header */}
       <div className="flex items-center gap-4">
         <Button variant="outline" size="icon" asChild>
-          <Link to="/orgs">
+          <Link to={ROUTES.orgs}>
             <ArrowLeft className="h-4 w-4" />
           </Link>
         </Button>
@@ -163,7 +163,7 @@ export default function CreateOrganization() {
                 )}
               </Button>
               <Button type="button" variant="ghost" asChild>
-                <Link to="/orgs">{t('common.cancel')}</Link>
+                <Link to={ROUTES.orgs}>{t('common.cancel')}</Link>
               </Button>
             </div>
           </form>

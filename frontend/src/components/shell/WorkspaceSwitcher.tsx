@@ -4,9 +4,10 @@ import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Skeleton } from '@/components/ui/skeleton'
-import { orgPath, projectPath } from '@/lib/routes'
+import { orgPath, projectPath, ROUTES } from '@/lib/routes'
 import { cn } from '@/lib/utils'
 import { useWorkspace, type WorkspaceProject } from '@/lib/workspace'
+import { WorkspaceError } from './WorkspaceError'
 
 function Avatar({ name }: { name: string }) {
   return (
@@ -35,7 +36,7 @@ export function WorkspaceSwitcher({ kind, currentId }: { kind: 'project' | 'org'
   const { t } = useTranslation()
   const navigate = useNavigate()
   const [open, setOpen] = useState(false)
-  const { projects, organizations, isLoading } = useWorkspace()
+  const { projects, organizations, isLoading, error } = useWorkspace()
 
   const currentProject = kind === 'project' ? projects.find((p) => p.id === currentId) : undefined
   const current = kind === 'project' ? currentProject : organizations.find((o) => o.id === currentId)
@@ -78,6 +79,9 @@ export function WorkspaceSwitcher({ kind, currentId }: { kind: 'project' | 'org'
         <Skeleton className="h-6 w-3/5" />
       </div>
     )
+  } else if (error && projects.length === 0 && organizations.length === 0) {
+    // A failed refresh keeps the previous data; only an empty cache shows the error.
+    body = <WorkspaceError compact />
   } else if (kind === 'project') {
     body =
       projectGroups.length === 0 ? (
@@ -104,7 +108,7 @@ export function WorkspaceSwitcher({ kind, currentId }: { kind: 'project' | 'org'
         ))}
         <button
           type="button"
-          onClick={() => go('/orgs/new')}
+          onClick={() => go(ROUTES.newOrg)}
           className="mt-1 flex w-full items-center gap-2 rounded-md border-t px-2 py-1.5 text-sm text-muted-foreground hover:bg-accent hover:text-foreground"
         >
           <Plus className="h-4 w-4" /> {t('nav.new-org')}

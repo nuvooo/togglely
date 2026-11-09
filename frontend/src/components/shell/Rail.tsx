@@ -2,7 +2,7 @@ import { Building2, Flag, LayoutGrid, UserRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Link, useLocation } from 'react-router-dom'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { getArea, orgPath, projectPath } from '@/lib/routes'
+import { getArea, orgPath, projectPath, ROUTES } from '@/lib/routes'
 import { cn } from '@/lib/utils'
 import { useWorkspaceStore } from '@/store/workspaceStore'
 
@@ -14,23 +14,25 @@ export function Rail({ orientation = 'side' }: { orientation?: 'side' | 'bottom'
   const { t } = useTranslation()
   const { pathname } = useLocation()
   const { lastProjectId, lastOrgId } = useWorkspaceStore()
-  const current = getArea(pathname).area
+  const activeArea = getArea(pathname).area
+  // The project picker belongs to the project area.
+  const current = activeArea === 'project-picker' ? 'project' : activeArea
 
   const items = [
-    { area: 'overview', label: t('nav.overview'), icon: LayoutGrid, href: '/overview' },
+    { area: 'overview', label: t('nav.overview'), icon: LayoutGrid, href: ROUTES.overview },
     {
       area: 'project',
       label: t('nav.project'),
       icon: Flag,
-      href: lastProjectId ? projectPath(lastProjectId) : '/overview',
+      href: lastProjectId ? projectPath(lastProjectId) : ROUTES.projects,
     },
     {
       area: 'org',
       label: t('nav.organization'),
       icon: Building2,
-      href: lastOrgId ? orgPath(lastOrgId) : '/orgs',
+      href: lastOrgId ? orgPath(lastOrgId) : ROUTES.orgs,
     },
-    { area: 'account', label: t('nav.account'), icon: UserRound, href: '/account' },
+    { area: 'account', label: t('nav.account'), icon: UserRound, href: ROUTES.account },
   ] as const
 
   if (orientation === 'bottom') {
@@ -61,7 +63,7 @@ export function Rail({ orientation = 'side' }: { orientation?: 'side' | 'bottom'
       aria-label={t('nav.main')}
     >
       <Link
-        to="/overview"
+        to={ROUTES.overview}
         className="mb-3 grid h-8 w-8 place-items-center rounded-lg bg-primary text-sm font-bold text-primary-foreground"
         aria-label={t('common.app-name')}
       >

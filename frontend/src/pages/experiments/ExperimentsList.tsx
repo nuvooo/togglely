@@ -3,7 +3,7 @@ import { Link, useNavigate, useSearchParams } from 'react-router-dom'
 import { FlaskConical, Plus } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import api from '@/lib/api'
-import { projectPath } from '@/lib/routes'
+import { experimentPath, projectPath } from '@/lib/routes'
 
 interface Project {
   id: string
@@ -189,7 +189,7 @@ export default function ExperimentsList() {
                 <tr key={exp.id} className="hover:bg-muted/50 transition-colors">
                   <td className="px-4 py-3">
                     <Link
-                      to={`${projectPath(projectId, 'experiments')}/${exp.id}`}
+                      to={experimentPath(projectId, exp.id)}
                       className="text-sm font-medium text-primary hover:underline"
                     >
                       {exp.name}

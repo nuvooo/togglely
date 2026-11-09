@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { Navigate, useLocation, useParams, useSearchParams } from 'react-router-dom'
 import api from '@/lib/axios'
-import { projectPath } from '@/lib/routes'
+import { experimentPath, flagPath, projectPath, ROUTES } from '@/lib/routes'
 
 /**
  * Redirects to `to`, replacing `:param` placeholders with current params.
@@ -16,14 +16,14 @@ export function ParamRedirect({ to }: { to: string }) {
 
 /** Old `/feature-flags/:id` links: look up the flag's project first. */
 export function LegacyFlagRedirect() {
-  const { id } = useParams()
+  const { id = '' } = useParams()
   const [target, setTarget] = useState<string | null>(null)
 
   useEffect(() => {
     api
       .get(`/feature-flags/${id}`)
-      .then((res) => setTarget(`${projectPath(res.data.featureFlag.projectId, 'flags')}/${id}`))
-      .catch(() => setTarget('/overview'))
+      .then((res) => setTarget(flagPath(res.data.featureFlag.projectId, id)))
+      .catch(() => setTarget(ROUTES.overview))
   }, [id])
 
   return target ? <Navigate to={target} replace /> : null
@@ -36,14 +36,14 @@ export function LegacyFlagRedirect() {
 export function LegacyExperimentsRedirect({ create = false }: { create?: boolean }) {
   const [searchParams] = useSearchParams()
   const projectId = searchParams.get('projectId')
-  if (!projectId) return <Navigate to="/overview" replace />
+  if (!projectId) return <Navigate to={ROUTES.overview} replace />
   const base = projectPath(projectId, 'experiments')
   return <Navigate to={create ? `${base}/new` : base} replace />
 }
 
 /** Old `/experiments/:id` links: look up the experiment's project first. */
 export function LegacyExperimentRedirect() {
-  const { id } = useParams()
+  const { id = '' } = useParams()
   const [target, setTarget] = useState<string | null>(null)
 
   useEffect(() => {
@@ -51,9 +51,9 @@ export function LegacyExperimentRedirect() {
       .get(`/experiments/${id}`)
       .then((res) => {
         const projectId: string | undefined = res.data?.projectId
-        setTarget(projectId ? `${projectPath(projectId, 'experiments')}/${id}` : '/overview')
+        setTarget(projectId ? experimentPath(projectId, id) : ROUTES.overview)
       })
-      .catch(() => setTarget('/overview'))
+      .catch(() => setTarget(ROUTES.overview))
   }, [id])
 
   return target ? <Navigate to={target} replace /> : null

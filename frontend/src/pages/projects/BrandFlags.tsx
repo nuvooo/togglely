@@ -18,7 +18,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Separator } from '@/components/ui/separator'
 import api from '@/lib/axios'
-import { projectPath } from '@/lib/routes'
+import { projectPath, ROUTES } from '@/lib/routes'
 
 interface Brand {
   id: string
@@ -179,7 +179,7 @@ export default function BrandFlags() {
       {/* Breadcrumb */}
       <div className="flex items-center gap-2 text-sm text-muted-foreground">
         <Link
-          to="/orgs"
+          to={ROUTES.orgs}
           className="hover:text-foreground transition-colors"
         >
           Organizations

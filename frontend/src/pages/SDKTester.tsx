@@ -10,7 +10,7 @@ import clsx from 'clsx'
 import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import api from '@/lib/api'
-import { projectPath } from '@/lib/routes'
+import { projectPath, ROUTES } from '@/lib/routes'
 
 interface Project {
   id: string
@@ -211,7 +211,7 @@ console.log('Feature enabled:', isEnabled);`
       {/* Header */}
       <div>
         <Link
-          to={projectId ? projectPath(projectId, 'flags') : '/overview'}
+          to={projectId ? projectPath(projectId, 'flags') : ROUTES.overview}
           className="inline-flex items-center text-sm text-muted-foreground hover:text-foreground"
         >
           <ArrowLeftIcon className="mr-1 h-4 w-4" />

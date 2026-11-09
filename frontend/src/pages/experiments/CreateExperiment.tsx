@@ -4,7 +4,7 @@ import { FlaskConical, Plus, Trash2 } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import api from '@/lib/api'
-import { projectPath } from '@/lib/routes'
+import { experimentPath } from '@/lib/routes'
 
 interface Flag {
   id: string
@@ -119,7 +119,7 @@ export default function CreateExperiment() {
         variants,
       })
       toast.success(t('experiments.created', 'Experiment created successfully'))
-      navigate(`${projectPath(projectId, 'experiments')}/${res.data.id}`)
+      navigate(experimentPath(projectId, res.data.id))
     } catch (err: any) {
       toast.error(err.response?.data?.message || 'Failed to create experiment')
     } finally {

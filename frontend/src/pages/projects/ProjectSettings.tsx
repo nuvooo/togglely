@@ -51,7 +51,7 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import api from '@/lib/axios'
-import { orgPath, projectPath } from '@/lib/routes'
+import { brandPath, orgPath, projectPath, ROUTES } from '@/lib/routes'
 import { useWorkspaceStore } from '@/store/workspaceStore'
 
 interface Project {
@@ -242,7 +242,7 @@ export default function ProjectSettings() {
       useWorkspaceStore.getState().forgetProject(projectId)
       // Keep the workspace switcher in sync.
       refreshWorkspace().catch(() => {})
-      navigate(project?.organizationId ? orgPath(project.organizationId) : '/orgs')
+      navigate(project?.organizationId ? orgPath(project.organizationId) : ROUTES.orgs)
     } catch (error: any) {
       console.error('Failed to delete project:', error)
       setMessage({
@@ -441,7 +441,7 @@ export default function ProjectSettings() {
     return (
       <div className="flex flex-col items-center justify-center py-12">
         <p className="text-destructive">Project not found</p>
-        <Button className="mt-4" onClick={() => navigate('/orgs')}>
+        <Button className="mt-4" onClick={() => navigate(ROUTES.orgs)}>
           Back to Organizations
         </Button>
       </div>
@@ -776,7 +776,7 @@ export default function ProjectSettings() {
                           size="sm"
                           onClick={() =>
                             navigate(
-                              `${projectPath(projectId, 'brands')}/${brand.id}`
+                              brandPath(projectId, brand.id)
                             )
                           }
                         >

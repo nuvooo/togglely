@@ -49,3 +49,21 @@ describe('ContextNav', () => {
     expect(container).toBeEmptyDOMElement()
   })
 })
+
+describe('ContextNav landmarks', () => {
+  it('exposes a labelled navigation landmark', () => {
+    renderAt('/projects/p1/flags')
+    expect(screen.getByRole('navigation', { name: /bereichsnavigation|section navigation/i })).toBeInTheDocument()
+  })
+
+  it('renders nothing on the project picker', () => {
+    const { container } = renderAt('/projects')
+    expect(container).toBeEmptyDOMElement()
+  })
+
+  it('links account sections to their anchors', () => {
+    renderAt('/account')
+    expect(screen.getByRole('link', { name: /sicherheit|security/i })).toHaveAttribute('href', '/account#security')
+    expect(screen.getByRole('link', { name: /darstellung|appearance/i })).toHaveAttribute('href', '/account#appearance')
+  })
+})

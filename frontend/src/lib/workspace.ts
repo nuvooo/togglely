@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useSyncExternalStore } from 'react'
 import api from '@/lib/axios'
+import { onSessionExpired } from '@/lib/session'
 
 export interface WorkspaceProject {
   id: string
@@ -74,7 +75,7 @@ function startLoad(): Promise<WorkspaceData> {
 }
 
 /**
- * Clears the cache; mounted consumers drop their data. For logout and tests only —
+ * Clears the cache; mounted consumers drop their data. For logout, session expiry and tests only —
  * code that creates projects/orgs must call `refreshWorkspace()` instead.
  */
 export function resetWorkspaceCache() {
@@ -82,6 +83,8 @@ export function resetWorkspaceCache() {
   inflight = null
   setSnapshot(EMPTY)
 }
+
+onSessionExpired(resetWorkspaceCache)
 
 /** Reloads projects/orgs and notifies all mounted consumers. Rejects if the reload fails. */
 export async function refreshWorkspace(): Promise<void> {

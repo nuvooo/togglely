@@ -11,7 +11,7 @@ import {
 import { useEffect } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
-import { orgPath } from '@/lib/routes'
+import { orgPath, ROUTES } from '@/lib/routes'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import {
@@ -43,7 +43,7 @@ export default function Dashboard() {
           <p className="text-muted-foreground mt-1">{t('dashboard.welcome')}</p>
         </div>
         <Button asChild>
-          <Link to="/orgs/new">
+          <Link to={ROUTES.newOrg}>
             <Plus className="w-4 h-4 mr-2" />
             {t('dashboard.new-organization')}
           </Link>
@@ -128,7 +128,7 @@ export default function Dashboard() {
             {t('dashboard.organizations.title')}
           </h2>
           <Button variant="ghost" size="sm" asChild>
-            <Link to="/orgs">
+            <Link to={ROUTES.orgs}>
               {t('dashboard.organizations.view-all')}
               <ArrowRight className="w-4 h-4 ml-1" />
             </Link>
@@ -162,7 +162,7 @@ export default function Dashboard() {
                 {t('dashboard.organizations.create-first')}
               </p>
               <Button asChild>
-                <Link to="/orgs/new">
+                <Link to={ROUTES.newOrg}>
                   <Plus className="w-4 h-4 mr-2" />
                   {t('dashboard.organizations.create-cta')}
                 </Link>
@@ -226,7 +226,7 @@ export default function Dashboard() {
         </h2>
         <div className="grid gap-4 md:grid-cols-3">
           <Card className="hover:shadow-md transition-shadow cursor-pointer">
-            <Link to="/orgs/new" className="block p-6">
+            <Link to={ROUTES.newOrg} className="block p-6">
               <div className="flex items-center gap-4">
                 <div className="w-12 h-12 rounded-lg bg-blue-100 dark:bg-blue-900 flex items-center justify-center">
                   <Building2 className="w-6 h-6 text-blue-600 dark:text-blue-400" />

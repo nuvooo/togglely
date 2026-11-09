@@ -30,10 +30,15 @@ describe('Rail', () => {
     expect(screen.getByRole('link', { name: /übersicht|overview/i })).not.toHaveAttribute('aria-current')
   })
 
+  it('highlights the project area on the project picker', () => {
+    renderAt('/projects')
+    expect(screen.getByRole('link', { name: /projekt|project/i })).toHaveAttribute('aria-current', 'page')
+  })
+
   it('falls back to selection pages without context', () => {
     useWorkspaceStore.setState({ lastProjectId: null, lastOrgId: null })
     renderAt('/overview')
-    expect(screen.getByRole('link', { name: /projekt|project/i })).toHaveAttribute('href', '/overview')
+    expect(screen.getByRole('link', { name: /projekt|project/i })).toHaveAttribute('href', '/projects')
     expect(screen.getByRole('link', { name: /organisation|organization/i })).toHaveAttribute('href', '/orgs')
   })
 })
