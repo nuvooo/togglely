@@ -3,9 +3,9 @@ import {
   NotFoundException,
   UnauthorizedException,
 } from '@nestjs/common'
-import { SdkService } from './sdk.service'
 import { EvaluationService } from './evaluation.service'
 import { HashingService } from './hashing.service'
+import { SdkService } from './sdk.service'
 
 const mockProject = {
   id: 'proj-1',
@@ -109,6 +109,7 @@ describe('SdkService', () => {
       const keyWhere = prisma.apiKey.findFirst.mock.calls[0][0].where
       expect(keyWhere.key).toBe('test-api-key')
       expect(keyWhere.isActive).toBe(true)
+      expect(keyWhere.type).toEqual({ not: 'MCP' })
       expect(keyWhere.OR).toEqual(
         expect.arrayContaining([
           { expiresAt: null },
@@ -694,9 +695,17 @@ describe('SdkService', () => {
       setupBrand(prisma)
       prisma.featureFlag.findFirst.mockResolvedValue(mockFlag)
       rowsByBrand(prisma, [])
-      prisma.flagEnvironment.create.mockResolvedValue(defaultRow(false, 'false'))
+      prisma.flagEnvironment.create.mockResolvedValue(
+        defaultRow(false, 'false')
+      )
 
-      await service.evaluateFlag('my-project', 'production', 'my-flag', 'k', 'b')
+      await service.evaluateFlag(
+        'my-project',
+        'production',
+        'my-flag',
+        'k',
+        'b'
+      )
 
       expect(prisma.flagEnvironment.create).toHaveBeenCalledTimes(1)
       expect(prisma.flagEnvironment.create.mock.calls[0][0].data.brandId).toBe(
@@ -750,7 +759,9 @@ describe('SdkService', () => {
       setupBrand(prisma)
       prisma.featureFlag.findMany.mockResolvedValue([mockFlag])
       prisma.flagEnvironment.findMany.mockResolvedValue([])
-      prisma.flagEnvironment.create.mockResolvedValue(defaultRow(false, 'false'))
+      prisma.flagEnvironment.create.mockResolvedValue(
+        defaultRow(false, 'false')
+      )
 
       await service.getAllFlags('my-project', 'production', 'k', 'b')
 
@@ -765,9 +776,16 @@ describe('SdkService', () => {
     it('returns the API key type (used for stream limits)', async () => {
       const { service, prisma } = createService()
       mockValidAccess(prisma)
-      prisma.apiKey.findFirst.mockResolvedValue({ ...mockApiKey, type: 'CLIENT' })
+      prisma.apiKey.findFirst.mockResolvedValue({
+        ...mockApiKey,
+        type: 'CLIENT',
+      })
 
-      const access = await service.resolveSdkAccess('my-project', 'production', 'k')
+      const access = await service.resolveSdkAccess(
+        'my-project',
+        'production',
+        'k'
+      )
 
       expect(access.apiKeyType).toBe('CLIENT')
       expect(prisma.apiKey.findFirst.mock.calls[0][0].select).toMatchObject({
@@ -823,7 +841,11 @@ describe('SdkService', () => {
           }),
         })
       )
-      const variant = hashingService.assignVariant('exp-1', 'u1', experiment.variants as any)
+      const variant = hashingService.assignVariant(
+        'exp-1',
+        'u1',
+        experiment.variants as any
+      )
       expect(prisma.experimentEvent.create).toHaveBeenCalledTimes(1)
       expect(prisma.experimentEvent.create).toHaveBeenCalledWith({
         data: {
@@ -846,14 +868,21 @@ describe('SdkService', () => {
 
     it('skips users outside the traffic allocation', async () => {
       const { service, prisma } = setup()
-      prisma.experiment.findMany.mockResolvedValue([{ ...experiment, trafficPercent: 0 }])
+      prisma.experiment.findMany.mockResolvedValue([
+        { ...experiment, trafficPercent: 0 },
+      ])
       await service.trackExposuresForAccess(access, undefined, { userId: 'u1' })
       expect(prisma.experimentEvent.create).not.toHaveBeenCalled()
     })
 
     it('limits tracking to the requested flag for single-flag requests', async () => {
       const { service, prisma } = setup()
-      await service.trackExposuresForAccess(access, undefined, { userId: 'u1' }, 'my-flag')
+      await service.trackExposuresForAccess(
+        access,
+        undefined,
+        { userId: 'u1' },
+        'my-flag'
+      )
       expect(prisma.experiment.findMany.mock.calls[0][0].where).toMatchObject({
         flag: { key: 'my-flag', projectId: 'proj-1' },
       })

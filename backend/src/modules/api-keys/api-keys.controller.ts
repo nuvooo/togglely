@@ -2,16 +2,18 @@ import {
   Body,
   Controller,
   Delete,
+  ForbiddenException,
   Get,
+  NotFoundException,
   Param,
   Post,
   Req,
   UseGuards,
 } from '@nestjs/common'
-import { AccessService } from '../../shared/access/access.service'
+import { AccessService, hasRole } from '../../shared/access/access.service'
 import { AuthGuard } from '../../shared/auth.guard'
-import { CreateApiKeyDto } from './dto/create-api-key.dto'
 import { ApiKeysService } from './api-keys.service'
+import { CreateApiKeyDto } from './dto/create-api-key.dto'
 
 @Controller('api-keys')
 @UseGuards(AuthGuard)
@@ -36,7 +38,8 @@ export class ApiKeysController {
     )
     const apiKeys = await this.apiKeysService.findByOrganization(
       orgId,
-      membership.role
+      membership.role,
+      req.user.userId
     )
     return { apiKeys }
   }
@@ -47,18 +50,40 @@ export class ApiKeysController {
     @Body() dto: CreateApiKeyDto,
     @Req() req: any
   ) {
-    await this.access.assertOrgRole(req.user.userId, orgId, 'ADMIN')
+    if (dto.type === 'MCP') {
+      await this.access.assertOrgRole(req.user.userId, orgId, 'MEMBER')
+      if (dto.projectId) {
+        const { project } = await this.access.assertProjectAccess(
+          req.user.userId,
+          dto.projectId,
+          'MEMBER'
+        )
+        if (project.organizationId !== orgId) {
+          throw new NotFoundException('Project not found')
+        }
+        for (const envId of dto.allowedEnvironmentIds ?? []) {
+          await this.access.assertEnvironmentInProject(envId, dto.projectId)
+        }
+      }
+    } else {
+      await this.access.assertOrgRole(req.user.userId, orgId, 'ADMIN')
+    }
     const key = await this.apiKeysService.create(orgId, req.user.userId, dto)
     return { apiKey: key }
   }
 
   @Delete(':keyId')
   async delete(@Param('keyId') keyId: string, @Req() req: any) {
-    const { apiKey } = await this.access.assertApiKeyAccess(
+    const { apiKey, membership } = await this.access.assertApiKeyAccess(
       req.user.userId,
       keyId,
-      'ADMIN'
+      'MEMBER'
     )
+    const isOwnMcpKey =
+      apiKey.type === 'MCP' && apiKey.userId === req.user.userId
+    if (!hasRole(membership.role, 'ADMIN') && !isOwnMcpKey) {
+      throw new ForbiddenException('Insufficient permissions')
+    }
     await this.apiKeysService.delete(apiKey.id, apiKey.organizationId)
     return { success: true }
   }

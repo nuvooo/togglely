@@ -7,12 +7,8 @@ import { ErrorState } from '@/components/feedback/ErrorState'
 import { Badge } from '@/components/ui/badge'
 import api from '@/lib/api'
 import { getErrorMessage } from '@/lib/errors'
-import {
-  type AuditLogEntry,
-  filterFlagLogs,
-  formatUser,
-  summarizeChanges,
-} from './history'
+import { formatAuditActor } from '@/pages/orgs/audit-log/auditLog'
+import { type AuditLogEntry, filterFlagLogs, summarizeChanges } from './history'
 
 interface FlagHistoryTabProps {
   projectId: string
@@ -72,7 +68,7 @@ export function FlagHistoryTab({ projectId, flagId }: FlagHistoryTabProps) {
       width: '12rem',
       hideBelow: 'sm',
       cell: (log) =>
-        formatUser(log.user) ?? (
+        formatAuditActor(log, t) ?? (
           <span className="text-muted-foreground">
             {t('flag-detail.history.system')}
           </span>

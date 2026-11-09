@@ -5,6 +5,16 @@ All notable changes to the Togglely project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [Unreleased]
+
+### Added
+
+- **backend:** MCP server at `/api/mcp` (Streamable HTTP, stateless) with tools `get_project`, `list_flags`, `get_flag`, `create_flag`, `update_flag`, `set_flag_state` and `delete_flag`
+- **backend:** New API key type `MCP` (`tkm_…`, hashed storage, one project per key, per-key list of environments the agent may toggle); rate limited to 120 req/min per key and 600 req/min per IP
+- **frontend:** Create MCP keys on the API keys page, with a ready-to-copy `claude mcp add` command
+- **audit:** Audit log shows changes made by an MCP key ("via MCP-Schlüssel")
+- **docs:** "KI-Agenten anbinden (MCP)" section in `docs/API.md`
+
 ## [1.2.6] - 2026-03-30
 
 ### Fixed

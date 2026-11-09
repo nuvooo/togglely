@@ -130,6 +130,8 @@ npx prisma db seed
 
 ## 📡 API Endpoints
 
+AI agents (e.g. Claude Code) can manage flags via the built-in MCP server at `/api/mcp` - see [Connecting AI agents (MCP)](docs/API.md#ki-agenten-anbinden-mcp).
+
 ### Authentication
 
 | Method | Endpoint | Description |

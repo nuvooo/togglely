@@ -1,5 +1,6 @@
 import { Injectable } from '@nestjs/common'
 import { Prisma } from '@prisma/client'
+import { currentActor } from '../../shared/actor-context'
 import { PrismaService } from '../../shared/prisma.service'
 import {
   ORG_AUDIT_LOG_DEFAULT_LIMIT,
@@ -82,8 +83,13 @@ export class AuditLogsService {
     oldValues?: any
     newValues?: any
   }) {
+    const actor = currentActor()
     return this.prisma.auditLog.create({
       data: {
+        ...(actor && {
+          apiKeyId: actor.apiKeyId,
+          apiKeyName: actor.apiKeyName,
+        }),
         action: data.action,
         entityType: data.entityType,
         entityId: data.entityId,

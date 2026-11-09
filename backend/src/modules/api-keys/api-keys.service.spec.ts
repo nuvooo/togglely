@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common'
-import { ApiKeysService, maskApiKey } from './api-keys.service'
+import { ApiKeysService, hashApiKey, maskApiKey } from './api-keys.service'
 
 const FULL_KEY = `tk_${'a'.repeat(60)}beef`
 
@@ -86,14 +86,126 @@ describe('ApiKeysService', () => {
     })
   })
 
-  it('lists the environment binding and never the creator user', async () => {
+  it('findByOrganization below ADMIN hides other users MCP keys, keeps own MCP keys and other types masked', async () => {
+    const prisma = {
+      apiKey: {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'own', type: 'MCP', userId: 'me', key: FULL_KEY },
+          { id: 'other', type: 'MCP', userId: 'x', key: FULL_KEY },
+          { id: 'srv', type: 'SERVER', userId: 'x', key: FULL_KEY },
+        ]),
+      },
+    } as any
+    const service = new ApiKeysService(prisma)
+    const keys = await service.findByOrganization('o', 'MEMBER', 'me')
+    expect(keys.map((k) => k.id)).toEqual(['own', 'srv'])
+    expect(keys[1].key).toBe('tk_aaaa…beef')
+    const admin = await service.findByOrganization('o', 'ADMIN', 'me')
+    expect(admin).toHaveLength(3)
+  })
+
+  describe('create MCP', () => {
+    const PROJECT = '64a000000000000000000020'
+    const ENV = '64a000000000000000000030'
+
+    it('create MCP key stores only hash and masked key, returns plain key once', async () => {
+      const prisma = {
+        apiKey: {
+          create: jest.fn().mockImplementation(async ({ data }) => ({
+            id: 'k',
+            ...data,
+          })),
+        },
+      } as any
+      const result = await new ApiKeysService(prisma).create('org', 'u', {
+        name: 'Claude',
+        type: 'MCP',
+        projectId: PROJECT,
+        allowedEnvironmentIds: [ENV],
+      })
+      expect(result.key).toMatch(/^tkm_[a-f0-9]{64}$/)
+      const data = prisma.apiKey.create.mock.calls[0][0].data
+      expect(data.key).toContain('…')
+      expect(data.key).not.toBe(result.key)
+      expect(data.keyHash).toBe(hashApiKey(result.key))
+      expect(data.projectId).toBe(PROJECT)
+      expect(data.allowedEnvironmentIds).toEqual([ENV])
+    })
+
+    it('create MCP key without projectId throws BadRequestException', async () => {
+      const prisma = { apiKey: { create: jest.fn() } } as any
+      await expect(
+        new ApiKeysService(prisma).create('org', 'u', {
+          name: 'x',
+          type: 'MCP',
+        })
+      ).rejects.toBeInstanceOf(BadRequestException)
+      expect(prisma.apiKey.create).not.toHaveBeenCalled()
+    })
+
+    it('retries MCP key creation with a fresh key after a unique-constraint collision', async () => {
+      const prisma = {
+        apiKey: {
+          create: jest
+            .fn()
+            .mockRejectedValueOnce({ code: 'P2002' })
+            .mockImplementation(async ({ data }) => ({ id: 'k', ...data })),
+        },
+      } as any
+      const result = await new ApiKeysService(prisma).create('org', 'u', {
+        name: 'x',
+        type: 'MCP',
+        projectId: PROJECT,
+      })
+      expect(prisma.apiKey.create).toHaveBeenCalledTimes(2)
+      const [first, second] = prisma.apiKey.create.mock.calls.map(
+        (c: any) => c[0].data
+      )
+      expect(second.keyHash).not.toBe(first.keyHash)
+      expect(second.keyHash).toBe(hashApiKey(result.key))
+      expect(second.key).toBe(maskApiKey(result.key))
+    })
+
+    it('rethrows after 3 colliding attempts', async () => {
+      const prisma = {
+        apiKey: { create: jest.fn().mockRejectedValue({ code: 'P2002' }) },
+      } as any
+      await expect(
+        new ApiKeysService(prisma).create('org', 'u', {
+          name: 'x',
+          type: 'MCP',
+          projectId: PROJECT,
+        })
+      ).rejects.toEqual({ code: 'P2002' })
+      expect(prisma.apiKey.create).toHaveBeenCalledTimes(3)
+    })
+
+    it('non-MCP keys ignore projectId and store no hash', async () => {
+      const prisma = {
+        apiKey: { create: jest.fn().mockResolvedValue({}) },
+      } as any
+      await new ApiKeysService(prisma).create('org', 'u', {
+        name: 'x',
+        type: 'SERVER',
+        projectId: PROJECT,
+      })
+      const data = prisma.apiKey.create.mock.calls[0][0].data
+      expect(data.projectId).toBeUndefined()
+      expect(data.keyHash).toBeUndefined()
+      expect(data.key).toMatch(/^tk_/)
+    })
+  })
+
+  it('lists the environment binding and the creator user id for visibility checks', async () => {
     const prisma = {
       apiKey: { findMany: jest.fn().mockResolvedValue([]) },
     } as any
     await new ApiKeysService(prisma).findByOrganization('o', 'ADMIN')
     const select = prisma.apiKey.findMany.mock.calls[0][0].select
     expect(select.environmentId).toBe(true)
-    expect(select.userId).toBeUndefined()
+    expect(select.userId).toBe(true)
+    expect(select.projectId).toBe(true)
+    expect(select.allowedEnvironmentIds).toBe(true)
   })
 
   it('scopes deletes to the organization', async () => {

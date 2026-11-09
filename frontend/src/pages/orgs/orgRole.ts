@@ -16,6 +16,8 @@ export function useOrgRole(orgId: string) {
     roleLoading: isLoading,
     /** The workspace failed to load: the role is unknown, writes are hidden. */
     roleUnavailable: !isLoading && Boolean(error) && !role,
+    /** MEMBER+ may create (and delete their own) MCP keys. */
+    canCreateMcp: hasRole(role, 'MEMBER'),
     canManage: hasRole(role, 'ADMIN'),
     isOwner: hasRole(role, 'OWNER'),
   }

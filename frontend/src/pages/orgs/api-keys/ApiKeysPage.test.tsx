@@ -3,6 +3,7 @@ import userEvent from '@testing-library/user-event'
 import { MemoryRouter, Route, Routes } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n from '@/i18n'
+import { useAuthStore } from '@/store/authStore'
 
 const ORG_ID = 'org-1'
 const FULL = `tk_${'a'.repeat(60)}beef`
@@ -11,7 +12,12 @@ const state = vi.hoisted(() => ({
   role: 'ADMIN',
   keys: [] as unknown[] | Error,
 }))
-const api = vi.hoisted(() => ({ get: vi.fn(), post: vi.fn(), delete: vi.fn() }))
+const api = vi.hoisted(() => ({
+  get: vi.fn(),
+  post: vi.fn(),
+  delete: vi.fn(),
+  defaults: { baseURL: '/api' },
+}))
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }))
 
 vi.mock('@/lib/axios', () => ({ default: api }))
@@ -62,6 +68,9 @@ describe('ApiKeysPage', () => {
     await i18n.changeLanguage('en')
     state.role = 'ADMIN'
     state.keys = [WEB, BACKEND]
+    useAuthStore.setState({
+      user: { id: 'u1', email: 'a@b.c', name: 'Ada' },
+    })
     api.get.mockReset()
     api.post.mockReset()
     api.delete.mockReset()
@@ -79,8 +88,21 @@ describe('ApiKeysPage', () => {
               {
                 id: 'p1',
                 name: 'Shop',
-                environments: [{ id: 'env-prod', name: 'Production' }],
+                environments: [
+                  { id: 'env-dev', name: 'Development' },
+                  { id: 'env-prod', name: 'Production' },
+                ],
               },
+            ],
+          },
+        })
+      }
+      if (url === '/environments/project/p1') {
+        return Promise.resolve({
+          data: {
+            environments: [
+              { id: 'env-dev', name: 'Development', key: 'development' },
+              { id: 'env-prod', name: 'Production', key: 'production' },
             ],
           },
         })
@@ -221,5 +243,243 @@ describe('ApiKeysPage', () => {
     expect(
       await screen.findByText('The API keys could not be loaded.')
     ).toBeInTheDocument()
+  })
+
+  describe('MCP keys', () => {
+    const openCreate = async (user: ReturnType<typeof userEvent.setup>) => {
+      await user.click(
+        await screen.findByRole('button', { name: 'New API key' })
+      )
+      return screen.findByRole('dialog')
+    }
+    const fillAgent = async (
+      user: ReturnType<typeof userEvent.setup>,
+      dialog: HTMLElement
+    ) => {
+      await user.type(within(dialog).getByLabelText('Name'), 'Agent')
+      await user.selectOptions(within(dialog).getByLabelText('Project'), 'p1')
+      await within(dialog).findByRole('checkbox', { name: /Development/ })
+    }
+    const created = {
+      data: {
+        apiKey: { id: 'k9', name: 'Agent', type: 'MCP', key: 'tkm_plain' },
+      },
+    }
+
+    it('member can open create dialog and only MCP type is offered', async () => {
+      state.role = 'MEMBER'
+      state.keys = []
+      const user = userEvent.setup()
+      renderPage()
+      const dialog = await openCreate(user)
+      expect(within(dialog).getAllByRole('radio')).toHaveLength(1)
+      expect(within(dialog).getByRole('radio', { name: /MCP/ })).toBeChecked()
+    })
+
+    it('admin is offered CLIENT, SERVER and MCP', async () => {
+      const user = userEvent.setup()
+      renderPage()
+      const dialog = await openCreate(user)
+      expect(within(dialog).getAllByRole('radio')).toHaveLength(3)
+    })
+
+    it('MCP requires a project before submit', async () => {
+      state.role = 'MEMBER'
+      const user = userEvent.setup()
+      renderPage()
+      const dialog = await openCreate(user)
+      await user.type(within(dialog).getByLabelText('Name'), 'Agent')
+      expect(
+        within(dialog).getByRole('button', { name: 'Create' })
+      ).toBeDisabled()
+      await user.selectOptions(within(dialog).getByLabelText('Project'), 'p1')
+      await waitFor(() =>
+        expect(
+          within(dialog).getByRole('button', { name: 'Create' })
+        ).toBeEnabled()
+      )
+    })
+
+    it('Create stays disabled while the environments are loading', async () => {
+      state.role = 'MEMBER'
+      const base = api.get.getMockImplementation()
+      api.get.mockImplementation((url: string) =>
+        url === '/environments/project/p1' ? new Promise(() => {}) : base?.(url)
+      )
+      const user = userEvent.setup()
+      renderPage()
+      const dialog = await openCreate(user)
+      await user.type(within(dialog).getByLabelText('Name'), 'Agent')
+      await user.selectOptions(within(dialog).getByLabelText('Project'), 'p1')
+      expect(
+        within(dialog).getByText('Loading environments…')
+      ).toBeInTheDocument()
+      expect(
+        within(dialog).getByRole('button', { name: 'Create' })
+      ).toBeDisabled()
+    })
+
+    it('shows an error when the environments cannot be loaded', async () => {
+      state.role = 'MEMBER'
+      const base = api.get.getMockImplementation()
+      api.get.mockImplementation((url: string) =>
+        url === '/environments/project/p1'
+          ? Promise.reject(new Error('down'))
+          : base?.(url)
+      )
+      const user = userEvent.setup()
+      renderPage()
+      const dialog = await openCreate(user)
+      await user.type(within(dialog).getByLabelText('Name'), 'Agent')
+      await user.selectOptions(within(dialog).getByLabelText('Project'), 'p1')
+      expect(
+        await within(dialog).findByText('The environments could not be loaded.')
+      ).toBeInTheDocument()
+      expect(
+        within(dialog).getByRole('button', { name: 'Create' })
+      ).toBeDisabled()
+    })
+
+    it('submits an MCP key without environments as read/create-only', async () => {
+      state.role = 'MEMBER'
+      api.post.mockResolvedValue(created)
+      const user = userEvent.setup()
+      renderPage()
+      const dialog = await openCreate(user)
+      await fillAgent(user, dialog)
+      await user.click(
+        within(dialog).getByRole('checkbox', { name: /Development/ })
+      )
+      expect(
+        within(dialog).getByText(/can only read, create and delete flags/i)
+      ).toBeInTheDocument()
+      const submit = within(dialog).getByRole('button', { name: 'Create' })
+      expect(submit).toBeEnabled()
+      await user.click(submit)
+      await waitFor(() =>
+        expect(api.post).toHaveBeenCalledWith(
+          `/api-keys/organization/${ORG_ID}`,
+          {
+            name: 'Agent',
+            type: 'MCP',
+            projectId: 'p1',
+            allowedEnvironmentIds: [],
+            expiresInDays: 365,
+          }
+        )
+      )
+    })
+
+    it('development environment is preselected', async () => {
+      state.role = 'MEMBER'
+      const user = userEvent.setup()
+      renderPage()
+      const dialog = await openCreate(user)
+      await user.selectOptions(within(dialog).getByLabelText('Project'), 'p1')
+      expect(
+        await within(dialog).findByRole('checkbox', { name: /Development/ })
+      ).toBeChecked()
+      expect(
+        within(dialog).getByRole('checkbox', { name: /Production/ })
+      ).not.toBeChecked()
+    })
+
+    it('submits type MCP with projectId and allowedEnvironmentIds', async () => {
+      state.role = 'MEMBER'
+      api.post.mockResolvedValue(created)
+      const user = userEvent.setup()
+      renderPage()
+      const dialog = await openCreate(user)
+      await fillAgent(user, dialog)
+      await user.click(
+        within(dialog).getByRole('checkbox', { name: /Production/ })
+      )
+      await user.click(within(dialog).getByRole('button', { name: 'Create' }))
+      await waitFor(() =>
+        expect(api.post).toHaveBeenCalledWith(
+          `/api-keys/organization/${ORG_ID}`,
+          {
+            name: 'Agent',
+            type: 'MCP',
+            projectId: 'p1',
+            allowedEnvironmentIds: ['env-dev', 'env-prod'],
+            expiresInDays: 365,
+          }
+        )
+      )
+    })
+
+    it('created MCP key shows the claude mcp add command', async () => {
+      state.role = 'MEMBER'
+      api.post.mockResolvedValue(created)
+      const user = userEvent.setup()
+      renderPage()
+      const dialog = await openCreate(user)
+      await fillAgent(user, dialog)
+      await user.click(within(dialog).getByRole('button', { name: 'Create' }))
+      const shown = await screen.findByRole('dialog', {
+        name: 'API key created',
+      })
+      expect(
+        within(shown).getByDisplayValue(
+          `claude mcp add --transport http togglely ${window.location.origin}/api/mcp --header "Authorization: Bearer tkm_plain"`
+        )
+      ).toBeInTheDocument()
+      expect(within(shown).getByText(/shown only once/i)).toBeInTheDocument()
+      expect(shown).not.toHaveTextContent(/admins can copy/i)
+    })
+
+    it('still shows the plaintext key when the command cannot be built', async () => {
+      state.role = 'MEMBER'
+      api.post.mockResolvedValue(created)
+      const original = api.defaults.baseURL
+      api.defaults.baseURL = 'http://['
+      try {
+        const user = userEvent.setup()
+        renderPage()
+        const dialog = await openCreate(user)
+        await fillAgent(user, dialog)
+        await user.click(within(dialog).getByRole('button', { name: 'Create' }))
+        const shown = await screen.findByRole('dialog', {
+          name: 'API key created',
+        })
+        expect(within(shown).getByDisplayValue('tkm_plain')).toBeInTheDocument()
+        expect(shown).not.toHaveTextContent(/claude mcp add/)
+      } finally {
+        api.defaults.baseURL = original
+      }
+    })
+
+    it('member sees delete only on own MCP key', async () => {
+      state.role = 'MEMBER'
+      const mcp = {
+        ...WEB,
+        type: 'MCP',
+        key: 'tkm_aaaa…beef',
+        projectId: 'p1',
+        allowedEnvironmentIds: ['env-dev'],
+      }
+      state.keys = [
+        { ...mcp, id: 'm1', name: 'Mine', userId: 'u1' },
+        { ...mcp, id: 'm2', name: 'Theirs', userId: 'u2' },
+        { ...WEB, key: 'tk_aaaa…beef' },
+      ]
+      renderPage()
+      const table = await screen.findByRole('table', { name: 'API keys' })
+      expect(
+        within(table).getByRole('button', { name: 'Delete Mine' })
+      ).toBeInTheDocument()
+      expect(
+        within(table).queryByRole('button', { name: 'Delete Theirs' })
+      ).toBeNull()
+      expect(
+        within(table).queryByRole('button', { name: 'Delete Web app' })
+      ).toBeNull()
+      expect(within(table).queryByRole('button', { name: /Copy/ })).toBeNull()
+      expect(await within(table).findAllByText(/Shop/)).not.toHaveLength(0)
+      expect(
+        within(table).getAllByText(/toggles: Development/)
+      ).not.toHaveLength(0)
+    })
   })
 })

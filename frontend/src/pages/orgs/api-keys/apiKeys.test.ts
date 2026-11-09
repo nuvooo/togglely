@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { displayKey, expiryState } from './apiKeys'
+import { displayKey, expiryState, mcpAddCommand } from './apiKeys'
 
 describe('api key helpers', () => {
   it('shortens full keys and keeps masked ones', () => {
@@ -16,5 +16,14 @@ describe('api key helpers', () => {
     expect(expiryState('2026-11-09T09:00:00.000Z', now)).toBe('expired')
     expect(expiryState('2026-11-12T10:00:00.000Z', now)).toBe('soon')
     expect(expiryState('2026-12-31T10:00:00.000Z', now)).toBe('valid')
+  })
+
+  it('builds the claude mcp add command with an absolute base', () => {
+    expect(mcpAddCommand('/api', 'tkm_x')).toBe(
+      `claude mcp add --transport http togglely ${window.location.origin}/api/mcp --header "Authorization: Bearer tkm_x"`
+    )
+    expect(mcpAddCommand('https://api.example.com/api/', 'tkm_x')).toBe(
+      'claude mcp add --transport http togglely https://api.example.com/api/mcp --header "Authorization: Bearer tkm_x"'
+    )
   })
 })

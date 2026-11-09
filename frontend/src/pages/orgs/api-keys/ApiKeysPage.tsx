@@ -14,15 +14,24 @@ import { ConfirmDialog } from '@/components/ui/confirm-dialog'
 import api from '@/lib/axios'
 import { handleForbidden } from '@/lib/permissions'
 import { apiMessage } from '@/pages/projects/settings/project'
+import { useAuthStore } from '@/store/authStore'
 import { useOrgRole } from '../orgRole'
 import { ApiKeyCreatedDialog } from './ApiKeyCreatedDialog'
 import {
   type ApiKey,
   type ApiKeyType,
+  CREATE_KEY_TYPES,
   displayKey,
   expiryState,
+  mcpAddCommand,
 } from './apiKeys'
-import { CreateApiKeyDialog, type NewApiKey } from './CreateApiKeyDialog'
+import {
+  CreateApiKeyDialog,
+  type NewApiKey,
+  type ProjectEnvironment,
+} from './CreateApiKeyDialog'
+
+const MCP_ONLY = ['MCP'] as const
 
 interface OrgProjectEnvironments {
   id: string
@@ -64,9 +73,11 @@ function KeyTypesInfo() {
 export default function ApiKeysPage() {
   const { t, i18n } = useTranslation()
   const { orgId = '' } = useParams<{ orgId: string }>()
-  const { canManage, roleLoading, roleUnavailable } = useOrgRole(orgId)
+  const { canManage, canCreateMcp, roleLoading, roleUnavailable } =
+    useOrgRole(orgId)
+  const currentUserId = useAuthStore((state) => state.user?.id)
   const [keys, setKeys] = useState<ApiKey[]>([])
-  const [envNames, setEnvNames] = useState<Record<string, string>>({})
+  const [projects, setProjects] = useState<OrgProjectEnvironments[]>([])
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
   const [createOpen, setCreateOpen] = useState(false)
@@ -74,6 +85,7 @@ export default function ApiKeysPage() {
     name: string
     type: ApiKeyType
     key: string
+    command?: string
   } | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState<ApiKey | null>(null)
@@ -89,23 +101,13 @@ export default function ApiKeysPage() {
       if (!current()) return
       const list: ApiKey[] = response.data.apiKeys ?? []
       setKeys(list)
-      // Environment names are secondary: only needed for bound keys.
-      if (list.some((k) => k.environmentId)) {
-        api
-          .get(`/projects/organization/${orgId}`)
-          .then((res) => {
-            if (!current()) return
-            const names: Record<string, string> = {}
-            for (const project of (res.data.projects ??
-              []) as OrgProjectEnvironments[]) {
-              for (const env of project.environments ?? []) {
-                names[env.id] = `${project.name} · ${env.name}`
-              }
-            }
-            setEnvNames(names)
-          })
-          .catch(() => {})
-      }
+      // Project and environment names are secondary: failures stay silent.
+      api
+        .get(`/projects/organization/${orgId}`)
+        .then((res) => {
+          if (current()) setProjects(res.data.projects ?? [])
+        })
+        .catch(() => {})
     } catch {
       if (current()) setLoadError(true)
     } finally {
@@ -122,8 +124,24 @@ export default function ApiKeysPage() {
       const response = await api.post(`/api-keys/organization/${orgId}`, input)
       const apiKey: ApiKey | undefined = response.data.apiKey
       setCreateOpen(false)
-      if (apiKey?.key)
-        setCreated({ name: apiKey.name, type: apiKey.type, key: apiKey.key })
+      if (apiKey?.key) {
+        // The command is a convenience: if it cannot be built, the plaintext
+        // key must still be shown (it is never shown again for MCP keys).
+        let command: string | undefined
+        if (apiKey.type === 'MCP') {
+          try {
+            command = mcpAddCommand(api.defaults?.baseURL ?? '/api', apiKey.key)
+          } catch {
+            command = undefined
+          }
+        }
+        setCreated({
+          name: apiKey.name,
+          type: apiKey.type,
+          key: apiKey.key,
+          ...(command ? { command } : {}),
+        })
+      }
       load()
     } catch (error) {
       handleForbidden(error, t)
@@ -143,6 +161,35 @@ export default function ApiKeysPage() {
     }
   }
 
+  const loadEnvironments = useCallback(
+    async (projectId: string): Promise<ProjectEnvironment[]> => {
+      const response = await api.get(`/environments/project/${projectId}`)
+      return response.data.environments ?? []
+    },
+    []
+  )
+
+  const canDelete = (apiKey: ApiKey) =>
+    canManage ||
+    (canCreateMcp &&
+      apiKey.type === 'MCP' &&
+      Boolean(apiKey.userId) &&
+      apiKey.userId === currentUserId)
+
+  const projectNames = useMemo(
+    () => new Map(projects.map((p) => [p.id, p.name])),
+    [projects]
+  )
+  const envNames = useMemo(() => {
+    const names = new Map<string, { project: string; env: string }>()
+    for (const project of projects) {
+      for (const env of project.environments ?? []) {
+        names.set(env.id, { project: project.name, env: env.name })
+      }
+    }
+    return names
+  }, [projects])
+
   const copy = async (apiKey: ApiKey) => {
     try {
       await navigator.clipboard.writeText(apiKey.key)
@@ -160,7 +207,10 @@ export default function ApiKeysPage() {
       : date.toLocaleDateString(i18n.language)
   }
 
-  const hasBoundKeys = useMemo(() => keys.some((k) => k.environmentId), [keys])
+  const hasBoundKeys = useMemo(
+    () => keys.some((k) => k.environmentId || k.type === 'MCP'),
+    [keys]
+  )
 
   const columns: DataTableColumn<ApiKey>[] = [
     {
@@ -194,16 +244,38 @@ export default function ApiKeysPage() {
       key: 'environment',
       header: t('org-pages.api-keys.col-environment'),
       hideBelow: 'lg',
-      cell: (apiKey) =>
-        apiKey.environmentId ? (
-          (envNames[apiKey.environmentId] ?? (
-            <code className="font-mono text-xs">{apiKey.environmentId}</code>
-          ))
+      cell: (apiKey) => {
+        if (apiKey.type === 'MCP') {
+          const toggles = (apiKey.allowedEnvironmentIds ?? [])
+            .map((id) => envNames.get(id)?.env ?? id)
+            .join(', ')
+          return (
+            <div className="min-w-0">
+              <p className="truncate">
+                {(apiKey.projectId && projectNames.get(apiKey.projectId)) ||
+                  apiKey.projectId ||
+                  '–'}
+              </p>
+              <p className="truncate text-xs text-muted-foreground">
+                {t('org-pages.api-keys.toggles-in', { envs: toggles || '–' })}
+              </p>
+            </div>
+          )
+        }
+        if (!apiKey.environmentId) {
+          return (
+            <span className="text-muted-foreground">
+              {t('org-pages.api-keys.env-all')}
+            </span>
+          )
+        }
+        const named = envNames.get(apiKey.environmentId)
+        return named ? (
+          `${named.project} · ${named.env}`
         ) : (
-          <span className="text-muted-foreground">
-            {t('org-pages.api-keys.env-all')}
-          </span>
-        ),
+          <code className="font-mono text-xs">{apiKey.environmentId}</code>
+        )
+      },
     })
   }
   columns.push(
@@ -252,7 +324,7 @@ export default function ApiKeysPage() {
       },
     }
   )
-  if (canManage) {
+  if (canManage || canCreateMcp) {
     columns.push({
       key: 'actions',
       header: t('org-pages.api-keys.col-actions'),
@@ -262,7 +334,7 @@ export default function ApiKeysPage() {
       className: 'px-2',
       cell: (apiKey) => (
         <div className="flex justify-end gap-1">
-          {!apiKey.key.includes('…') && (
+          {canManage && apiKey.type !== 'MCP' && !apiKey.key.includes('…') && (
             <Button
               variant="ghost"
               size="icon"
@@ -276,21 +348,23 @@ export default function ApiKeysPage() {
               <Copy className="h-4 w-4" />
             </Button>
           )}
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-8 w-8 text-destructive hover:text-destructive"
-            onClick={() => {
-              setDeleting(apiKey)
-              setDeleteOpen(true)
-            }}
-            aria-label={t('org-pages.api-keys.delete-label', {
-              name: apiKey.name,
-            })}
-            title={t('common.delete')}
-          >
-            <Trash2 className="h-4 w-4" />
-          </Button>
+          {canDelete(apiKey) && (
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-8 w-8 text-destructive hover:text-destructive"
+              onClick={() => {
+                setDeleting(apiKey)
+                setDeleteOpen(true)
+              }}
+              aria-label={t('org-pages.api-keys.delete-label', {
+                name: apiKey.name,
+              })}
+              title={t('common.delete')}
+            >
+              <Trash2 className="h-4 w-4" />
+            </Button>
+          )}
         </div>
       ),
     })
@@ -325,11 +399,11 @@ export default function ApiKeysPage() {
         icon={<KeyRound className="h-5 w-5" />}
         title={t('org-pages.api-keys.empty-title')}
         description={
-          canManage
+          canCreateMcp
             ? t('org-pages.api-keys.empty-text')
             : t('org-pages.api-keys.empty-text-readonly')
         }
-        action={canManage ? createButton : undefined}
+        action={canCreateMcp ? createButton : undefined}
       />
     )
   } else {
@@ -356,7 +430,7 @@ export default function ApiKeysPage() {
         title={t('org-pages.api-keys.title')}
         description={t('org-pages.api-keys.subtitle')}
         actions={
-          canManage && !loading && !loadError && keys.length > 0
+          canCreateMcp && !loading && !loadError && keys.length > 0
             ? createButton
             : undefined
         }
@@ -369,6 +443,9 @@ export default function ApiKeysPage() {
         open={createOpen}
         onOpenChange={setCreateOpen}
         onCreate={create}
+        types={canManage ? CREATE_KEY_TYPES : MCP_ONLY}
+        projects={projects}
+        loadEnvironments={loadEnvironments}
       />
       <ApiKeyCreatedDialog created={created} onClose={() => setCreated(null)} />
       <ConfirmDialog

@@ -8,6 +8,9 @@ export interface OrgAuditLogEntry {
   entityId: string
   projectId?: string | null
   userId?: string | null
+  /** Set when the change was made through an MCP key. */
+  apiKeyId?: string | null
+  apiKeyName?: string | null
   oldValues?: unknown
   newValues?: unknown
   createdAt: string
@@ -157,6 +160,22 @@ export function formatAuditUser(user: OrgAuditLogEntry['user']): string | null {
   if (!user) return null
   const name = [user.firstName, user.lastName].filter(Boolean).join(' ').trim()
   return name || user.email || null
+}
+
+/**
+ * Acting agent of an entry: the user, plus "via MCP key "<name>"" when the
+ * change was made through an MCP key. Null without user and key (system).
+ */
+export function formatAuditActor(
+  entry: Pick<OrgAuditLogEntry, 'user' | 'apiKeyName'>,
+  t: TFunction
+): string | null {
+  const user = formatAuditUser(entry.user)
+  if (!entry.apiKeyName) return user
+  return t('audit.via-mcp-key', {
+    user: user ?? '',
+    name: entry.apiKeyName,
+  }).trim()
 }
 
 /** A user from GET /audit-logs/organization/:orgId/users. */
