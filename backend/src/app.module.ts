@@ -7,6 +7,7 @@ import { AuditLogsModule } from './modules/audit-logs/audit-logs.module'
 import { ApiKeysModule } from './modules/api-keys/api-keys.module'
 import { AuthModule } from './modules/auth/auth.module'
 import { BrandsModule } from './modules/brands/brands.module'
+import { ChangeEventsModule } from './modules/change-events/change-events.module'
 import { EnvironmentsModule } from './modules/environments/environments.module'
 import { FlagsModule } from './modules/flags/flags.module'
 import { HealthModule } from './modules/health/health.module'
@@ -30,6 +31,7 @@ import { AccessModule } from './shared/access/access.module'
     winstonConfig,
     PrismaModule,
     AccessModule,
+    ChangeEventsModule,
     MailerModule,
     MetricsModule,
     HealthModule,

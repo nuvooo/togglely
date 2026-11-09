@@ -41,4 +41,9 @@ export interface RecordChangeInput {
   /** Affected environments, or 'all' for every environment of the project */
   environmentIds: string[] | 'all'
   changes: FlagChange[]
+  /**
+   * Optional id → key fallback for environments that may no longer exist
+   * when the event is flushed (e.g. after deleting an environment).
+   */
+  environmentKeys?: Record<string, string>
 }
