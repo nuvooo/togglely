@@ -1,3 +1,4 @@
+import * as DialogPrimitive from '@radix-ui/react-dialog'
 import { Menu, Search } from 'lucide-react'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
@@ -15,35 +16,26 @@ import {
 import { Kbd } from '@/components/ui/kbd'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { getArea } from '@/lib/routes'
-import { resetWorkspaceCache } from '@/lib/workspace'
 import { useAuthStore } from '@/store/authStore'
-import { useWorkspaceStore } from '@/store/workspaceStore'
-import { CommandPalette } from './CommandPalette'
+import { CommandPalette, openCommandPalette } from './CommandPalette'
 import { ContextNav } from './ContextNav'
+import { shortcutLabel } from './platform'
 import { Rail } from './Rail'
-
-const openPalette = () =>
-  document.dispatchEvent(new KeyboardEvent('keydown', { key: 'k', ctrlKey: true }))
+import { useLogout } from './useLogout'
 
 /** Application frame: rail, context column, top bar and page outlet. */
 export default function AppShell() {
   const { t } = useTranslation()
-  const { pathname } = useLocation()
+  const { pathname, hash } = useLocation()
   const navigate = useNavigate()
-  const { user, logout } = useAuthStore()
+  const user = useAuthStore((s) => s.user)
+  const handleLogout = useLogout()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const hasContext = getArea(pathname).area !== 'overview'
 
-  // Close the mobile drawer on navigation.
-  // biome-ignore lint/correctness/useExhaustiveDependencies: pathname is the trigger
-  useEffect(() => setDrawerOpen(false), [pathname])
-
-  const handleLogout = () => {
-    resetWorkspaceCache()
-    useWorkspaceStore.getState().reset()
-    logout()
-    navigate('/login')
-  }
+  // Close the mobile drawer on navigation (account sections differ only by hash).
+  // biome-ignore lint/correctness/useExhaustiveDependencies: pathname and hash are the triggers
+  useEffect(() => setDrawerOpen(false), [pathname, hash])
 
   return (
     <TooltipProvider delayDuration={300}>
@@ -57,19 +49,18 @@ export default function AppShell() {
           </div>
         )}
 
-        {drawerOpen && hasContext && (
-          <div className="fixed inset-0 z-40 md:hidden">
-            <button
-              type="button"
-              aria-label={t('common.close')}
-              className="absolute inset-0 bg-background/70 backdrop-blur-sm"
-              onClick={() => setDrawerOpen(false)}
-            />
-            <div className="absolute inset-y-0 left-0 shadow-xl">
+        <DialogPrimitive.Root open={drawerOpen && hasContext} onOpenChange={setDrawerOpen}>
+          <DialogPrimitive.Portal>
+            <DialogPrimitive.Overlay className="fixed inset-0 z-40 bg-background/70 backdrop-blur-sm data-[state=open]:animate-in data-[state=open]:fade-in-0 data-[state=closed]:animate-out data-[state=closed]:fade-out-0 md:hidden" />
+            <DialogPrimitive.Content
+              aria-describedby={undefined}
+              className="fixed inset-y-0 left-0 z-50 shadow-xl duration-200 data-[state=open]:animate-in data-[state=open]:slide-in-from-left data-[state=closed]:animate-out data-[state=closed]:slide-out-to-left md:hidden"
+            >
+              <DialogPrimitive.Title className="sr-only">{t('nav.menu')}</DialogPrimitive.Title>
               <ContextNav />
-            </div>
-          </div>
-        )}
+            </DialogPrimitive.Content>
+          </DialogPrimitive.Portal>
+        </DialogPrimitive.Root>
 
         <div className="flex min-w-0 flex-1 flex-col">
           <header className="flex h-12 shrink-0 items-center gap-2 border-b px-3 md:px-5">
@@ -79,6 +70,7 @@ export default function AppShell() {
                 size="icon"
                 className="md:hidden"
                 aria-label={t('nav.open-menu')}
+                aria-expanded={drawerOpen}
                 onClick={() => setDrawerOpen(true)}
               >
                 <Menu className="h-5 w-5" />
@@ -86,12 +78,12 @@ export default function AppShell() {
             )}
             <button
               type="button"
-              onClick={openPalette}
+              onClick={openCommandPalette}
               className="ml-auto flex h-8 w-full max-w-64 items-center gap-2 rounded-md border bg-muted/40 px-2.5 text-sm text-muted-foreground transition-colors hover:bg-muted"
             >
               <Search className="h-4 w-4" />
               <span className="flex-1 text-left">{t('cmd.search')}…</span>
-              <Kbd>Ctrl K</Kbd>
+              <Kbd>{shortcutLabel('k')}</Kbd>
             </button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>

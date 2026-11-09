@@ -35,7 +35,7 @@ export function Rail({ orientation = 'side' }: { orientation?: 'side' | 'bottom'
 
   if (orientation === 'bottom') {
     return (
-      <nav className="grid grid-cols-4 border-t bg-sidebar" aria-label={t('nav.overview')}>
+      <nav className="grid grid-cols-4 border-t bg-sidebar pb-[env(safe-area-inset-bottom)]" aria-label={t('nav.main')}>
         {items.map(({ area, label, icon: Icon, href }) => (
           <Link
             key={area}
@@ -58,7 +58,7 @@ export function Rail({ orientation = 'side' }: { orientation?: 'side' | 'bottom'
   return (
     <nav
       className="flex h-full w-14 flex-col items-center gap-1 border-r bg-sidebar py-3"
-      aria-label={t('nav.overview')}
+      aria-label={t('nav.main')}
     >
       <Link
         to="/overview"

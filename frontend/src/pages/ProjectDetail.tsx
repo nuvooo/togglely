@@ -9,7 +9,7 @@ import {
 import clsx from 'clsx'
 import { useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { Link, useNavigate, useParams } from 'react-router-dom'
+import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Card, CardContent } from '@/components/ui/card'
@@ -91,6 +91,21 @@ export default function ProjectDetail() {
   const [isLoading, setIsLoading] = useState(true)
   const [searchTerm, setSearchTerm] = useState('')
   const [showCreateFlagDialog, setShowCreateFlagDialog] = useState(false)
+  const [searchParams, setSearchParams] = useSearchParams()
+
+  // `?new=1` (command palette "New flag") opens the create dialog once.
+  useEffect(() => {
+    if (searchParams.get('new') !== '1') return
+    setShowCreateFlagDialog(true)
+    setSearchParams(
+      (prev) => {
+        const next = new URLSearchParams(prev)
+        next.delete('new')
+        return next
+      },
+      { replace: true }
+    )
+  }, [searchParams, setSearchParams])
   const [newFlagName, setNewFlagName] = useState('')
   const [newFlagKey, setNewFlagKey] = useState('')
   const [newFlagType, setNewFlagType] = useState<
