@@ -20,7 +20,7 @@ const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }))
 vi.mock('@/lib/axios', () => ({ default: api }))
 vi.mock('sonner', () => ({ toast }))
 
-import BrandFlags from './BrandFlags'
+import BrandDetailPage from './BrandDetailPage'
 
 function brandFlags() {
   return [
@@ -59,12 +59,12 @@ function brandFlags() {
 function renderPage() {
   return render(
     <MemoryRouter
-      initialEntries={[`/projects/${PROJECT_ID}/brands/${BRAND_ID}/flags`]}
+      initialEntries={[`/projects/${PROJECT_ID}/brands/${BRAND_ID}`]}
     >
       <Routes>
         <Route
-          path="/projects/:projectId/brands/:brandId/flags"
-          element={<BrandFlags />}
+          path="/projects/:projectId/brands/:brandId"
+          element={<BrandDetailPage />}
         />
       </Routes>
     </MemoryRouter>
@@ -102,7 +102,7 @@ function setServerEnv(index: number, patch: Record<string, unknown>) {
 const linkButton = (r: HTMLElement) =>
   within(r).getByRole('button', { name: /inherits default|own value/i })
 
-describe('BrandFlags', () => {
+describe('BrandDetailPage', () => {
   it('shows the link state per row', async () => {
     renderPage()
 
@@ -214,5 +214,54 @@ describe('BrandFlags', () => {
       'aria-pressed',
       'false'
     )
+  })
+})
+
+describe('BrandDetailPage layout and states', () => {
+  it('shows the brand in the page header with a breadcrumb to the brands list', async () => {
+    renderPage()
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Alpha' })
+    ).toBeInTheDocument()
+    const nav = screen.getByRole('navigation', { name: 'Breadcrumb' })
+    expect(within(nav).getByRole('link', { name: 'Brands' })).toHaveAttribute(
+      'href',
+      `/projects/${PROJECT_ID}/brands`
+    )
+    expect(screen.getByRole('link', { name: 'Banner' })).toHaveAttribute(
+      'href',
+      `/projects/${PROJECT_ID}/flags/flag-1`
+    )
+  })
+
+  it('shows an empty state when the project has no flags', async () => {
+    state.flags = []
+    renderPage()
+    expect(await screen.findByText('No feature flags')).toBeInTheDocument()
+  })
+
+  it('shows "not found" for an unknown brand', async () => {
+    api.get.mockRejectedValue({
+      isAxiosError: true,
+      message: 'Not Found',
+      response: { status: 404, data: {} },
+    })
+    renderPage()
+    expect(await screen.findByText('Brand not found')).toBeInTheDocument()
+    expect(
+      screen.getByRole('link', { name: 'Back to brands' })
+    ).toBeInTheDocument()
+  })
+
+  it('shows an error state with retry when loading fails', async () => {
+    api.get.mockRejectedValueOnce(new Error('down'))
+    renderPage()
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'The brand could not be loaded.'
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'Try again' }))
+    expect(
+      await screen.findByRole('heading', { level: 1, name: 'Alpha' })
+    ).toBeInTheDocument()
   })
 })
