@@ -149,6 +149,11 @@ describe('ApiKeysPage', () => {
     expect(
       within(shown).getByDisplayValue('tk_plain_secret_value')
     ).toBeInTheDocument()
+    // Admins can copy keys later, so the dialog must not claim "only once".
+    expect(shown).not.toHaveTextContent(/only once/i)
+    expect(
+      within(shown).getByText(/admins can copy the full key later/i)
+    ).toBeInTheDocument()
     const done = within(shown).getByRole('button', { name: 'Done' })
     expect(done).toBeDisabled()
     await user.keyboard('{Escape}')

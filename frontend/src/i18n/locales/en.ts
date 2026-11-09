@@ -390,12 +390,14 @@ export const en = {
   'org-pages.api-keys.expiry-never': 'Never',
   'org-pages.api-keys.create-failed': 'The API key could not be created.',
   'org-pages.api-keys.created-title': 'API key created',
-  'org-pages.api-keys.created-description': '{{name}} ({{type}}). Copy the key now.',
+  'org-pages.api-keys.created-description': '{{name}} ({{type}}). Copy the key and store it safely.',
   'org-pages.api-keys.created-label': 'API key',
   'org-pages.api-keys.created-warning-client':
-    'Client keys are public by design, but store the key where your app reads its configuration – this dialog shows it only once.',
+    'Client keys are public by design, but store the key where your app reads its configuration.',
   'org-pages.api-keys.created-warning-server':
-    'Store the key in a secret store or environment variable. Never commit it or ship it to browsers – this dialog shows it only once.',
+    'Store the key in a secret store or environment variable. Never commit it or ship it to browsers.',
+  'org-pages.api-keys.created-visibility':
+    'Fully visible only now for non-admins: admins can copy the full key later from the API key list, everyone else sees it masked.',
   'org-pages.api-keys.created-saved': 'I have saved the key',
   'org-pages.api-keys.created-done': 'Done',
   'org-pages.audit.title': 'Audit log',

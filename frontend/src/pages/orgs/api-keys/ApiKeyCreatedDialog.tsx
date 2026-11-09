@@ -22,8 +22,10 @@ interface ApiKeyCreatedDialogProps {
 }
 
 /**
- * Shows a new API key in plain text once. Escape, outside clicks and the X
- * cannot close it; "Done" is enabled after the user confirmed saving the key.
+ * Shows a new API key in plain text. Admins can copy it later from the list
+ * (others only see it masked), so the dialog says that instead of "only
+ * once". Escape, outside clicks and the X cannot close it; "Done" is enabled
+ * after the user confirmed saving the key.
  */
 export function ApiKeyCreatedDialog({
   created,
@@ -74,6 +76,9 @@ export function ApiKeyCreatedDialog({
                 ? t('org-pages.api-keys.created-warning-client')
                 : t('org-pages.api-keys.created-warning-server')}
             </span>
+          </p>
+          <p className="text-sm text-muted-foreground">
+            {t('org-pages.api-keys.created-visibility')}
           </p>
         </div>
 
