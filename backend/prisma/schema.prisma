@@ -448,3 +448,66 @@ model ExperimentEvent {
   @@index([createdAt])
   @@map("experiment_events")
 }
+
+// --- Change notifications ---
+
+/// Configuration version per (project, environment). Incremented on every
+/// change that can affect SDK evaluation results (ETag / live stream).
+model ConfigVersion {
+  id            String   @id @default(auto()) @map("_id") @db.ObjectId
+  projectId     String   @db.ObjectId
+  environmentId String   @db.ObjectId
+  version       Int      @default(0)
+  updatedAt     DateTime @updatedAt
+
+  @@unique([projectId, environmentId])
+  @@map("config_versions")
+}
+
+model Webhook {
+  id                  String    @id @default(auto()) @map("_id") @db.ObjectId
+  organizationId      String    @db.ObjectId
+  projectId           String    @db.ObjectId
+  url                 String
+  secret              String
+  /// Empty = all environments of the project
+  environmentIds      String[]  @db.ObjectId
+  enabled             Boolean   @default(true)
+  description         String?
+  consecutiveFailures Int       @default(0)
+  createdById         String    @db.ObjectId
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
+  lastDeliveryAt      DateTime?
+  lastStatus          String?
+
+  deliveries WebhookDelivery[]
+
+  @@index([projectId])
+  @@map("webhooks")
+}
+
+model WebhookDelivery {
+  id            String    @id @default(auto()) @map("_id") @db.ObjectId
+  webhookId     String    @db.ObjectId
+  eventId       String
+  event         Json
+  attempt       Int       @default(0)
+  /// pending | success | failed
+  status        String
+  responseCode  Int?
+  responseBody  String?
+  error         String?
+  durationMs    Int?
+  nextAttemptAt DateTime?
+  lockedUntil   DateTime?
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  webhook Webhook @relation(fields: [webhookId], references: [id], onDelete: Cascade)
+
+  @@unique([webhookId, eventId])
+  @@index([status, nextAttemptAt])
+  @@index([webhookId, createdAt])
+  @@map("webhook_deliveries")
+}
