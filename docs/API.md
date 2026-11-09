@@ -307,3 +307,47 @@ API Key erstellen.
   "expiresInDays": 365
 }
 ```
+
+## KI-Agenten anbinden (MCP)
+
+Togglely stellt einen MCP-Endpoint (Model Context Protocol) bereit, mit dem KI-Agenten wie Claude Code Feature-Flags direkt anlegen, schalten und aufräumen können.
+
+- Endpoint: `<base>/api/mcp` (Streamable HTTP, stateless – jede Anfrage authentifiziert sich selbst)
+- Authentifizierung: `Authorization: Bearer tkm_…` (API-Key-Typ `MCP`)
+
+### Key anlegen
+
+1. Im Dashboard unter der API-Keys-Seite der Organisation einen neuen Key vom Typ **KI-Agent (MCP)** anlegen. Das geht ab der Rolle MEMBER; ADMIN/OWNER sehen und widerrufen alle MCP-Keys, ein MEMBER nur seine eigenen.
+2. Ein Key gehört zu **genau einem Projekt**.
+3. Pro Key wird festgelegt, in welchen Environments die KI schalten darf („Darf schalten in“, Vorschlag: `development`).
+4. Der Key wird **nur einmal** angezeigt. Gespeichert wird nur sein Hash.
+
+### Anbinden (Claude Code)
+
+```bash
+claude mcp add --transport http togglely https://<host>/api/mcp --header "Authorization: Bearer tkm_…"
+```
+
+Der fertige Befehl wird nach dem Anlegen im Dashboard zum Kopieren angezeigt.
+
+### Tools
+
+| Tool | Eingabe | Wirkung |
+|---|---|---|
+| `get_project` | – | Projekt, Environments (inkl. `canToggle`) und Brands |
+| `list_flags` | `search?` | Flags mit Status je Environment/Brand |
+| `get_flag` | `flagKey` | Flag-Details mit Status/Wert je Environment und Brand |
+| `create_flag` | `key`, `name`, `description?`, `type` (`BOOLEAN`/`STRING`/`NUMBER`/`JSON`) | Legt ein Flag an (überall deaktiviert) |
+| `update_flag` | `flagKey`, `name?`, `description?` | Ändert Name/Beschreibung |
+| `set_flag_state` | `flagKey`, `environmentKey`, `enabled?`, `value?` | Schaltet/setzt den Wert im Environment-Default; nur in freigegebenen Environments |
+| `delete_flag` | `flagKey`, `confirm` | Ohne `confirm: true` nur Zustandsübersicht, mit `confirm: true` wird gelöscht |
+
+### Sicherheitsmodell
+
+- **Ein Projekt pro Key:** Flags anderer Projekte sind nicht erreichbar.
+- **Environment-Freigabe:** Schalten ist serverseitig nur in den beim Anlegen freigegebenen Environments möglich, sonst liefert das Tool einen Fehler (`isError`). Lesen ist in allen Environments des Projekts möglich. Geschaltet wird nur der Environment-Default, nicht Brand-Überschreibungen.
+- **Rechte:** Der Key wirkt mit der aktuellen Rolle seines Erstellers (VIEWER: nur lesen). Wird der Ersteller deaktiviert oder aus der Organisation entfernt, wird der Key abgelehnt.
+- **Löschen:** `delete_flag` ist ab MEMBER erlaubt, aber nur, wenn das Flag in allen Environments inklusive Brand-Überschreibungen denselben Zustand hat. Der Ablauf ist zweistufig: erst ohne `confirm` prüfen, dann mit `confirm: true` löschen. Bei abweichenden Zuständen wird die Liste der abweichenden Environments/Brands zurückgegeben.
+- **Rate Limits:** 120 Anfragen/min pro Key und 600 Anfragen/min pro IP.
+- **Audit-Log:** Änderungen laufen über dieselben Services wie im Dashboard (Validierung, Change-Events) und erscheinen im Audit-Log mit dem Hinweis „via MCP-Schlüssel“.
+- MCP-Keys werden von den SDK-Endpunkten nicht akzeptiert, und der MCP-Endpoint akzeptiert nur MCP-Keys.
