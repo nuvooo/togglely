@@ -3,7 +3,7 @@ import { useWorkspace } from '@/lib/workspace'
 
 /**
  * Project of the current experiment page: the route param first, `?projectId=` as a
- * fallback (pages still wrapped in `ProjectQueryBridge` or opened via old links).
+ * fallback (pages mounted outside the project routes, e.g. in tests).
  */
 export function useExperimentProjectId(): string {
   const { projectId } = useParams<{ projectId: string }>()

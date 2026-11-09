@@ -9,7 +9,6 @@ import {
   LegacyFlagRedirect,
   ParamRedirect,
 } from './components/routing/LegacyRedirects'
-import { ProjectQueryBridge } from './components/routing/ProjectQueryBridge'
 import {
   FullPageSpinner,
   GuestOnly,
@@ -24,7 +23,6 @@ import { fetchSetupStatus } from './lib/setup'
 const ApiKeys = lazy(() => import('./pages/ApiKeys'))
 const AuditLogs = lazy(() => import('./pages/AuditLogs'))
 const Dashboard = lazy(() => import('./pages/Dashboard'))
-const FeatureFlagDetail = lazy(() => import('./pages/FeatureFlagDetail'))
 const ForgotPassword = lazy(() => import('./pages/ForgotPassword'))
 const InviteAccept = lazy(() => import('./pages/InviteAccept'))
 const Login = lazy(() => import('./pages/Login'))
@@ -33,10 +31,14 @@ const OrganizationDetail = lazy(() => import('./pages/organizations/Organization
 const OrganizationList = lazy(() => import('./pages/organizations/OrganizationList'))
 const OrganizationMembers = lazy(() => import('./pages/organizations/OrganizationMembers'))
 const OrganizationSettings = lazy(() => import('./pages/organizations/OrganizationSettings'))
-const ProjectDetail = lazy(() => import('./pages/ProjectDetail'))
 const ProjectPicker = lazy(() => import('./pages/ProjectPicker'))
-const BrandFlags = lazy(() => import('./pages/projects/BrandFlags'))
-const ProjectSettings = lazy(() => import('./pages/projects/ProjectSettings'))
+const FlagsPage = lazy(() => import('./pages/projects/flags/FlagsPage'))
+const FlagDetailPage = lazy(() => import('./pages/projects/flags/detail/FlagDetailPage'))
+const EnvironmentsPage = lazy(() => import('./pages/projects/environments/EnvironmentsPage'))
+const BrandsPage = lazy(() => import('./pages/projects/brands/BrandsPage'))
+const BrandDetailPage = lazy(() => import('./pages/projects/brands/BrandDetailPage'))
+const SdkTesterPage = lazy(() => import('./pages/projects/sdk/SdkTesterPage'))
+const ProjectSettingsPage = lazy(() => import('./pages/projects/settings/ProjectSettingsPage'))
 const Webhooks = lazy(() => import('./pages/projects/Webhooks'))
 const WebhookDetail = lazy(() => import('./pages/projects/WebhookDetail'))
 const ResendVerification = lazy(() => import('./pages/ResendVerification'))
@@ -44,7 +46,6 @@ const ResetPassword = lazy(() => import('./pages/ResetPassword'))
 const ExperimentsList = lazy(() => import('./pages/experiments/ExperimentsList'))
 const CreateExperiment = lazy(() => import('./pages/experiments/CreateExperiment'))
 const ExperimentDetail = lazy(() => import('./pages/experiments/ExperimentDetail'))
-const SDKTester = lazy(() => import('./pages/SDKTester'))
 const Settings = lazy(() => import('./pages/Settings'))
 const Setup = lazy(() => import('./pages/Setup'))
 const VerifyEmail = lazy(() => import('./pages/VerifyEmail'))
@@ -121,18 +122,18 @@ function App() {
         {/* Project area */}
         <Route path="projects/:projectId">
           <Route index element={<ParamRedirect to="/projects/:projectId/flags" />} />
-          <Route path="flags" element={<ProjectDetail />} />
-          <Route path="flags/:flagId" element={<FeatureFlagDetail />} />
-          <Route path="experiments" element={<ProjectQueryBridge><ExperimentsList /></ProjectQueryBridge>} />
-          <Route path="experiments/new" element={<ProjectQueryBridge><CreateExperiment /></ProjectQueryBridge>} />
+          <Route path="flags" element={<FlagsPage />} />
+          <Route path="flags/:flagId" element={<FlagDetailPage />} />
+          <Route path="experiments" element={<ExperimentsList />} />
+          <Route path="experiments/new" element={<CreateExperiment />} />
           <Route path="experiments/:id" element={<ExperimentDetail />} />
-          <Route path="environments" element={<ProjectSettings />} />
-          <Route path="brands" element={<ProjectSettings />} />
-          <Route path="brands/:brandId" element={<BrandFlags />} />
-          <Route path="sdk" element={<SDKTester />} />
+          <Route path="environments" element={<EnvironmentsPage />} />
+          <Route path="brands" element={<BrandsPage />} />
+          <Route path="brands/:brandId" element={<BrandDetailPage />} />
+          <Route path="sdk" element={<SdkTesterPage />} />
           <Route path="webhooks" element={<Webhooks />} />
           <Route path="webhooks/:webhookId" element={<WebhookDetail />} />
-          <Route path="settings" element={<ProjectSettings />} />
+          <Route path="settings" element={<ProjectSettingsPage />} />
         </Route>
 
         {/* Organization area */}

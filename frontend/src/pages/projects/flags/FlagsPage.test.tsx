@@ -23,7 +23,6 @@ vi.mock('@/lib/axios', () => ({ default: api }))
 const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }))
 vi.mock('sonner', () => ({ toast }))
 
-import ProjectDetail from '@/pages/ProjectDetail'
 import FlagsPage from './FlagsPage'
 
 const env = (id: string, name: string, enabled: boolean, value: string) => ({
@@ -125,10 +124,6 @@ beforeEach(async () => {
 })
 
 describe('FlagsPage (single)', () => {
-  it('is what the ProjectDetail route renders', () => {
-    expect(ProjectDetail).toBe(FlagsPage)
-  })
-
   it('opens the create-flag dialog for ?new=1 and removes the param', async () => {
     state.flags = []
     renderPage(`/projects/${PROJECT_ID}/flags?new=1`)

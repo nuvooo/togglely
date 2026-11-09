@@ -36,7 +36,7 @@ const renderPage = (url = `/projects/${PROJECT}/experiments`) =>
     <MemoryRouter initialEntries={[url]}>
       <Routes>
         <Route path="/projects/:projectId/experiments" element={<ExperimentsList />} />
-        {/* Legacy mount without the route param (ProjectQueryBridge / ?projectId=) */}
+        {/* Legacy mount without the route param (?projectId= fallback) */}
         <Route path="/legacy" element={<ExperimentsList />} />
         <Route path="*" element={<Where />} />
       </Routes>

@@ -45,7 +45,7 @@ vi.mock('@/lib/workspace', () => ({
   }),
 }))
 
-import FeatureFlagDetail from '@/pages/FeatureFlagDetail'
+import FlagDetailPage from './FlagDetailPage'
 
 const flag = (overrides: Record<string, unknown> = {}) => ({
   id: FLAG,
@@ -112,7 +112,7 @@ const renderPage = (search = '') =>
       <Routes>
         <Route
           path="/projects/:projectId/flags/:flagId"
-          element={<FeatureFlagDetail />}
+          element={<FlagDetailPage />}
         />
         <Route path="/projects/:projectId/flags" element={<p>flags list</p>} />
       </Routes>
@@ -539,7 +539,7 @@ describe('Flag detail page', () => {
           <Routes>
             <Route
               path="/projects/:projectId/flags/:flagId"
-              element={<FeatureFlagDetail />}
+              element={<FlagDetailPage />}
             />
           </Routes>
         </MemoryRouter>
