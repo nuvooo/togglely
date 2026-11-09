@@ -117,15 +117,23 @@ describe('AuditLogsController findByOrganization', () => {
     })
   })
 
-  it('rejects invalid filters before checking access', async () => {
-    const { controller, service, access, req } = orgSetup()
+  it('rejects invalid filters of members', async () => {
+    const { controller, service, req } = orgSetup()
     await expect(
       controller.findByOrganization(ORG, req, { limit: '500' })
     ).rejects.toBeInstanceOf(BadRequestException)
     await expect(
       controller.findByOrganization(ORG, req, { action: 'flag.*' })
     ).rejects.toBeInstanceOf(BadRequestException)
-    expect(access.assertOrgRole).not.toHaveBeenCalled()
+    expect(service.findOrganizationPage).not.toHaveBeenCalled()
+  })
+
+  it('answers non-members with 404 regardless of the query', async () => {
+    const { controller, service, access, req } = orgSetup()
+    access.assertOrgRole.mockRejectedValue(new NotFoundException())
+    await expect(
+      controller.findByOrganization(ORG, req, { limit: '500' })
+    ).rejects.toBeInstanceOf(NotFoundException)
     expect(service.findOrganizationPage).not.toHaveBeenCalled()
   })
 

@@ -67,8 +67,9 @@ export class AuditLogsController {
     @Req() req: any,
     @Query() rawQuery: Record<string, unknown> = {}
   ) {
-    const query = parseOrgAuditLogQuery(rawQuery ?? {})
+    // Access first: non-members get 404 whatever they put in the query.
     await this.access.assertOrgRole(req.user.userId, organizationId, 'VIEWER')
+    const query = parseOrgAuditLogQuery(rawQuery ?? {})
     return this.auditLogsService.findOrganizationPage(organizationId, query)
   }
 
