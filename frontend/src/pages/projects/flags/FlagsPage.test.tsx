@@ -225,6 +225,12 @@ describe('FlagsPage (single)', () => {
     expect(within(checkout).getByText('new-checkout')).toBeInTheDocument()
     expect(within(checkout).getByText('BOOLEAN')).toBeInTheDocument()
     expect(within(checkout).getByText('2 hours ago')).toBeInTheDocument()
+    // Same cell structure in every row: BOOLEAN keeps an empty value slot,
+    // a single-brand project has no override slot at all.
+    expect(within(checkout).getAllByTestId('flag-value-placeholder')).toHaveLength(
+      2
+    )
+    expect(screen.queryByTestId('flag-override-badge')).not.toBeInTheDocument()
   })
 
   it('falls back to createdAt and shows "–" without any timestamp', async () => {

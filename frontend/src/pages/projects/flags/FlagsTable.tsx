@@ -1,11 +1,17 @@
-import { ChevronRight, Trash2 } from 'lucide-react'
-import type { ReactNode } from 'react'
+import { ChevronRight, Link2Off, Trash2 } from 'lucide-react'
+import { type ReactNode, useId } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate } from 'react-router-dom'
 import { DataTable, type DataTableColumn } from '@/components/data/DataTable'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Switch } from '@/components/ui/switch'
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from '@/components/ui/tooltip'
 import { flagPath } from '@/lib/routes'
 import { cn } from '@/lib/utils'
 import { BrandMatrix, type BrandMatrixActions } from './BrandMatrix'
@@ -35,6 +41,88 @@ interface FlagsTableProps {
 
 const detailId = (flagId: string) => `flag-${flagId}-brands`
 
+/*
+ * Every environment cell has the same fixed structure so switches, values
+ * and override badges line up across columns and rows:
+ *   [switch 2rem] [value slot 5rem] [override slot 2.25rem, MULTI only]
+ * Empty slots render a placeholder of the same width.
+ */
+const VALUE_SLOT = 'w-20 shrink-0'
+const OVERRIDE_SLOT = 'w-9 shrink-0'
+/** Slots + gaps (0.5rem each) + cell padding (1.5rem). */
+const ENV_COLUMN_WIDTH = '9.5rem'
+const ENV_COLUMN_WIDTH_MULTI = '12rem'
+
+/** Default value of a non-boolean flag: truncated chip, full value in a tooltip. */
+function ValueChip({
+  value,
+  label,
+  readOnlyTitle,
+  disabled,
+  onClick,
+}: {
+  value: string
+  label: string
+  readOnlyTitle?: string
+  disabled: boolean
+  onClick: () => void
+}) {
+  const valueId = useId()
+  const shown = value === '' ? '""' : value
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        {/* Wrapper: a disabled button fires no pointer events for the tooltip. */}
+        <span className={cn(VALUE_SLOT, 'flex')}>
+          <button
+            type="button"
+            onClick={onClick}
+            disabled={disabled}
+            aria-label={label}
+            aria-describedby={valueId}
+            className="w-full truncate rounded bg-muted px-1.5 py-0.5 text-left font-mono text-xs text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:hover:bg-muted"
+          >
+            {shown}
+          </button>
+          <span id={valueId} className="sr-only">
+            {shown}
+          </span>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent className="max-w-xs break-all font-mono">
+        {shown}
+        {readOnlyTitle && (
+          <span className="mt-1 block font-sans text-muted-foreground">
+            {readOnlyTitle}
+          </span>
+        )}
+      </TooltipContent>
+    </Tooltip>
+  )
+}
+
+/** Number of brands with their own value in an environment (MULTI projects). */
+function OverrideBadge({ label, count }: { label: string; count: number }) {
+  return (
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <span
+          className={cn(
+            OVERRIDE_SLOT,
+            'inline-flex items-center justify-center gap-0.5 rounded border py-0.5 text-xs text-muted-foreground'
+          )}
+          data-testid="flag-override-badge"
+        >
+          <Link2Off className="h-3 w-3 shrink-0" aria-hidden />
+          <span aria-hidden>{count}</span>
+          <span className="sr-only">{label}</span>
+        </span>
+      </TooltipTrigger>
+      <TooltipContent>{label}</TooltipContent>
+    </Tooltip>
+  )
+}
+
 /** Flags of a project: name/key, type, a switch per environment, updated, delete. */
 export function FlagsTable({
   projectId,
@@ -59,7 +147,7 @@ export function FlagsTable({
     {
       key: 'name',
       header: t('flags-page.col-name'),
-      className: 'min-w-[12rem]',
+      className: 'min-w-[12rem] whitespace-nowrap',
       cell: (flag) => {
         const open = expanded.has(flag.id)
         return (
@@ -101,13 +189,23 @@ export function FlagsTable({
       key: 'type',
       header: t('flags-page.col-type'),
       hideBelow: 'sm',
+      width: '6rem',
       cell: (flag) => <Badge variant="neutral">{flag.flagType}</Badge>,
     },
     ...environments.map(
       (column): DataTableColumn<FeatureFlag> => ({
         key: `env-${column.id}`,
-        header: column.name,
+        header: (
+          <span className="block truncate" title={column.name}>
+            {column.name}
+          </span>
+        ),
+        width: multi ? ENV_COLUMN_WIDTH_MULTI : ENV_COLUMN_WIDTH,
         align: 'center',
+        className: cn(
+          'whitespace-nowrap',
+          multi ? 'max-w-[12rem]' : 'max-w-[9.5rem]'
+        ),
         cell: (flag) => {
           const env = flag.environments?.find(
             (e) => e.environmentId === column.id
@@ -120,8 +218,8 @@ export function FlagsTable({
             ? (env.brandValues?.filter((b) => !b.inherited).length ?? 0)
             : 0
           return (
-            <div className="inline-flex items-center justify-center gap-2">
-              <span title={readOnlyTitle} className="inline-flex">
+            <div className="inline-flex items-center gap-2 align-middle">
+              <span title={readOnlyTitle} className="inline-flex shrink-0">
                 <Switch
                   checked={env.enabled}
                   disabled={
@@ -139,23 +237,30 @@ export function FlagsTable({
                   )}
                 />
               </span>
-              {flag.flagType !== 'BOOLEAN' && (
-                <button
-                  type="button"
-                  onClick={() => onEdit({ flag, env })}
+              {flag.flagType === 'BOOLEAN' ? (
+                <span
+                  className={VALUE_SLOT}
+                  aria-hidden
+                  data-testid="flag-value-placeholder"
+                />
+              ) : (
+                <ValueChip
+                  value={env.defaultValue}
+                  label={t('flags-page.edit-value-label', names)}
+                  readOnlyTitle={readOnlyTitle}
                   disabled={!canEdit}
-                  aria-label={t('flags-page.edit-value-label', names)}
-                  title={readOnlyTitle ?? env.defaultValue}
-                  className="max-w-[7rem] truncate rounded bg-muted px-1.5 py-0.5 font-mono text-xs text-foreground transition-colors hover:bg-accent focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:cursor-default disabled:hover:bg-muted"
-                >
-                  {env.defaultValue === '' ? '""' : env.defaultValue}
-                </button>
+                  onClick={() => onEdit({ flag, env })}
+                />
               )}
-              {overrides > 0 && (
-                <span className="whitespace-nowrap text-xs text-muted-foreground">
-                  {t('flags-page.overrides', { count: overrides })}
-                </span>
-              )}
+              {multi &&
+                (overrides > 0 ? (
+                  <OverrideBadge
+                    label={t('flags-page.overrides', { count: overrides })}
+                    count={overrides}
+                  />
+                ) : (
+                  <span className={OVERRIDE_SLOT} aria-hidden />
+                ))}
             </div>
           )
         },
@@ -165,6 +270,8 @@ export function FlagsTable({
       key: 'updated',
       header: t('flags-page.col-updated'),
       hideBelow: 'md',
+      width: '7rem',
+      align: 'right',
       className: 'whitespace-nowrap text-xs text-muted-foreground',
       cell: (flag) => {
         const date = flag.updatedAt ?? flag.createdAt
@@ -209,32 +316,34 @@ export function FlagsTable({
   const label = t('flags-page.table-label')
 
   return (
-    <DataTable
-      columns={columns}
-      rows={flags}
-      getRowId={(flag) => flag.id}
-      renderExpanded={
-        multi
-          ? (flag) => (
-              <BrandMatrix
-                flag={flag}
-                environments={environments}
-                onEdit={onEdit}
-                readOnly={!canEdit}
-                {...actions}
-              />
-            )
-          : undefined
-      }
-      isExpanded={(flag) => expanded.has(flag.id)}
-      getExpandedId={(flag) => detailId(flag.id)}
-      onRowClick={open}
-      // The flag name is a link: rows need no extra tab stop.
-      rowFocusable={false}
-      loading={loading}
-      loadingRows={4}
-      empty={empty}
-      label={label}
-    />
+    <TooltipProvider delayDuration={300}>
+      <DataTable
+        columns={columns}
+        rows={flags}
+        getRowId={(flag) => flag.id}
+        renderExpanded={
+          multi
+            ? (flag) => (
+                <BrandMatrix
+                  flag={flag}
+                  environments={environments}
+                  onEdit={onEdit}
+                  readOnly={!canEdit}
+                  {...actions}
+                />
+              )
+            : undefined
+        }
+        isExpanded={(flag) => expanded.has(flag.id)}
+        getExpandedId={(flag) => detailId(flag.id)}
+        onRowClick={open}
+        // The flag name is a link: rows need no extra tab stop.
+        rowFocusable={false}
+        loading={loading}
+        loadingRows={4}
+        empty={empty}
+        label={label}
+      />
+    </TooltipProvider>
   )
 }

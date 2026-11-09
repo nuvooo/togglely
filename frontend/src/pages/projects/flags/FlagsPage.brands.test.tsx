@@ -337,7 +337,7 @@ describe('FlagsPage (multi-brand)', () => {
     expect(collapsed).toBeEmptyDOMElement()
     expect(collapsed?.closest('tr')).toHaveAttribute('hidden')
     expect(screen.queryByTestId('flag-value-row')).not.toBeInTheDocument()
-    expect(screen.getByText('1 override')).toBeInTheDocument()
+    expect(screen.getByText('1 brand with its own value')).toBeInTheDocument()
 
     await userEvent.click(
       screen.getByRole('switch', {
@@ -361,6 +361,31 @@ describe('FlagsPage (multi-brand)', () => {
     expect(
       within(panel as HTMLElement).getAllByTestId('flag-value-row')
     ).toHaveLength(3)
+  })
+
+  it('renders every environment cell with the same slots: switch, value placeholder, override badge', async () => {
+    state.flags = [flag('BOOLEAN', 'true', 'false')]
+    renderPage()
+
+    const toggle = await screen.findByRole('switch', {
+      name: 'Banner default (all brands) enabled in Development',
+    })
+    const cell = toggle.closest('td') as HTMLElement
+    // BOOLEAN: an empty, hidden placeholder keeps the switches aligned.
+    const placeholder = within(cell).getByTestId('flag-value-placeholder')
+    expect(placeholder).toHaveAttribute('aria-hidden')
+    expect(placeholder).toBeEmptyDOMElement()
+    expect(
+      within(cell).queryByRole('button', { name: /Edit value of/ })
+    ).not.toBeInTheDocument()
+
+    // One brand (Beta) has its own value: compact badge with the count.
+    const badge = within(cell).getByTestId('flag-override-badge')
+    expect(badge).toHaveTextContent('1')
+    expect(
+      within(badge).getByText('1 brand with its own value')
+    ).toHaveClass('sr-only')
+    expect(cell).not.toHaveTextContent(/override/i)
   })
 
   it('edits the default from the table value chip with the default target', async () => {
