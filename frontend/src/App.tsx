@@ -20,18 +20,18 @@ import AppShell from './components/shell/AppShell'
 import { ROUTES } from './lib/routes'
 import { fetchSetupStatus } from './lib/setup'
 
-const ApiKeys = lazy(() => import('./pages/ApiKeys'))
-const AuditLogs = lazy(() => import('./pages/AuditLogs'))
 const AccountPage = lazy(() => import('./pages/account/AccountPage'))
 const ForgotPassword = lazy(() => import('./pages/auth/ForgotPasswordPage'))
 const InviteAccept = lazy(() => import('./pages/auth/InviteAcceptPage'))
 const Login = lazy(() => import('./pages/auth/LoginPage'))
 const OverviewPage = lazy(() => import('./pages/overview/OverviewPage'))
-const CreateOrganization = lazy(() => import('./pages/organizations/CreateOrganization'))
-const OrganizationDetail = lazy(() => import('./pages/organizations/OrganizationDetail'))
-const OrganizationList = lazy(() => import('./pages/organizations/OrganizationList'))
-const OrganizationMembers = lazy(() => import('./pages/organizations/OrganizationMembers'))
-const OrganizationSettings = lazy(() => import('./pages/organizations/OrganizationSettings'))
+const ApiKeysPage = lazy(() => import('./pages/orgs/api-keys/ApiKeysPage'))
+const AuditLogPage = lazy(() => import('./pages/orgs/audit-log/AuditLogPage'))
+const CreateOrgPage = lazy(() => import('./pages/orgs/new/CreateOrgPage'))
+const OrgListPage = lazy(() => import('./pages/orgs/list/OrgListPage'))
+const OrgMembersPage = lazy(() => import('./pages/orgs/members/OrgMembersPage'))
+const OrgProjectsPage = lazy(() => import('./pages/orgs/projects/OrgProjectsPage'))
+const OrgSettingsPage = lazy(() => import('./pages/orgs/settings/OrgSettingsPage'))
 const ProjectPicker = lazy(() => import('./pages/ProjectPicker'))
 const FlagsPage = lazy(() => import('./pages/projects/flags/FlagsPage'))
 const FlagDetailPage = lazy(() => import('./pages/projects/flags/detail/FlagDetailPage'))
@@ -137,15 +137,15 @@ function App() {
         </Route>
 
         {/* Organization area */}
-        <Route path="orgs" element={<OrganizationList />} />
-        <Route path="orgs/new" element={<CreateOrganization />} />
+        <Route path="orgs" element={<OrgListPage />} />
+        <Route path="orgs/new" element={<CreateOrgPage />} />
         <Route path="orgs/:orgId">
           <Route index element={<ParamRedirect to="/orgs/:orgId/projects" />} />
-          <Route path="projects" element={<OrganizationDetail />} />
-          <Route path="members" element={<OrganizationMembers />} />
-          <Route path="api-keys" element={<ApiKeys />} />
-          <Route path="audit-log" element={<AuditLogs />} />
-          <Route path="settings" element={<OrganizationSettings />} />
+          <Route path="projects" element={<OrgProjectsPage />} />
+          <Route path="members" element={<OrgMembersPage />} />
+          <Route path="api-keys" element={<ApiKeysPage />} />
+          <Route path="audit-log" element={<AuditLogPage />} />
+          <Route path="settings" element={<OrgSettingsPage />} />
         </Route>
 
         <Route path="account" element={<AccountPage />} />
