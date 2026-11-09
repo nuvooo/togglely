@@ -100,7 +100,19 @@ export class McpToolsService {
     }
   ) {
     this.requireRole(ctx, 'MEMBER')
-    const dto = await this.validateInput(CreateFlagDto, input)
+    const extra = Object.keys(input ?? {}).filter(
+      (k) => !['key', 'name', 'description', 'type'].includes(k)
+    )
+    if (extra.length > 0) {
+      throw new McpToolError(`Unsupported field(s): ${extra.join(', ')}`)
+    }
+    const { key, name, description, type } = input
+    const dto = await this.validateInput(CreateFlagDto, {
+      key,
+      name,
+      description,
+      type,
+    })
     const created = await this.run(() =>
       this.flags.create(ctx.projectId, ctx.userId, dto)
     )

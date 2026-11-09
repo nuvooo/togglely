@@ -104,6 +104,35 @@ describe('McpToolsService', () => {
     ).rejects.toThrow(new McpToolError('Flag key already exists'))
   })
 
+  it('createFlag with initialValues is rejected / does not reach FlagsService', async () => {
+    await expect(
+      service.createFlag(ctx, {
+        key: 'k',
+        name: 'n',
+        type: 'BOOLEAN',
+        initialValues: { prod: { enabled: true, value: 'true' } },
+      } as never)
+    ).rejects.toBeInstanceOf(McpToolError)
+    expect(flags.create).not.toHaveBeenCalled()
+  })
+
+  it('createFlag passes exactly key, name, description, type to FlagsService', async () => {
+    await service.createFlag(ctx, {
+      key: 'k',
+      name: 'n',
+      description: 'd',
+      type: 'BOOLEAN',
+    })
+    const dto = flags.create.mock.calls[0][2]
+    expect(flags.create.mock.calls[0][0]).toBe('p1')
+    expect({ ...dto }).toEqual({
+      key: 'k',
+      name: 'n',
+      description: 'd',
+      type: 'BOOLEAN',
+    })
+  })
+
   it('VIEWER cannot createFlag', async () => {
     await expect(
       service.createFlag(
