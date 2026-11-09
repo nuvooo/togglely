@@ -10,6 +10,11 @@ export const de = {
   'common.close': 'Schließen',
   'common.and': 'und',
   'common.optional': 'Optional',
+  'common.read-only': 'Nur lesen',
+  'permissions.forbidden': 'Keine Berechtigung',
+  'permissions.role-unavailable':
+    'Deine Rolle konnte nicht geladen werden – Bearbeiten ist deaktiviert.',
+  'permissions.retry': 'Erneut laden',
 
   // Navigation
   'nav.organizations': 'Organisationen',

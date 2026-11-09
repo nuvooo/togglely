@@ -1,5 +1,5 @@
 import api from '@/lib/axios'
-import { useWorkspace } from '@/lib/workspace'
+import { useProjectRole } from '@/lib/permissions'
 
 export type ProjectType = 'SINGLE' | 'MULTI'
 
@@ -58,16 +58,11 @@ export function apiMessage(error: unknown, fallback: string): string {
 export function useCanManageProject(projectId: string): {
   canManage: boolean
   roleLoading: boolean
+  /** The workspace failed to load; show `RoleUnavailableNotice`. */
+  roleUnavailable: boolean
   organizationId: string | undefined
 } {
-  const { projects, organizations, isLoading } = useWorkspace()
-  const organizationId = projects.find(
-    (p) => p.id === projectId
-  )?.organizationId
-  const role = organizations.find((o) => o.id === organizationId)?.role
-  return {
-    canManage: role === 'OWNER' || role === 'ADMIN',
-    roleLoading: isLoading,
-    organizationId,
-  }
+  const { canManage, roleLoading, roleUnavailable, organizationId } =
+    useProjectRole(projectId)
+  return { canManage, roleLoading, roleUnavailable, organizationId }
 }

@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n from '@/i18n'
 
@@ -15,6 +15,7 @@ const state = vi.hoisted(() => ({
   envs: [] as unknown[],
   flags: [] as unknown[] | Error,
   role: 'ADMIN',
+  workspaceError: null as unknown,
 }))
 
 const api = vi.hoisted(() => ({
@@ -39,14 +40,24 @@ vi.mock('@/lib/workspace', () => ({
         organizationId: ORG_ID,
       },
     ],
-    organizations: [{ id: ORG_ID, name: 'Acme', role: state.role }],
+    organizations: state.workspaceError
+      ? []
+      : [{ id: ORG_ID, name: 'Acme', role: state.role }],
     isLoading: false,
-    error: null,
+    error: state.workspaceError,
     projectsByOrg: () => [],
   }),
 }))
 
+import { refreshWorkspace } from '@/lib/workspace'
 import EnvironmentsPage from './EnvironmentsPage'
+
+const OTHER_ID = '0123456789abcdef0123cccc'
+const forbidden = () => ({
+  isAxiosError: true,
+  message: 'Request failed',
+  response: { status: 403, data: { message: 'Forbidden resource' } },
+})
 
 /** Flags with the given enabled environments. */
 const flag = (...enabledIn: string[]) => ({
@@ -107,6 +118,7 @@ describe('EnvironmentsPage', () => {
     state.envs = [DEV, PROD, STAGE]
     state.flags = []
     state.role = 'ADMIN'
+    state.workspaceError = null
     mockGets()
   })
 
@@ -323,6 +335,99 @@ describe('EnvironmentsPage', () => {
     await waitFor(() =>
       expect(renderedOrder()).toEqual(['Development', 'Production'])
     )
+  })
+
+  it('keeps the delete dialog open with the error when deleting fails', async () => {
+    api.delete.mockImplementationOnce(() =>
+      Promise.reject({
+        isAxiosError: true,
+        response: { status: 409, data: { message: 'Environment in use' } },
+      })
+    )
+    renderPage()
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Actions for Staging' })
+    )
+    await userEvent.click(
+      await screen.findByRole('menuitem', { name: 'Delete' })
+    )
+    const dialog = await screen.findByRole('dialog')
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: 'Delete' })
+    )
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Environment in use'
+    )
+    expect(screen.getByRole('dialog')).toBeInTheDocument()
+    expect(renderedOrder()).toContain('Staging')
+  })
+
+  it('a 403 on a write toasts "No permission" and reloads the role', async () => {
+    api.post.mockImplementationOnce(() => Promise.reject(forbidden()))
+    renderPage()
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Move Production up' })
+    )
+
+    await waitFor(() =>
+      expect(toast.error).toHaveBeenCalledWith('No permission')
+    )
+    expect(refreshWorkspace).toHaveBeenCalled()
+  })
+
+  it('explains a failed role load instead of silently being read-only', async () => {
+    state.workspaceError = new Error('down')
+    renderPage()
+    await screen.findByText('Production', {
+      selector: '[data-testid="environment-row"]',
+    })
+    expect(
+      screen.getByText(/Your role could not be loaded/)
+    ).toBeInTheDocument()
+    await userEvent.click(screen.getByRole('button', { name: 'Reload' }))
+    expect(refreshWorkspace).toHaveBeenCalled()
+  })
+
+  it('ignores a late response of the previous project', async () => {
+    let resolveFirst: (value: unknown) => void = () => {}
+    api.get.mockImplementation((url: string) => {
+      if (url === `/environments/project/${PROJECT_ID}`) {
+        return new Promise((resolve) => {
+          resolveFirst = resolve
+        })
+      }
+      if (url === `/environments/project/${OTHER_ID}`) {
+        return Promise.resolve({ data: { environments: [STAGE] } })
+      }
+      return Promise.resolve({ data: { featureFlags: [] } })
+    })
+    function Switcher() {
+      const navigate = useNavigate()
+      return (
+        <button type="button" onClick={() => navigate(`/projects/${OTHER_ID}/environments`)}>
+          switch
+        </button>
+      )
+    }
+    render(
+      <MemoryRouter initialEntries={[`/projects/${PROJECT_ID}/environments`]}>
+        <Switcher />
+        <Routes>
+          <Route
+            path="/projects/:projectId/environments"
+            element={<EnvironmentsPage />}
+          />
+        </Routes>
+      </MemoryRouter>
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'switch' }))
+    await screen.findByText('Staging', {
+      selector: '[data-testid="environment-row"]',
+    })
+    resolveFirst({ data: { environments: [DEV, PROD] } })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(renderedOrder()).toEqual(['Staging'])
   })
 
   it('is read-only for members', async () => {

@@ -14,6 +14,7 @@ import { toast } from 'sonner'
 import { DataTable, type DataTableColumn } from '@/components/data/DataTable'
 import { EmptyState } from '@/components/feedback/EmptyState'
 import { ErrorState } from '@/components/feedback/ErrorState'
+import { RoleUnavailableNotice } from '@/components/feedback/RoleUnavailableNotice'
 import { PageHeader } from '@/components/page/PageHeader'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -24,6 +25,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import api from '@/lib/axios'
+import { handleForbidden, notifyWriteError } from '@/lib/permissions'
 import { apiMessage, useCanManageProject } from '../settings/project'
 import { EnvironmentDialog } from './EnvironmentDialog'
 import {
@@ -36,7 +38,7 @@ import {
 export default function EnvironmentsPage() {
   const { t } = useTranslation()
   const { projectId = '' } = useParams<{ projectId: string }>()
-  const { canManage, roleLoading, organizationId } =
+  const { canManage, roleLoading, roleUnavailable, organizationId } =
     useCanManageProject(projectId)
   const [environments, setEnvironments] = useState<Environment[]>([])
   /** Flag list for the counts; `null` = not (yet) available, the column shows "–". */
@@ -49,32 +51,39 @@ export default function EnvironmentsPage() {
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState<Environment | null>(null)
   const reorderInFlight = useRef(false)
+  /** Id of the latest load; responses of older loads (other project) are dropped. */
+  const loadId = useRef(0)
 
   const fetchEnvironments = useCallback(async (): Promise<Environment[]> => {
     const response = await api.get(`/environments/project/${projectId}`)
     return response.data.environments ?? []
   }, [projectId])
 
-  const fetchFlags = useCallback(() => {
-    // Counts are secondary: the page works without them.
-    api
-      .get(`/feature-flags/project/${projectId}`)
-      .then((response) => setFlags(response.data.featureFlags ?? []))
-      .catch(() => setFlags(null))
-  }, [projectId])
-
   const load = useCallback(async () => {
+    const id = ++loadId.current
+    const current = () => id === loadId.current
     setIsLoading(true)
     setLoadError(false)
+    setFlags(null)
     try {
-      setEnvironments(await fetchEnvironments())
-      fetchFlags()
+      const list = await fetchEnvironments()
+      if (!current()) return
+      setEnvironments(list)
+      // Counts are secondary: the page works without them.
+      api
+        .get(`/feature-flags/project/${projectId}`)
+        .then((response) => {
+          if (current()) setFlags(response.data.featureFlags ?? [])
+        })
+        .catch(() => {
+          if (current()) setFlags(null)
+        })
     } catch {
-      setLoadError(true)
+      if (current()) setLoadError(true)
     } finally {
-      setIsLoading(false)
+      if (current()) setIsLoading(false)
     }
-  }, [fetchEnvironments, fetchFlags])
+  }, [fetchEnvironments, projectId])
 
   useEffect(() => {
     if (projectId) load()
@@ -103,7 +112,9 @@ export default function EnvironmentsPage() {
       const persisted: Environment[] | undefined = response.data?.environments
       if (persisted) setEnvironments(persisted)
     } catch (error) {
-      toast.error(
+      notifyWriteError(
+        error,
+        t,
         apiMessage(error, t('environments-page.toast.reorder-failed'))
       )
       // The optimistic order is unknown to the server (or stale, e.g. an
@@ -140,7 +151,9 @@ export default function EnvironmentsPage() {
         toast.success(t('environments-page.toast.created'))
       }
     } catch (error) {
-      toast.error(
+      notifyWriteError(
+        error,
+        t,
         apiMessage(
           error,
           editing
@@ -159,7 +172,11 @@ export default function EnvironmentsPage() {
       setEnvironments((list) => list.filter((e) => e.id !== deleting.id))
       toast.success(t('environments-page.toast.deleted'))
     } catch (error) {
-      toast.error(apiMessage(error, t('environments-page.toast.delete-failed')))
+      // The confirm dialog stays open and shows the message.
+      handleForbidden(error, t)
+      throw new Error(
+        apiMessage(error, t('environments-page.toast.delete-failed'))
+      )
     }
   }
 
@@ -328,7 +345,7 @@ export default function EnvironmentsPage() {
   } else {
     content = (
       <div className="space-y-2">
-        {!canManage && (
+        {!canManage && !roleUnavailable && (
           <p className="text-xs text-muted-foreground">
             {t('environments-page.read-only')}
           </p>
@@ -354,6 +371,7 @@ export default function EnvironmentsPage() {
             : undefined
         }
       />
+      <RoleUnavailableNotice show={roleUnavailable} />
       {content}
 
       <EnvironmentDialog

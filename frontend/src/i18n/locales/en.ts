@@ -10,6 +10,11 @@ export const en = {
   'common.close': 'Close',
   'common.and': 'and',
   'common.optional': 'Optional',
+  'common.read-only': 'Read only',
+  'permissions.forbidden': 'No permission',
+  'permissions.role-unavailable':
+    'Your role could not be loaded – editing is disabled.',
+  'permissions.retry': 'Reload',
 
   // Navigation
   'nav.organizations': 'Organizations',

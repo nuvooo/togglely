@@ -1,7 +1,7 @@
 import type { TFunction } from 'i18next'
 import api from '@/lib/axios'
 import { getErrorCode, getErrorMessage, getErrorStatus } from '@/lib/errors'
-import { refreshWorkspace } from '@/lib/workspace'
+import { refreshOnForbidden } from '@/lib/permissions'
 
 export interface Webhook {
   id: string
@@ -110,7 +110,7 @@ export function webhookErrorMessage(error: unknown, t: TFunction): string {
  * known to the UI is stale: reload the workspace so the page drops write actions.
  */
 export function writeErrorMessage(error: unknown, t: TFunction): string {
-  if (getErrorStatus(error) === 403) refreshWorkspace().catch(() => {})
+  refreshOnForbidden(error)
   return webhookErrorMessage(error, t)
 }
 
