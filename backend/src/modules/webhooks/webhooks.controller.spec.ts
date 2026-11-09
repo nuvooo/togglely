@@ -166,6 +166,35 @@ describe('WebhooksController access control', () => {
     ).resolves.toBeDefined()
   })
 
+  it('masks path and query of webhook URLs for MEMBERs', async () => {
+    const ctx = setup('ADMIN')
+    await createWebhook(ctx.controller, {
+      url: 'https://hooks.example.com:8443/services/T000/B000/XXXX?token=abc',
+    })
+    await createWebhook(ctx.controller, { url: 'https://root.example.com/' })
+    ctx.prisma.organizationMember.findFirst.mockResolvedValue({
+      userId: USER_ID,
+      organizationId: ORG_ID,
+      role: 'MEMBER',
+    })
+
+    const { webhooks } = await ctx.controller.list(PROJECT_ID, req)
+
+    expect(webhooks.map((w) => w.url)).toEqual([
+      'https://hooks.example.com:8443/…',
+      'https://root.example.com/',
+    ])
+    expect(JSON.stringify(webhooks)).not.toContain('XXXX')
+    expect(JSON.stringify(webhooks)).not.toContain('token=abc')
+  })
+
+  it.each(['ADMIN', 'OWNER'])('%s sees the full webhook URL', async (role) => {
+    const { controller, prisma } = await withExisting(role)
+    prisma.webhook.rows[0].url = 'https://hooks.example.com/secret?k=1'
+    const { webhooks } = await controller.list(PROJECT_ID, req)
+    expect(webhooks[0].url).toBe('https://hooks.example.com/secret?k=1')
+  })
+
   it('returns 404 for webhooks of another project', async () => {
     const { controller, prisma, webhook } = await withExisting('ADMIN')
     prisma.webhook.rows[0].projectId = '0123456789abcdef01234567'
@@ -273,6 +302,30 @@ describe('WebhooksController', () => {
     expect(error.getResponse()).toMatchObject({ code: 'webhook_limit_reached' })
     // Only the surviving webhook is audited
     expect(auditLogs.create).toHaveBeenCalledTimes(1)
+  })
+
+  it('never writes the full webhook URL to audit logs', async () => {
+    const { controller, auditLogs } = setup()
+    const secretUrl = 'https://hooks.example.com/services/T0/B0/SECRETPATH?t=q'
+    const newUrl = 'https://other.example.com/hook/NEWSECRET'
+    const { webhook } = await createWebhook(controller, { url: secretUrl })
+    await controller.update(PROJECT_ID, webhook.id, { url: newUrl }, req)
+    await controller.delete(PROJECT_ID, webhook.id, req)
+
+    const logged = JSON.stringify(auditLogs.create.mock.calls)
+    expect(logged).not.toContain('SECRETPATH')
+    expect(logged).not.toContain('NEWSECRET')
+    expect(logged).not.toContain('t=q')
+    const [created, updated] = auditLogs.create.mock.calls.map((c) => c[0])
+    expect(created.newValues.url).toEqual({
+      origin: 'https://hooks.example.com',
+      pathLength: '/services/T0/B0/SECRETPATH?t=q'.length,
+    })
+    expect(updated.oldValues.url).toEqual(created.newValues.url)
+    expect(updated.newValues.url).toEqual({
+      origin: 'https://other.example.com',
+      pathLength: '/hook/NEWSECRET'.length,
+    })
   })
 
   it('rejects environments of other projects', async () => {

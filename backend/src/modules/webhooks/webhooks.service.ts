@@ -70,11 +70,42 @@ export interface WebhookDeliveryView {
   event: unknown
 }
 
-export function toWebhookView(webhook: Webhook): WebhookView {
+/**
+ * Webhook URLs often carry credentials in path or query (Slack, Teams,
+ * custom tokens). Returns scheme + host only, e.g. `https://host/…`.
+ */
+export function maskWebhookUrl(raw: string): string {
+  try {
+    const url = new URL(raw)
+    const rest = `${url.pathname}${url.search}${url.hash}`
+    return `${url.protocol}//${url.host}/${rest === '/' ? '' : '…'}`
+  } catch {
+    return '…'
+  }
+}
+
+/** URL representation for audit logs: origin and length of the rest. */
+export function auditUrl(raw: string): { origin: string; pathLength: number } {
+  try {
+    const url = new URL(raw)
+    return {
+      origin: `${url.protocol}//${url.host}`,
+      pathLength: `${url.pathname}${url.search}${url.hash}`.length,
+    }
+  } catch {
+    return { origin: '', pathLength: raw.length }
+  }
+}
+
+export function toWebhookView(
+  webhook: Webhook,
+  options: { fullUrl?: boolean } = {}
+): WebhookView {
   return {
     id: webhook.id,
     projectId: webhook.projectId,
-    url: webhook.url,
+    url:
+      options.fullUrl === false ? maskWebhookUrl(webhook.url) : webhook.url,
     description: webhook.description ?? null,
     environmentIds: webhook.environmentIds ?? [],
     enabled: webhook.enabled,
@@ -132,12 +163,16 @@ export class WebhooksService {
     private readonly lookup?: LookupAllFn
   ) {}
 
-  async list(projectId: string): Promise<WebhookView[]> {
+  /** `fullUrl: false` (non-admins) masks path and query of the URLs. */
+  async list(
+    projectId: string,
+    options: { fullUrl: boolean }
+  ): Promise<WebhookView[]> {
     const webhooks = await this.prisma.webhook.findMany({
       where: { projectId },
       orderBy: { createdAt: 'asc' },
     })
-    return webhooks.map(toWebhookView)
+    return webhooks.map((w) => toWebhookView(w, options))
   }
 
   /** Loads a webhook of the project or throws 404. */
@@ -188,7 +223,7 @@ export class WebhooksService {
       throw limitReached()
     }
     await this.audit('webhook.created', webhook, actor, undefined, {
-      url: webhook.url,
+      url: auditUrl(webhook.url),
       environmentIds: webhook.environmentIds,
       enabled: webhook.enabled,
       description: webhook.description,
@@ -223,13 +258,13 @@ export class WebhooksService {
       updated,
       actor,
       {
-        url: webhook.url,
+        url: auditUrl(webhook.url),
         environmentIds: webhook.environmentIds,
         enabled: webhook.enabled,
         description: webhook.description,
       },
       {
-        url: updated.url,
+        url: auditUrl(updated.url),
         environmentIds: updated.environmentIds,
         enabled: updated.enabled,
         description: updated.description,
@@ -242,7 +277,7 @@ export class WebhooksService {
     // Deliveries are removed by the relation's onDelete: Cascade
     await this.prisma.webhook.delete({ where: { id: webhook.id } })
     await this.audit('webhook.deleted', webhook, actor, {
-      url: webhook.url,
+      url: auditUrl(webhook.url),
       environmentIds: webhook.environmentIds,
     })
     return { success: true }

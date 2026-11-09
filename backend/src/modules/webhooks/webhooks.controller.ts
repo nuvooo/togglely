@@ -11,7 +11,7 @@ import {
   UseGuards,
 } from '@nestjs/common'
 import { Throttle } from '@nestjs/throttler'
-import { AccessService } from '../../shared/access/access.service'
+import { AccessService, hasRole } from '../../shared/access/access.service'
 import { AuthGuard } from '../../shared/auth.guard'
 import { CreateWebhookDto, UpdateWebhookDto } from './dto/webhook.dto'
 import { WebhooksService } from './webhooks.service'
@@ -22,7 +22,8 @@ const SEND_THROTTLE = { default: { ttl: 60_000, limit: 10 } }
 /**
  * Project webhooks. Reading requires MEMBER, changing ADMIN. Non-members
  * get 404 (AccessService). Secrets are only returned in plain text by
- * create and rotate-secret.
+ * create and rotate-secret. Non-admins see webhook URLs without path and
+ * query (`https://host/…`).
  */
 @Controller('projects/:projectId/webhooks')
 @UseGuards(AuthGuard)
@@ -34,12 +35,17 @@ export class WebhooksController {
 
   @Get()
   async list(@Param('projectId') projectId: string, @Req() req: any) {
-    const { project } = await this.access.assertProjectAccess(
+    const { project, membership } = await this.access.assertProjectAccess(
       req.user.userId,
       projectId,
       'MEMBER'
     )
-    return { webhooks: await this.webhooks.list(project.id) }
+    // URLs may embed credentials: only admins see path and query
+    return {
+      webhooks: await this.webhooks.list(project.id, {
+        fullUrl: hasRole(membership.role, 'ADMIN'),
+      }),
+    }
   }
 
   @Post()
