@@ -12,9 +12,10 @@ import {
   Shield,
   Trash2,
 } from 'lucide-react'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useLocation, useNavigate, useParams } from 'react-router-dom'
+import { toast } from 'sonner'
 import { refreshWorkspace } from '@/lib/workspace'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -120,6 +121,7 @@ export default function ProjectSettings() {
   const [envName, setEnvName] = useState('')
   const [envKey, setEnvKey] = useState('')
   const [editingEnv, setEditingEnv] = useState<Environment | null>(null)
+  const reorderInFlight = useRef(false)
 
   // Brand dialog
   const [showBrandDialog, setShowBrandDialog] = useState(false)
@@ -321,6 +323,10 @@ export default function ProjectSettings() {
     envId: string,
     direction: 'up' | 'down'
   ) => {
+    // One reorder at a time: each request carries the full id list, so a
+    // second click must build on the first one's result. Buttons stay
+    // enabled (disabling them would drop keyboard focus).
+    if (reorderInFlight.current) return
     const index = environments.findIndex((e) => e.id === envId)
     if (index === -1) return
     if (direction === 'up' && index === 0) return
@@ -334,19 +340,38 @@ export default function ProjectSettings() {
     ]
 
     // Optimistic update
+    reorderInFlight.current = true
     setEnvironments(newEnvironments)
 
     try {
-      await api.post(`/environments/project/${projectId}/reorder`, {
-        environmentIds: newEnvironments.map((e) => e.id),
-      })
+      const response = await api.post(
+        `/environments/project/${projectId}/reorder`,
+        { environmentIds: newEnvironments.map((e) => e.id) }
+      )
+      const persisted: Environment[] | undefined = response.data?.environments
+      if (persisted) {
+        // Keep client-only fields (flagCount) of the rows we already have.
+        const byId = new Map(newEnvironments.map((e) => [e.id, e]))
+        setEnvironments(
+          persisted.map((e) => ({ ...byId.get(e.id), ...e }) as Environment)
+        )
+      }
     } catch (error: any) {
-      // Revert on error
-      setEnvironments(environments)
-      setMessage({
-        type: 'error',
-        text: 'Failed to reorder environments',
-      })
+      toast.error(
+        error.response?.data?.message ||
+          error.response?.data?.error ||
+          'Failed to reorder environments'
+      )
+      // The optimistic order is unknown to the server (or stale, e.g. an
+      // environment was added elsewhere): show what is actually persisted.
+      try {
+        const envsRes = await api.get(`/environments/project/${projectId}`)
+        setEnvironments(envsRes.data.environments || [])
+      } catch {
+        setEnvironments(environments)
+      }
+    } finally {
+      reorderInFlight.current = false
     }
   }
 
@@ -642,6 +667,8 @@ export default function ProjectSettings() {
                 {environments.map((env, index) => (
                   <div
                     key={env.id}
+                    data-testid="environment-row"
+                    data-environment-name={env.name}
                     className="flex items-center justify-between p-4 border rounded-lg"
                   >
                     <div className="flex items-center gap-3">
@@ -664,23 +691,27 @@ export default function ProjectSettings() {
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8 rounded-none border-r"
+                              aria-label={`Move ${env.name} up`}
+                              title="Move up"
                               disabled={index === 0}
                               onClick={() =>
                                 handleReorderEnvironment(env.id, 'up')
                               }
                             >
-                              <ArrowUp className="h-3 w-3" />
+                              <ArrowUp className="h-3 w-3" aria-hidden />
                             </Button>
                             <Button
                               variant="ghost"
                               size="icon"
                               className="h-8 w-8 rounded-none"
+                              aria-label={`Move ${env.name} down`}
+                              title="Move down"
                               disabled={index === environments.length - 1}
                               onClick={() =>
                                 handleReorderEnvironment(env.id, 'down')
                               }
                             >
-                              <ArrowDown className="h-3 w-3" />
+                              <ArrowDown className="h-3 w-3" aria-hidden />
                             </Button>
                           </div>
                           <DropdownMenu>
