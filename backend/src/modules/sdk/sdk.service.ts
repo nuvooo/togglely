@@ -7,13 +7,13 @@ import {
 } from '@nestjs/common'
 import { Environment, Project } from '@prisma/client'
 import { PrismaService } from '../../shared/prisma.service'
+import { EvaluationService, ToggleContext } from './evaluation.service'
+import { HashingService } from './hashing.service'
 import {
   getDefaultFlagValue,
   isOriginAllowed,
   toSdkFlagResponse,
 } from './sdk.helpers'
-import { EvaluationService, ToggleContext } from './evaluation.service'
-import { HashingService } from './hashing.service'
 
 /** Upper bound for SDK-supplied identifiers (api key, project/env/brand keys). */
 const MAX_SDK_IDENTIFIER_LENGTH = 256
@@ -82,6 +82,7 @@ export class SdkService {
     const keyRecord = await this.prisma.apiKey.findFirst({
       where: {
         key: apiKey,
+        type: { not: 'MCP' },
         isActive: true,
         OR: [
           { expiresAt: null },
@@ -548,7 +549,11 @@ export class SdkService {
   }
 
   /** Track an exposure asynchronously (fire-and-forget). */
-  private recordExposure(experimentId: string, variantId: string, userId: string) {
+  private recordExposure(
+    experimentId: string,
+    variantId: string,
+    userId: string
+  ) {
     this.prisma.experimentEvent
       .create({
         data: {
@@ -594,7 +599,8 @@ export class SdkService {
     // Evaluation uses the first running experiment per flag
     const byFlag = new Map<string, (typeof experiments)[number]>()
     for (const experiment of experiments) {
-      if (!byFlag.has(experiment.flagId)) byFlag.set(experiment.flagId, experiment)
+      if (!byFlag.has(experiment.flagId))
+        byFlag.set(experiment.flagId, experiment)
     }
 
     const brandId = await this.resolveBrandId(project, brandKey)

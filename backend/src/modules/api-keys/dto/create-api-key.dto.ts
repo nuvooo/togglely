@@ -1,6 +1,9 @@
 import {
+  ArrayMaxSize,
+  IsArray,
   IsIn,
   IsInt,
+  IsMongoId,
   IsOptional,
   IsString,
   Max,
@@ -16,7 +19,7 @@ export class CreateApiKeyDto {
   name: string
 
   @IsOptional()
-  @IsIn(['SERVER', 'CLIENT', 'SDK'])
+  @IsIn(['SERVER', 'CLIENT', 'SDK', 'MCP'])
   type?: string
 
   @IsOptional()
@@ -24,4 +27,14 @@ export class CreateApiKeyDto {
   @Min(1)
   @Max(3650)
   expiresInDays?: number
+
+  @IsOptional()
+  @IsMongoId()
+  projectId?: string
+
+  @IsOptional()
+  @IsArray()
+  @IsMongoId({ each: true })
+  @ArrayMaxSize(50)
+  allowedEnvironmentIds?: string[]
 }

@@ -180,7 +180,7 @@ export class AccessService {
     const apiKey = isObjectId(apiKeyId)
       ? await this.prisma.apiKey.findUnique({
           where: { id: apiKeyId },
-          select: { id: true, organizationId: true },
+          select: { id: true, organizationId: true, type: true, userId: true },
         })
       : null
     if (!apiKey) throw new NotFoundException('API key not found')
