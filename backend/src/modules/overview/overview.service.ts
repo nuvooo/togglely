@@ -100,9 +100,12 @@ export class OverviewService {
     if (projects.length === 0) return { counts, recentFlags: [], projects }
 
     const projectId = { in: projects.map((p) => p.id) }
-    const [flags, runningExperiments, productionEnvs, recentFlags] =
+    const [flagIds, runningExperiments, productionEnvs, recentFlags] =
       await Promise.all([
-        this.prisma.featureFlag.count({ where: { projectId } }),
+        this.prisma.featureFlag.findMany({
+          where: { projectId },
+          select: { id: true },
+        }),
         this.prisma.experiment.count({
           where: { projectId, status: 'RUNNING' },
         }),
@@ -125,13 +128,16 @@ export class OverviewService {
         }),
       ])
 
-    counts.flags = flags
+    counts.flags = flagIds.length
     counts.runningExperiments = runningExperiments
     if (productionEnvs.length > 0) {
-      // Default and brand rows of one flag count once.
+      // Only the environment default (brandId null) says whether a flag is
+      // on in production; brand overrides and rows of deleted flags do not.
       const enabled = await this.prisma.flagEnvironment.findMany({
         where: {
+          flagId: { in: flagIds.map((f) => f.id) },
           environmentId: { in: productionEnvs.map((e) => e.id) },
+          brandId: null,
           enabled: true,
         },
         select: { flagId: true },

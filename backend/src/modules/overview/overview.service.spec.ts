@@ -164,6 +164,20 @@ function twoTenants() {
         brandId: null,
         enabled: false,
       },
+      // only a brand override is enabled: the flag is off in production
+      {
+        flagId: 'f2',
+        environmentId: 'e-a1-prod',
+        brandId: 'brand-1',
+        enabled: true,
+      },
+      // orphan row of a deleted flag: not counted
+      {
+        flagId: 'f-deleted',
+        environmentId: 'e-a1-prod',
+        brandId: null,
+        enabled: true,
+      },
       // enabled outside production only: not counted
       { flagId: 'f3', environmentId: 'e-a2-dev', brandId: null, enabled: true },
       {
@@ -227,8 +241,7 @@ describe('OverviewService', () => {
       expect.objectContaining({ where: { organizationId: { in: ['org-a'] } } })
     )
     const scoped = [
-      prisma.featureFlag.count.mock.calls[0][0],
-      prisma.featureFlag.findMany.mock.calls[0][0],
+      ...prisma.featureFlag.findMany.mock.calls.map((c: any[]) => c[0]),
       prisma.experiment.count.mock.calls[0][0],
       prisma.environment.findMany.mock.calls[0][0],
     ]
@@ -237,7 +250,12 @@ describe('OverviewService', () => {
     }
     expect(prisma.flagEnvironment.findMany).toHaveBeenCalledWith(
       expect.objectContaining({
-        where: { environmentId: { in: ['e-a1-prod'] }, enabled: true },
+        where: {
+          flagId: { in: ['f1', 'f2', 'f3'] },
+          environmentId: { in: ['e-a1-prod'] },
+          brandId: null,
+          enabled: true,
+        },
       })
     )
   })
