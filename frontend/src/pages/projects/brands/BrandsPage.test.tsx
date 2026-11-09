@@ -1,6 +1,6 @@
 import { render, screen, waitFor, within } from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
-import { MemoryRouter, Route, Routes } from 'react-router-dom'
+import { MemoryRouter, Route, Routes, useNavigate } from 'react-router-dom'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import i18n from '@/i18n'
 
@@ -41,6 +41,7 @@ vi.mock('@/lib/workspace', () => ({
   }),
 }))
 
+import { refreshWorkspace } from '@/lib/workspace'
 import BrandsPage from './BrandsPage'
 
 const ALPHA = {
@@ -212,6 +213,75 @@ describe('BrandsPage', () => {
     await waitFor(() =>
       expect(screen.queryByText('Beta')).not.toBeInTheDocument()
     )
+  })
+
+  it('keeps the delete dialog open with the error when deleting fails', async () => {
+    api.delete.mockImplementationOnce(() =>
+      Promise.reject({
+        isAxiosError: true,
+        response: { status: 403, data: { message: 'Forbidden resource' } },
+      })
+    )
+    renderPage()
+    await userEvent.click(
+      await screen.findByRole('button', { name: 'Actions for Beta' })
+    )
+    await userEvent.click(
+      await screen.findByRole('menuitem', { name: 'Delete' })
+    )
+    const dialog = await screen.findByRole('dialog')
+    await userEvent.click(
+      within(dialog).getByRole('button', { name: 'Delete' })
+    )
+
+    expect(await within(dialog).findByRole('alert')).toHaveTextContent(
+      'Forbidden resource'
+    )
+    expect(toast.error).toHaveBeenCalledWith('No permission')
+    expect(refreshWorkspace).toHaveBeenCalled()
+    expect(screen.getByText('Beta')).toBeInTheDocument()
+  })
+
+  it('ignores a late response of the previous project', async () => {
+    let resolveFirst: (value: unknown) => void = () => {}
+    const project = (id: string) => ({
+      data: {
+        project: { id, name: id, key: id, description: null, type: 'MULTI', allowedOrigins: [], organizationId: ORG_ID },
+      },
+    })
+    api.get.mockImplementation((url: string) => {
+      if (url === `/projects/${PROJECT_ID}`) return Promise.resolve(project(PROJECT_ID))
+      if (url === '/projects/p2') return Promise.resolve(project('p2'))
+      if (url === `/brands/project/${PROJECT_ID}`)
+        return new Promise((resolve) => {
+          resolveFirst = resolve
+        })
+      return Promise.resolve({ data: { brands: [BETA] } })
+    })
+    function Switcher() {
+      const navigate = useNavigate()
+      return (
+        <button type="button" onClick={() => navigate('/projects/p2/brands')}>
+          switch
+        </button>
+      )
+    }
+    render(
+      <MemoryRouter initialEntries={[`/projects/${PROJECT_ID}/brands`]}>
+        <Switcher />
+        <Routes>
+          <Route path="/projects/:projectId/brands" element={<BrandsPage />} />
+        </Routes>
+      </MemoryRouter>
+    )
+    await waitFor(() =>
+      expect(api.get).toHaveBeenCalledWith(`/brands/project/${PROJECT_ID}`)
+    )
+    await userEvent.click(screen.getByRole('button', { name: 'switch' }))
+    await screen.findByText('Beta')
+    resolveFirst({ data: { brands: [ALPHA] } })
+    await new Promise((r) => setTimeout(r, 20))
+    expect(screen.queryByText('Alpha')).not.toBeInTheDocument()
   })
 
   it('keeps the dialog open and shows the server message when creating fails', async () => {

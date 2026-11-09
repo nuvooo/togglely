@@ -33,6 +33,8 @@ interface FlagValueRowProps {
   onToggle: (enabled: boolean) => void
   /** Non-boolean flags only: opens the value editor. */
   onEdit?: () => void
+  /** No write permission: switch, link toggle and edit are disabled ("Read only"). */
+  readOnly?: boolean
 }
 
 /** Muted legend line explaining the link icon ("🔗 = follows default"). */
@@ -63,8 +65,11 @@ export function FlagValueRow({
   primary = false,
   onToggle,
   onEdit,
+  readOnly = false,
 }: FlagValueRowProps) {
   const { t } = useTranslation()
+  const locked = busy || readOnly
+  const readOnlyTitle = readOnly ? t('common.read-only') : undefined
   const showValue = flagType !== 'BOOLEAN'
   const isLinked = linked === true
   const linkLabel = isLinked
@@ -99,7 +104,7 @@ export function FlagValueRow({
                   <button
                     type="button"
                     onClick={() => onLinkChange(!isLinked)}
-                    disabled={busy}
+                    disabled={locked}
                     aria-pressed={isLinked}
                     aria-label={linkLabel}
                     className={cn(
@@ -114,13 +119,15 @@ export function FlagValueRow({
               </Tooltip>
             </TooltipProvider>
           )}
-          <Switch
-            checked={enabled}
-            disabled={busy}
-            onCheckedChange={onToggle}
-            aria-label={t('brand-values.toggle-label', { name })}
-            className={cn(isLinked && 'opacity-60')}
-          />
+          <span title={readOnlyTitle} className="inline-flex">
+            <Switch
+              checked={enabled}
+              disabled={locked}
+              onCheckedChange={onToggle}
+              aria-label={t('brand-values.toggle-label', { name })}
+              className={cn(isLinked && 'opacity-60')}
+            />
+          </span>
         </div>
       </div>
       {showValue && (
@@ -141,7 +148,8 @@ export function FlagValueRow({
             <button
               type="button"
               onClick={onEdit}
-              disabled={busy}
+              disabled={locked}
+              title={readOnlyTitle}
               aria-label={t('flag-value.edit-label', { name })}
               className="inline-flex shrink-0 items-center gap-1 text-primary hover:underline disabled:opacity-50"
             >

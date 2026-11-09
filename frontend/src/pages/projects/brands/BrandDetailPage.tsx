@@ -5,6 +5,7 @@ import { Link, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { EmptyState } from '@/components/feedback/EmptyState'
 import { ErrorState } from '@/components/feedback/ErrorState'
+import { RoleUnavailableNotice } from '@/components/feedback/RoleUnavailableNotice'
 import { FlagValueDialog } from '@/components/flags/FlagValueDialog'
 import { FlagValueRow, LinkLegend } from '@/components/flags/FlagValueRow'
 import { PageHeader } from '@/components/page/PageHeader'
@@ -12,7 +13,12 @@ import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
 import { Skeleton } from '@/components/ui/skeleton'
 import api from '@/lib/axios'
-import { getErrorMessage, getErrorStatus } from '@/lib/errors'
+import { getErrorStatus } from '@/lib/errors'
+import {
+  handleForbidden,
+  notifyWriteError,
+  useProjectRole,
+} from '@/lib/permissions'
 import { flagPath, projectPath } from '@/lib/routes'
 
 interface Brand {
@@ -60,6 +66,8 @@ export default function BrandDetailPage() {
     null
   )
   const [busyRows, setBusyRows] = useState<Set<string>>(new Set())
+  // Brand values may be changed by MEMBER+ (backend: brand + flag access MEMBER).
+  const { canEdit, roleUnavailable } = useProjectRole(projectId)
 
   // Value editor. `editing` outlives `editorOpen` so the dialog keeps its
   // content while it animates out; the next open replaces it.
@@ -133,7 +141,7 @@ export default function BrandDetailPage() {
       onSuccess?.()
       await refresh()
     } catch (error) {
-      toast.error(getErrorMessage(error))
+      notifyWriteError(error, t)
       await refresh()
     } finally {
       setBusyRows((prev) => {
@@ -229,10 +237,15 @@ export default function BrandDetailPage() {
 
   const handleSaveValue = async (value: string) => {
     if (!brandId || !editing) return
-    await api.patch(
-      `/feature-flags/${editing.flag.id}/environments/${editing.env.environmentId}/value`,
-      { value, brandId }
-    )
+    try {
+      await api.patch(
+        `/feature-flags/${editing.flag.id}/environments/${editing.env.environmentId}/value`,
+        { value, brandId }
+      )
+    } catch (error) {
+      handleForbidden(error, t) // the dialog shows the message
+      throw error
+    }
     await refresh()
   }
 
@@ -301,6 +314,7 @@ export default function BrandDetailPage() {
         }
         description={brand.description || t('brands-page.detail.subtitle')}
       />
+      <RoleUnavailableNotice show={roleUnavailable} />
 
       {flags.length === 0 ? (
         <EmptyState
@@ -364,6 +378,7 @@ export default function BrandDetailPage() {
                       }
                       busy={busyRows.has(`${flag.id}-${env.environmentId}`)}
                       onToggle={(next) => handleToggle(flag, env, next)}
+                      readOnly={!canEdit}
                       onEdit={
                         flag.flagType !== 'BOOLEAN'
                           ? () => {

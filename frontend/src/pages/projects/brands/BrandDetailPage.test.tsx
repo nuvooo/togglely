@@ -7,7 +7,7 @@ import i18n from '@/i18n'
 const PROJECT_ID = '0123456789abcdef01234567'
 const BRAND_ID = 'brand-a'
 
-const state = vi.hoisted(() => ({ flags: [] as unknown[] }))
+const state = vi.hoisted(() => ({ flags: [] as unknown[], role: 'MEMBER' }))
 
 const api = vi.hoisted(() => ({
   get: vi.fn(),
@@ -19,6 +19,15 @@ const toast = vi.hoisted(() => ({ error: vi.fn(), success: vi.fn() }))
 
 vi.mock('@/lib/axios', () => ({ default: api }))
 vi.mock('sonner', () => ({ toast }))
+vi.mock('@/lib/workspace', () => ({
+  refreshWorkspace: vi.fn(() => Promise.resolve()),
+  useWorkspace: () => ({
+    projects: [{ id: PROJECT_ID, organizationId: 'o1', type: 'MULTI' }],
+    organizations: [{ id: 'o1', name: 'Acme', role: state.role }],
+    isLoading: false,
+    error: null,
+  }),
+}))
 
 import BrandDetailPage from './BrandDetailPage'
 
@@ -82,6 +91,7 @@ beforeEach(async () => {
   vi.clearAllMocks()
   await i18n.changeLanguage('en')
   state.flags = brandFlags()
+  state.role = 'MEMBER'
   api.get.mockImplementation(() =>
     Promise.resolve({
       data: {
@@ -251,6 +261,22 @@ describe('BrandDetailPage layout and states', () => {
     expect(
       screen.getByRole('link', { name: 'Back to brands' })
     ).toBeInTheDocument()
+  })
+
+  it('is read only for viewers', async () => {
+    state.role = 'VIEWER'
+    renderPage()
+    const prod = await row('Production')
+
+    expect(within(prod).getByRole('switch')).toBeDisabled()
+    expect(linkButton(prod)).toBeDisabled()
+    expect(within(prod).getByTitle('Read only')).toBeInTheDocument()
+  })
+
+  it('members may change brand values', async () => {
+    renderPage()
+    const prod = await row('Production')
+    expect(within(prod).getByRole('switch')).toBeEnabled()
   })
 
   it('shows an error state with retry when loading fails', async () => {

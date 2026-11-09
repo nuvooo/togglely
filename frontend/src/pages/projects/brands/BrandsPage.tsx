@@ -1,11 +1,12 @@
 import { Building2, MoreHorizontal, Pencil, Plus, Trash2 } from 'lucide-react'
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams } from 'react-router-dom'
 import { toast } from 'sonner'
 import { DataTable, type DataTableColumn } from '@/components/data/DataTable'
 import { EmptyState } from '@/components/feedback/EmptyState'
 import { ErrorState } from '@/components/feedback/ErrorState'
+import { RoleUnavailableNotice } from '@/components/feedback/RoleUnavailableNotice'
 import { PageHeader } from '@/components/page/PageHeader'
 import { Button } from '@/components/ui/button'
 import { ConfirmDialog } from '@/components/ui/confirm-dialog'
@@ -16,6 +17,7 @@ import {
   DropdownMenuTrigger,
 } from '@/components/ui/dropdown-menu'
 import api from '@/lib/axios'
+import { handleForbidden, notifyWriteError } from '@/lib/permissions'
 import { brandPath, projectPath } from '@/lib/routes'
 import {
   apiMessage,
@@ -29,7 +31,8 @@ export default function BrandsPage() {
   const { t } = useTranslation()
   const navigate = useNavigate()
   const { projectId = '' } = useParams<{ projectId: string }>()
-  const { canManage, roleLoading } = useCanManageProject(projectId)
+  const { canManage, roleLoading, roleUnavailable } =
+    useCanManageProject(projectId)
   const [projectType, setProjectType] = useState<ProjectType | null>(null)
   const [brands, setBrands] = useState<Brand[]>([])
   const [isLoading, setIsLoading] = useState(true)
@@ -39,23 +42,29 @@ export default function BrandsPage() {
   const [editing, setEditing] = useState<Brand | null>(null)
   const [deleteOpen, setDeleteOpen] = useState(false)
   const [deleting, setDeleting] = useState<Brand | null>(null)
+  /** Id of the latest load; responses of older loads (other project) are dropped. */
+  const loadId = useRef(0)
 
   const load = useCallback(async () => {
+    const id = ++loadId.current
+    const current = () => id === loadId.current
     setIsLoading(true)
     setLoadError(false)
     try {
       const project = await fetchProject(projectId)
-      setProjectType(project.type)
+      if (!current()) return
+      let list: Brand[] = []
       if (project.type === 'MULTI') {
         const response = await api.get(`/brands/project/${projectId}`)
-        setBrands(response.data.brands ?? [])
-      } else {
-        setBrands([])
+        if (!current()) return
+        list = response.data.brands ?? []
       }
+      setProjectType(project.type)
+      setBrands(list)
     } catch {
-      setLoadError(true)
+      if (current()) setLoadError(true)
     } finally {
-      setIsLoading(false)
+      if (current()) setIsLoading(false)
     }
   }, [projectId])
 
@@ -85,7 +94,9 @@ export default function BrandsPage() {
         toast.success(t('brands-page.toast.created'))
       }
     } catch (error) {
-      toast.error(
+      notifyWriteError(
+        error,
+        t,
         apiMessage(
           error,
           editing
@@ -104,7 +115,9 @@ export default function BrandsPage() {
       setBrands((list) => list.filter((b) => b.id !== deleting.id))
       toast.success(t('brands-page.toast.deleted'))
     } catch (error) {
-      toast.error(apiMessage(error, t('brands-page.toast.delete-failed')))
+      // The confirm dialog stays open and shows the message.
+      handleForbidden(error, t)
+      throw new Error(apiMessage(error, t('brands-page.toast.delete-failed')))
     }
   }
 
@@ -243,7 +256,7 @@ export default function BrandsPage() {
   } else {
     content = (
       <div className="space-y-2">
-        {!canManage && (
+        {!canManage && !roleUnavailable && (
           <p className="text-xs text-muted-foreground">
             {t('brands-page.read-only')}
           </p>
@@ -270,6 +283,7 @@ export default function BrandsPage() {
             : undefined
         }
       />
+      <RoleUnavailableNotice show={roleUnavailable} />
       {content}
 
       <BrandDialog
