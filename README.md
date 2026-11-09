@@ -287,17 +287,26 @@ Without SMTP, users cannot receive reset mails. Two alternatives:
 
 - **Organization owners** can create a one-time reset link for a member
   (`POST /api/organizations/:id/members/:userId/password-reset-link`).
-  This only works if the owner owns *every* organization the user belongs to;
-  otherwise the server administrator has to do it.
+  This only works if the owner owns *every* organization the user belongs to
+  and the user is not an owner of any organization (owners may still reset
+  their own account); otherwise the server administrator has to do it.
 - **Server administrators** can create a reset link on the server:
 
 ```bash
-docker exec -it togglely-backend node dist/cli reset-password user@example.com
-# without Docker: cd backend && npm run cli -- reset-password user@example.com
+docker exec -it togglely-backend node dist/cli reset-password 'user@example.com'
+# without Docker: cd backend && npm run cli -- reset-password 'user@example.com'
 ```
 
+Always wrap the email in single quotes: valid addresses may contain shell
+metacharacters such as `$`, `` ` ``, `|` or `&`. A `'` inside the address is
+written as `'\''`, e.g. `'o'\''brien@example.com'`.
+
 The link is printed to the terminal, is valid for 1 hour and replaces any
-previously issued reset link. No mail is sent.
+previously issued reset link. No mail is sent. The command boots the backend's
+application context: it needs the same environment (database, secrets) as the
+server and runs the startup migrations before creating the link. The audit log
+records it as `user.password_reset_link_created_by_operator` (actor: server
+operator).
 
 ## 🤝 Contributing
 

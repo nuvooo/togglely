@@ -4,7 +4,7 @@ import { runCli, USAGE } from './cli-commands'
 
 /**
  * Operator CLI, e.g. inside the container:
- *   node dist/cli reset-password user@example.com
+ *   node dist/cli reset-password 'user@example.com'
  * Boots only the application context (no HTTP server).
  */
 async function main() {

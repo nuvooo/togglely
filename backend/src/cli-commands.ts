@@ -66,18 +66,24 @@ async function resetPassword(
     .createResetLink(user.id)
 
   // Audit logs are organization-scoped; users without an org are skipped.
+  // The schema requires a user, so the entry hangs off the target; the actor
+  // is the server operator, which the action and newValues make explicit.
   const membership = await prisma.organizationMember.findFirst({
     where: { userId: user.id },
     select: { organizationId: true },
   })
   if (membership) {
     await app.get(AuditLogsService).create({
-      action: 'user.password_reset_link_created',
+      action: 'user.password_reset_link_created_by_operator',
       entityType: 'User',
       entityId: user.id,
       userId: user.id,
       organizationId: membership.organizationId,
-      newValues: { via: 'cli', expiresAt: expiresAt.toISOString() },
+      newValues: {
+        via: 'cli',
+        actor: 'server-operator',
+        expiresAt: expiresAt.toISOString(),
+      },
     })
   }
 

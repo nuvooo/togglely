@@ -101,12 +101,16 @@ describe('runCli', () => {
     expect(printed).toContain(URL)
     expect(printed).toContain(EXPIRES.toISOString())
     expect(audit.create).toHaveBeenCalledWith({
-      action: 'user.password_reset_link_created',
+      action: 'user.password_reset_link_created_by_operator',
       entityType: 'User',
       entityId: 'user-1',
       userId: 'user-1',
       organizationId: 'org-1',
-      newValues: { via: 'cli', expiresAt: EXPIRES.toISOString() },
+      newValues: {
+        via: 'cli',
+        actor: 'server-operator',
+        expiresAt: EXPIRES.toISOString(),
+      },
     })
     expect(JSON.stringify(audit.create.mock.calls)).not.toContain('token=')
   })
