@@ -20,7 +20,7 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { Skeleton } from '@/components/ui/skeleton'
 import api from '@/lib/axios'
-import { getErrorMessage } from '@/lib/errors'
+import { getErrorCode, getErrorMessage } from '@/lib/errors'
 import { passwordIssue } from '@/lib/password'
 import { cn } from '@/lib/utils'
 import { SettingsSection } from '@/pages/projects/settings/SettingsSection'
@@ -227,7 +227,11 @@ function PasswordForm() {
       setConfirmPassword('')
       toast.success(t('settings.password.success'))
     } catch (err: unknown) {
-      setError(getErrorMessage(err))
+      setError(
+        getErrorCode(err) === 'WRONG_CURRENT_PASSWORD'
+          ? t('settings.password.wrong-current')
+          : getErrorMessage(err)
+      )
     } finally {
       setSaving(false)
     }

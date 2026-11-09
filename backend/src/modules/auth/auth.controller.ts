@@ -1,4 +1,5 @@
 import {
+  BadRequestException,
   Body,
   Controller,
   ForbiddenException,
@@ -8,7 +9,6 @@ import {
   Patch,
   Post,
   Req,
-  UnauthorizedException,
   UseGuards,
 } from '@nestjs/common'
 import { ConfigService } from '@nestjs/config'
@@ -141,7 +141,12 @@ export class AuthController {
 
     const valid = await bcrypt.compare(dto.currentPassword, user.password)
     if (!valid) {
-      throw new UnauthorizedException('Current password is incorrect')
+      // 400, not 401: the dashboard treats every 401 as an expired session
+      throw new BadRequestException({
+        message: 'Current password is incorrect',
+        error: 'Bad Request',
+        code: 'WRONG_CURRENT_PASSWORD',
+      })
     }
 
     const newPasswordHash = await bcrypt.hash(dto.newPassword, BCRYPT_ROUNDS)

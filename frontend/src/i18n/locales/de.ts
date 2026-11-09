@@ -295,6 +295,7 @@ export const de = {
   'settings.password.success': 'Passwort erfolgreich geändert',
   'settings.password.mismatch': 'Passwörter stimmen nicht überein',
   'settings.password.too-short': 'Passwort muss mindestens 8 Zeichen lang sein',
+  'settings.password.wrong-current': 'Das aktuelle Passwort ist falsch',
 
   // Project Detail
   'project-detail.back-to-organizations': 'Zurück zu Organisationen',

@@ -149,7 +149,10 @@ describe('AccountPage', () => {
       isAxiosError: true,
       response: {
         status: 400,
-        data: { message: 'Current password is incorrect' },
+        data: {
+          message: 'Current password is incorrect',
+          code: 'WRONG_CURRENT_PASSWORD',
+        },
       },
     })
     renderAt('/account')
@@ -160,6 +163,29 @@ describe('AccountPage', () => {
     fireEvent.click(screen.getByRole('button', { name: /^change password$/i }))
     expect(await screen.findByRole('alert')).toHaveTextContent(
       'Current password is incorrect'
+    )
+  })
+
+  it('translates a wrong current password instead of showing the server text', async () => {
+    await i18n.changeLanguage('de')
+    mocks.post.mockRejectedValueOnce({
+      isAxiosError: true,
+      response: {
+        status: 400,
+        data: {
+          message: 'Current password is incorrect',
+          code: 'WRONG_CURRENT_PASSWORD',
+        },
+      },
+    })
+    renderAt('/account')
+    await screen.findByLabelText(/vorname/i)
+    fill(/aktuelles passwort/i, 'Wrong123')
+    fill(/^neues passwort$/i, 'Secret123')
+    fill(/neues passwort bestätigen/i, 'Secret123')
+    fireEvent.click(screen.getByRole('button', { name: /^passwort ändern$/i }))
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'Das aktuelle Passwort ist falsch'
     )
   })
 

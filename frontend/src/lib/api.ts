@@ -19,7 +19,12 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    // Only a request that carried a session can expire it; a 401 without
+    // one (wrong login credentials) must stay on the page with its error.
+    if (
+      error.response?.status === 401 &&
+      error.config?.headers?.Authorization
+    ) {
       expireSession()
     }
     return Promise.reject(error)

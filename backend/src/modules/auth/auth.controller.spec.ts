@@ -1,4 +1,9 @@
-import { ForbiddenException } from '@nestjs/common'
+import {
+  BadRequestException,
+  ForbiddenException,
+  UnauthorizedException,
+} from '@nestjs/common'
+import * as bcrypt from 'bcryptjs'
 import { AuthController } from './auth.controller'
 
 function createController(userCount = 1) {
@@ -96,6 +101,66 @@ describe('AuthController', () => {
         expect.any(String),
         'http://localhost:3000'
       )
+    })
+  })
+
+  describe('changePassword', () => {
+    async function setup() {
+      const password = await bcrypt.hash('Old12345', 4)
+      const prisma = {
+        user: {
+          findUnique: jest.fn().mockResolvedValue({ id: 'u1', password }),
+          update: jest.fn().mockResolvedValue({}),
+        },
+      } as any
+      const authService = {
+        issueToken: jest.fn().mockResolvedValue('fresh-jwt'),
+      } as any
+      const controller = new AuthController(
+        authService,
+        prisma,
+        {} as any,
+        {} as any,
+        {} as any
+      )
+      return { controller, prisma }
+    }
+    const req = { user: { userId: 'u1' } }
+
+    // A wrong current password is a validation error, not an expired
+    // session: a 401 would make the dashboard log the user out.
+    it('rejects a wrong current password with 400, not 401', async () => {
+      const { controller, prisma } = await setup()
+      const error = await controller
+        .changePassword(req, {
+          currentPassword: 'Wrong123',
+          newPassword: 'Secret123',
+        })
+        .catch((e) => e)
+      expect(error).toBeInstanceOf(BadRequestException)
+      expect(error).not.toBeInstanceOf(UnauthorizedException)
+      expect(error.message).toBe('Current password is incorrect')
+      expect(error.getResponse()).toMatchObject({
+        code: 'WRONG_CURRENT_PASSWORD',
+      })
+      expect(prisma.user.update).not.toHaveBeenCalled()
+    })
+
+    it('stores the new hash and returns a fresh token', async () => {
+      const { controller, prisma } = await setup()
+      await expect(
+        controller.changePassword(req, {
+          currentPassword: 'Old12345',
+          newPassword: 'Secret123',
+        })
+      ).resolves.toEqual({ success: true, token: 'fresh-jwt' })
+      expect(prisma.user.update).toHaveBeenCalledWith({
+        where: { id: 'u1' },
+        data: {
+          password: expect.any(String),
+          passwordChangedAt: expect.any(Date),
+        },
+      })
     })
   })
 

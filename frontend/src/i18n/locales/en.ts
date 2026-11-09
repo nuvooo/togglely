@@ -290,6 +290,7 @@ export const en = {
   'settings.password.success': 'Password changed successfully',
   'settings.password.mismatch': 'Passwords do not match',
   'settings.password.too-short': 'Password must be at least 8 characters',
+  'settings.password.wrong-current': 'Current password is incorrect',
 
   // Project Detail
   'project-detail.back-to-organizations': 'Back to Organizations',
