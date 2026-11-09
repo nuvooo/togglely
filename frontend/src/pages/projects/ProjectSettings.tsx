@@ -319,6 +319,13 @@ export default function ProjectSettings() {
     }
   }
 
+  // Server rows may lack client-side fields (flagCount): keep the ones we
+  // already have for the same environment.
+  const withKnownFields = (rows: Environment[], known: Environment[]) => {
+    const byId = new Map(known.map((e) => [e.id, e]))
+    return rows.map((e) => ({ ...byId.get(e.id), ...e }) as Environment)
+  }
+
   const handleReorderEnvironment = async (
     envId: string,
     direction: 'up' | 'down'
@@ -349,13 +356,7 @@ export default function ProjectSettings() {
         { environmentIds: newEnvironments.map((e) => e.id) }
       )
       const persisted: Environment[] | undefined = response.data?.environments
-      if (persisted) {
-        // Keep client-only fields (flagCount) of the rows we already have.
-        const byId = new Map(newEnvironments.map((e) => [e.id, e]))
-        setEnvironments(
-          persisted.map((e) => ({ ...byId.get(e.id), ...e }) as Environment)
-        )
-      }
+      if (persisted) setEnvironments(withKnownFields(persisted, newEnvironments))
     } catch (error: any) {
       toast.error(
         error.response?.data?.message ||
@@ -366,7 +367,9 @@ export default function ProjectSettings() {
       // environment was added elsewhere): show what is actually persisted.
       try {
         const envsRes = await api.get(`/environments/project/${projectId}`)
-        setEnvironments(envsRes.data.environments || [])
+        setEnvironments(
+          withKnownFields(envsRes.data.environments || [], environments)
+        )
       } catch {
         setEnvironments(environments)
       }

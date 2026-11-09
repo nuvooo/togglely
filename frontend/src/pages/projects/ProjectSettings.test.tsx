@@ -174,4 +174,28 @@ describe('ProjectSettings environment order', () => {
       expect(renderedOrder()).toEqual(['Staging', 'Development', 'Production'])
     )
   })
+
+  it('keeps the flag counts it already has when refetching after an error', async () => {
+    state.envs = [
+      { ...DEV, flagCount: 4 },
+      { ...PROD, flagCount: 7 },
+    ]
+    api.post.mockRejectedValue({ response: { data: { message: 'boom' } } })
+    renderPage()
+    const up = await screen.findByRole('button', { name: 'Move Production up' })
+    expect(screen.getByText('7 flags')).toBeInTheDocument()
+    // The refetched rows carry no counts
+    state.envs = [
+      { id: PROD.id, name: PROD.name, key: PROD.key },
+      { id: DEV.id, name: DEV.name, key: DEV.key },
+    ]
+
+    await userEvent.click(up)
+
+    await waitFor(() =>
+      expect(renderedOrder()).toEqual(['Production', 'Development'])
+    )
+    expect(screen.getByText('7 flags')).toBeInTheDocument()
+    expect(screen.getByText('4 flags')).toBeInTheDocument()
+  })
 })
