@@ -1,7 +1,6 @@
-import { Check, Copy, Loader2, TriangleAlert } from 'lucide-react'
-import { type FormEvent, useEffect, useRef, useState } from 'react'
+import { Loader2, TriangleAlert } from 'lucide-react'
+import { type FormEvent, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
-import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -17,6 +16,7 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import api from '@/lib/axios'
 import { getErrorMessage } from '@/lib/errors'
 import { useSetupStatus } from '@/lib/setup'
+import { CopyLinkField } from './CopyLinkField'
 import { type CreatedInvite, grantableRoles, type OrgRole } from './types'
 
 interface InviteDialogProps {
@@ -43,8 +43,6 @@ export function InviteDialog({ orgId, orgName, actorRole, open, onOpenChange, on
   const [error, setError] = useState<string | null>(null)
   const [isCreating, setIsCreating] = useState(false)
   const [created, setCreated] = useState<CreatedInvite | null>(null)
-  const [copied, setCopied] = useState(false)
-  const linkRef = useRef<HTMLInputElement>(null)
 
   // Every opening starts with a fresh form
   useEffect(() => {
@@ -53,7 +51,6 @@ export function InviteDialog({ orgId, orgName, actorRole, open, onOpenChange, on
     setRole('MEMBER')
     setError(null)
     setCreated(null)
-    setCopied(false)
   }, [open])
 
   const trimmedEmail = email.trim()
@@ -76,18 +73,6 @@ export function InviteDialog({ orgId, orgName, actorRole, open, onOpenChange, on
     }
   }
 
-  const copyLink = async () => {
-    if (!created) return
-    try {
-      await navigator.clipboard.writeText(created.inviteUrl)
-      setCopied(true)
-    } catch {
-      // Clipboard API unavailable (e.g. plain http): let the user copy by hand
-      linkRef.current?.select()
-      toast.error(t('invites.copy-failed'))
-    }
-  }
-
   const deliveryHint = (invite: CreatedInvite) => {
     if (!invite.invite.email) return t('invites.share-open')
     if (invite.emailSent) return t('invites.sent', { email: invite.invite.email })
@@ -105,21 +90,7 @@ export function InviteDialog({ orgId, orgName, actorRole, open, onOpenChange, on
         {created ? (
           <div className="space-y-4">
             <div className="space-y-2">
-              <Label htmlFor="invite-link">{t('invites.link-label')}</Label>
-              <div className="flex gap-2">
-                <Input
-                  id="invite-link"
-                  ref={linkRef}
-                  value={created.inviteUrl}
-                  readOnly
-                  onFocus={(e) => e.currentTarget.select()}
-                  className="flex-1 font-mono text-xs"
-                />
-                <Button type="button" variant="outline" onClick={copyLink} className="shrink-0">
-                  {copied ? <Check className="mr-1.5 h-4 w-4" /> : <Copy className="mr-1.5 h-4 w-4" />}
-                  {copied ? t('invites.copied') : t('invites.copy')}
-                </Button>
-              </div>
+              <CopyLinkField id="invite-link" label={t('invites.link-label')} value={created.inviteUrl} />
               <p className="text-sm text-muted-foreground" data-testid="invite-delivery">
                 {deliveryHint(created)}
               </p>

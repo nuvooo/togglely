@@ -1,35 +1,43 @@
-import { FlagIcon, Loader2, Mail } from 'lucide-react'
-import { useState } from 'react'
+import { Loader2, Mail } from 'lucide-react'
+import { type FormEvent, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link } from 'react-router-dom'
+import { AuthLayout, FormError } from '@/components/auth/AuthLayout'
 import { Button } from '@/components/ui/button'
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card'
+import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from '@/components/ui/card'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import api from '@/lib/axios'
 import { getErrorMessage } from '@/lib/errors'
+import { useSetupStatus } from '@/lib/setup'
 
+function BackToLogin() {
+  const { t } = useTranslation()
+  return (
+    <Button asChild variant="outline" className="w-full">
+      <Link to="/login">{t('forgot.back')}</Link>
+    </Button>
+  )
+}
+
+/**
+ * Requests a reset email. Without a mail server it explains the
+ * alternatives instead: a reset link from the organization owner or the CLI.
+ */
 export default function ForgotPassword() {
   const { t } = useTranslation()
+  const status = useSetupStatus()
   const [email, setEmail] = useState('')
   const [isLoading, setIsLoading] = useState(false)
   const [isSent, setIsSent] = useState(false)
   const [error, setError] = useState<string | null>(null)
 
-  const handleSubmit = async (e: React.FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault()
     setIsLoading(true)
     setError(null)
-
     try {
-      await api.post('/password-reset/request', { email })
+      await api.post('/password-reset/request', { email: email.trim() })
       setIsSent(true)
     } catch (err: unknown) {
       setError(getErrorMessage(err))
@@ -38,118 +46,89 @@ export default function ForgotPassword() {
     }
   }
 
+  if (!status) {
+    return (
+      <AuthLayout>
+        <div role="status" className="flex justify-center py-12" aria-label={t('common.loading')}>
+          <Loader2 className="h-8 w-8 animate-spin text-muted-foreground" />
+        </div>
+      </AuthLayout>
+    )
+  }
+
+  if (!status.mailEnabled) {
+    return (
+      <AuthLayout>
+        <Card className="shadow-sm">
+          <CardHeader className="space-y-1 pb-2 text-center">
+            <CardTitle className="text-2xl font-semibold">{t('forgot.no-mail-title')}</CardTitle>
+          </CardHeader>
+          <CardContent className="space-y-3 pt-4 text-sm">
+            <p className="text-muted-foreground">{t('forgot.no-mail-text')}</p>
+            <p className="text-muted-foreground">{t('forgot.no-mail-admin')}</p>
+            <pre className="overflow-x-auto rounded bg-muted px-3 py-2 font-mono text-xs">
+              <code>node dist/cli reset-password &lt;email&gt;</code>
+            </pre>
+          </CardContent>
+          <CardFooter className="pt-2">
+            <BackToLogin />
+          </CardFooter>
+        </Card>
+      </AuthLayout>
+    )
+  }
+
   if (isSent) {
     return (
-      <div className="min-h-screen flex items-center justify-center bg-background p-4">
-        <div className="w-full max-w-md">
-          <div className="flex justify-center mb-8">
-            <div className="flex items-center gap-3">
-              <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/20">
-                <FlagIcon className="w-7 h-7 text-primary-foreground" />
-              </div>
-              <span className="text-3xl font-bold text-foreground">
-                {t('common.app-name')}
-              </span>
+      <AuthLayout>
+        <Card className="shadow-sm">
+          <CardContent className="space-y-4 pt-6 text-center">
+            <div className="mx-auto grid h-12 w-12 place-items-center rounded-full bg-secondary">
+              <Mail className="h-6 w-6 text-secondary-foreground" />
             </div>
-          </div>
-
-          <Card className="border-0 shadow-2xl shadow-slate-200/50 dark:shadow-slate-900/50">
-            <CardContent className="pt-6 text-center">
-              <div className="w-16 h-16 bg-green-100 dark:bg-green-950 rounded-full flex items-center justify-center mx-auto mb-4">
-                <Mail className="w-8 h-8 text-green-600 dark:text-green-400" />
-              </div>
-              <h2 className="text-xl font-semibold mb-2">Check your email</h2>
-              <p className="text-muted-foreground mb-4">
-                If an account exists for {email}, we've sent password reset
-                instructions.
-              </p>
-              <Link to="/login">
-                <Button variant="outline" className="w-full">
-                  Back to Login
-                </Button>
-              </Link>
-            </CardContent>
-          </Card>
-        </div>
-      </div>
+            <h2 className="text-xl font-semibold">{t('forgot.sent-title')}</h2>
+            <p className="text-sm text-muted-foreground">{t('forgot.sent-text', { email: email.trim() })}</p>
+            <BackToLogin />
+          </CardContent>
+        </Card>
+      </AuthLayout>
     )
   }
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-background p-4">
-      <div className="w-full max-w-md">
-        <div className="flex justify-center mb-8">
-          <div className="flex items-center gap-3">
-            <div className="w-12 h-12 bg-primary rounded-xl flex items-center justify-center shadow-lg shadow-primary/20">
-              <FlagIcon className="w-7 h-7 text-primary-foreground" />
+    <AuthLayout>
+      <Card className="shadow-sm">
+        <CardHeader className="space-y-1 pb-2 text-center">
+          <CardTitle className="text-2xl font-semibold">{t('forgot.title')}</CardTitle>
+          <CardDescription>{t('forgot.subtitle')}</CardDescription>
+        </CardHeader>
+        <form onSubmit={handleSubmit}>
+          <CardContent className="space-y-4 pt-4">
+            {error && <FormError>{error}</FormError>}
+            <div className="space-y-2">
+              <Label htmlFor="forgot-email">{t('login.email-label')}</Label>
+              <Input
+                id="forgot-email"
+                type="email"
+                autoComplete="email"
+                placeholder={t('login.email-placeholder')}
+                value={email}
+                onChange={(e) => setEmail(e.target.value)}
+                required
+              />
             </div>
-            <span className="text-3xl font-bold text-foreground">
-              {t('common.app-name')}
-            </span>
-          </div>
-        </div>
-
-        <Card className="border-0 shadow-2xl shadow-slate-200/50 dark:shadow-slate-900/50">
-          <CardHeader className="space-y-1 text-center pb-2">
-            <CardTitle className="text-2xl font-bold">
-              Forgot Password?
-            </CardTitle>
-            <CardDescription>
-              Enter your email and we'll send you reset instructions
-            </CardDescription>
-          </CardHeader>
-
-          <form onSubmit={handleSubmit}>
-            <CardContent className="space-y-4 pt-4">
-              {error && (
-                <div className="p-3 rounded-lg bg-destructive/10 border border-destructive/20 text-destructive text-sm">
-                  {error}
-                </div>
-              )}
-
-              <div className="space-y-2">
-                <Label htmlFor="email">Email address</Label>
-                <Input
-                  id="email"
-                  type="email"
-                  placeholder="name@company.com"
-                  value={email}
-                  onChange={(e) => setEmail(e.target.value)}
-                  required
-                  className="h-11"
-                />
-              </div>
-            </CardContent>
-
-            <CardFooter className="flex-col gap-4 pt-2">
-              <Button
-                type="submit"
-                className="w-full h-11 text-base font-semibold"
-                disabled={isLoading}
-              >
-                {isLoading ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Sending...
-                  </>
-                ) : (
-                  'Send Reset Link'
-                )}
-              </Button>
-
-              <p className="text-sm text-muted-foreground text-center">
-                Remember your password?{' '}
-                <Link
-                  to="/login"
-                  className="text-primary font-semibold hover:text-primary/80"
-                >
-                  Sign in
-                </Link>
-              </p>
-            </CardFooter>
-          </form>
-        </Card>
-      </div>
-    </div>
+          </CardContent>
+          <CardFooter className="flex-col gap-4 pt-2">
+            <Button type="submit" className="w-full" disabled={isLoading || !email.trim()}>
+              {isLoading && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
+              {isLoading ? t('forgot.submitting') : t('forgot.submit')}
+            </Button>
+            <Link to="/login" className="text-sm font-medium text-primary hover:text-primary/80">
+              {t('forgot.back')}
+            </Link>
+          </CardFooter>
+        </form>
+      </Card>
+    </AuthLayout>
   )
 }

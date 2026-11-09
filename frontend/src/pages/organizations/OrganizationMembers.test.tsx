@@ -86,6 +86,19 @@ describe('OrganizationMembers', () => {
     expect(await screen.findByText('Revoked')).toBeInTheDocument()
   })
 
+  it('lets owners create a reset link for any member, including themselves', async () => {
+    renderPage()
+    fireEvent.click(await screen.findByRole('button', { name: 'Create password reset link for Ada L' }))
+    expect(await screen.findByText(/valid for 1 hour/i)).toBeInTheDocument()
+  })
+
+  it('offers no reset links to admins', async () => {
+    mocks.role = 'ADMIN'
+    renderPage()
+    await screen.findByText('ada@example.com')
+    expect(screen.queryByRole('button', { name: /password reset link/i })).toBeNull()
+  })
+
   it('hides invite management from viewers', async () => {
     mocks.role = 'VIEWER'
     renderPage()

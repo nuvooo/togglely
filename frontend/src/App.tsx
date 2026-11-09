@@ -81,21 +81,14 @@ function App() {
       <Route
         path="/forgot-password"
         element={
-          <RequireMail>
-            <GuestOnly>
-              <ForgotPassword />
-            </GuestOnly>
-          </RequireMail>
-        }
-      />
-      <Route
-        path="/reset-password"
-        element={
           <GuestOnly>
-            <ResetPassword />
+            <ForgotPassword />
           </GuestOnly>
         }
       />
+      {/* Reset links come from mails, owners or the CLI: always reachable,
+          also while logged in (the reset ends that session). */}
+      <Route path="/reset-password" element={<ResetPassword />} />
       <Route path="/invite/:token" element={<InviteAccept />} />
       <Route path="/verify-email/:token" element={<VerifyEmail />} />
       <Route

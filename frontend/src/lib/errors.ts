@@ -33,3 +33,10 @@ function isAxiosError(error: unknown): error is AxiosError {
 export function getErrorStatus(error: unknown): number | undefined {
   return isAxiosError(error) ? error.response?.status : undefined
 }
+
+/** Machine-readable `code` of a failed API call (e.g. RESET_REQUIRES_SERVER_ADMIN). */
+export function getErrorCode(error: unknown): string | undefined {
+  if (!isAxiosError(error)) return undefined
+  const code = (error.response?.data as { code?: unknown } | undefined)?.code
+  return typeof code === 'string' ? code : undefined
+}

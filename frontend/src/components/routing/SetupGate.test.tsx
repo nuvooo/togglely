@@ -40,7 +40,7 @@ const renderAt = (path: string) =>
           }
         />
         <Route path="/register" element={<Navigate to="/login" replace />} />
-        <Route path="/forgot-password" element={<RequireMail><div>forgot page</div></RequireMail>} />
+        <Route path="/resend-verification" element={<RequireMail><div>resend page</div></RequireMail>} />
         <Route path="/" element={<RequireSetupDone><div>app</div></RequireSetupDone>} />
       </Routes>
       <Where />
@@ -97,13 +97,13 @@ describe('setup routing', () => {
   })
 
   it('hides mail-only pages without a mail server', async () => {
-    renderAt('/forgot-password')
+    renderAt('/resend-verification')
     expect(await screen.findByText('login page')).toBeInTheDocument()
   })
 
   it('shows mail-only pages with a mail server', async () => {
     status.value.mailEnabled = true
-    renderAt('/forgot-password')
-    expect(await screen.findByText('forgot page')).toBeInTheDocument()
+    renderAt('/resend-verification')
+    expect(await screen.findByText('resend page')).toBeInTheDocument()
   })
 })

@@ -67,15 +67,8 @@ describe('Login', () => {
     expect(await screen.findByTestId('where')).toHaveTextContent('/overview')
   })
 
-  it('offers password reset only with a mail server', async () => {
-    mocks.status.mailEnabled = true
+  it('always offers "forgot password", also without a mail server', () => {
     renderAt('/login')
-    expect(await screen.findByRole('link', { name: /forgot/i })).toBeInTheDocument()
-  })
-
-  it('hides password reset without a mail server', async () => {
-    renderAt('/login')
-    await screen.findByLabelText(/^password$/i)
-    expect(screen.queryByRole('link', { name: /forgot/i })).toBeNull()
+    expect(screen.getByRole('link', { name: /forgot/i })).toHaveAttribute('href', '/forgot-password')
   })
 })

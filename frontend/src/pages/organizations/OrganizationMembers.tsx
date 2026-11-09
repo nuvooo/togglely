@@ -1,4 +1,4 @@
-import { Trash2, UserPlus } from 'lucide-react'
+import { KeyRound, Trash2, UserPlus } from 'lucide-react'
 import { useCallback, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate, useParams } from 'react-router-dom'
@@ -6,6 +6,7 @@ import { toast } from 'sonner'
 import { ConfirmDialog } from '@/components/members/ConfirmDialog'
 import { InviteDialog } from '@/components/members/InviteDialog'
 import { InvitesTable } from '@/components/members/InvitesTable'
+import { PasswordResetLinkDialog } from '@/components/members/PasswordResetLinkDialog'
 import { type Member, memberName, type OrgInvite, type OrgRole } from '@/components/members/types'
 import { Badge } from '@/components/ui/badge'
 import { Button } from '@/components/ui/button'
@@ -48,6 +49,7 @@ export default function OrganizationMembers() {
   const [loadError, setLoadError] = useState(false)
   const [showInviteDialog, setShowInviteDialog] = useState(false)
   const [confirmation, setConfirmation] = useState<Confirmation | null>(null)
+  const [resetMember, setResetMember] = useState<Member | null>(null)
 
   const currentRole = members.find((m) => m.userId === userId)?.role ?? null
   const canManageMembers = currentRole === 'OWNER' || currentRole === 'ADMIN'
@@ -213,6 +215,19 @@ export default function OrganizationMembers() {
                   ) : (
                     <Badge variant={member.role === 'OWNER' ? 'default' : 'secondary'}>{t(`roles.${member.role}`)}</Badge>
                   )}
+                  {/* Owners may hand out reset links, also for themselves */}
+                  {canChangeRoles && (
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      onClick={() => setResetMember(member)}
+                      aria-label={t('reset-link.action-label', { name })}
+                      title={t('reset-link.action')}
+                      className="h-8 w-8 text-muted-foreground"
+                    >
+                      <KeyRound className="h-4 w-4" />
+                    </Button>
+                  )}
                   {canManageMembers && editable && (
                     <Button
                       variant="ghost"
@@ -245,6 +260,8 @@ export default function OrganizationMembers() {
         onOpenChange={setShowInviteDialog}
         onCreated={loadInvites}
       />
+
+      <PasswordResetLinkDialog orgId={orgId} member={resetMember} onClose={() => setResetMember(null)} />
 
       <ConfirmDialog
         open={confirmation !== null}

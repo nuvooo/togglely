@@ -10,7 +10,6 @@ import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import { safeNextPath } from '@/lib/redirect'
 import { ROUTES } from '@/lib/routes'
-import { useSetupStatus } from '@/lib/setup'
 import { useAuthStore } from '@/store/authStore'
 
 export default function Login() {
@@ -18,7 +17,6 @@ export default function Login() {
   const [searchParams] = useSearchParams()
   const isDemo = searchParams.get('demo') === 'true'
   const next = safeNextPath(searchParams.get('next'))
-  const mailEnabled = useSetupStatus()?.mailEnabled === true
   const [email, setEmail] = useState(isDemo ? 'demo@togglely.io' : '')
   const [password, setPassword] = useState(isDemo ? 'demo123!' : '')
   const [rememberMe, setRememberMe] = useState(false)
@@ -95,12 +93,10 @@ export default function Login() {
             <div className="space-y-2">
               <div className="flex items-center justify-between">
                 <Label htmlFor="password">{t('login.password-label')}</Label>
-                {/* Password reset needs a mail server */}
-                {mailEnabled && (
-                  <Link to="/forgot-password" className="text-sm font-medium text-primary hover:text-primary/80">
-                    {t('login.forgot-password')}
-                  </Link>
-                )}
+                {/* Without mail, /forgot-password explains the alternatives */}
+                <Link to="/forgot-password" className="text-sm font-medium text-primary hover:text-primary/80">
+                  {t('login.forgot-password')}
+                </Link>
               </div>
               <Input
                 id="password"
