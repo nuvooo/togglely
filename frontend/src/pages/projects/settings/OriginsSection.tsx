@@ -6,6 +6,7 @@ import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
 import api from '@/lib/axios'
+import { notifyWriteError } from '@/lib/permissions'
 import { apiMessage, type ProjectDetails } from './project'
 import { SettingsSection } from './SettingsSection'
 
@@ -57,7 +58,11 @@ export function OriginsSection({
       onSaved({ ...project, ...response.data.project })
       toast.success(t('project-settings.origins.saved'))
     } catch (error) {
-      toast.error(apiMessage(error, t('project-settings.origins.save-failed')))
+      notifyWriteError(
+        error,
+        t,
+        apiMessage(error, t('project-settings.origins.save-failed'))
+      )
     } finally {
       setSaving(false)
     }

@@ -14,15 +14,22 @@ import {
   SelectValue,
 } from '@/components/ui/select'
 import api from '@/lib/axios'
+import { notifyWriteError } from '@/lib/permissions'
 import { refreshWorkspace } from '@/lib/workspace'
 import { apiMessage, type ProjectDetails, type ProjectType } from './project'
 import { SettingsSection } from './SettingsSection'
 
+/** Brands of a MULTI project, or the state of loading them. */
+export type BrandCount = number | 'loading' | 'failed'
+
 interface GeneralSectionProps {
   project: ProjectDetails
   canManage: boolean
-  /** Brands of a MULTI project; converting to SINGLE deletes them (asks first). */
-  brandCount: number
+  /**
+   * Brands of a MULTI project. Converting to SINGLE keeps them but SINGLE
+   * projects ignore them, so it asks first (also when the count is unknown).
+   */
+  brandCount: BrandCount
   onSaved: (project: ProjectDetails) => void
 }
 
@@ -51,6 +58,9 @@ export function GeneralSection({
     name !== project.name ||
     description !== (project.description ?? '') ||
     type !== project.type
+  const toSingle = project.type === 'MULTI' && type === 'SINGLE'
+  // Without the brand count the warning could be skipped wrongly: wait for it.
+  const waitingForBrands = toSingle && brandCount === 'loading'
 
   const save = async () => {
     setSaving(true)
@@ -65,7 +75,11 @@ export function GeneralSection({
       refreshWorkspace().catch(() => {})
       toast.success(t('project-settings.general.saved'))
     } catch (error) {
-      toast.error(apiMessage(error, t('project-settings.general.save-failed')))
+      notifyWriteError(
+        error,
+        t,
+        apiMessage(error, t('project-settings.general.save-failed'))
+      )
     } finally {
       setSaving(false)
     }
@@ -73,7 +87,11 @@ export function GeneralSection({
 
   const submit = (event: FormEvent) => {
     event.preventDefault()
-    if (project.type === 'MULTI' && type === 'SINGLE' && brandCount > 0) {
+    if (waitingForBrands) return
+    if (
+      toSingle &&
+      (brandCount === 'failed' || (typeof brandCount === 'number' && brandCount > 0))
+    ) {
       setConfirmOpen(true)
       return
     }
@@ -152,10 +170,23 @@ export function GeneralSection({
           <p className="text-xs text-muted-foreground">
             {t('project-settings.general.type-hint')}
           </p>
+          {toSingle && brandCount === 'loading' && (
+            <p role="status" className="text-xs text-muted-foreground">
+              {t('project-settings.type-change.loading-brands')}
+            </p>
+          )}
+          {toSingle && brandCount === 'failed' && (
+            <p role="alert" className="text-xs text-destructive">
+              {t('project-settings.type-change.brands-failed')}
+            </p>
+          )}
         </div>
         {canManage ? (
           <div className="flex justify-end">
-            <Button type="submit" disabled={saving || !dirty || !name.trim()}>
+            <Button
+              type="submit"
+              disabled={saving || !dirty || !name.trim() || waitingForBrands}
+            >
               {saving && <Loader2 className="mr-2 h-4 w-4 animate-spin" />}
               {t('project-settings.save')}
             </Button>
@@ -171,9 +202,13 @@ export function GeneralSection({
         open={confirmOpen}
         onOpenChange={setConfirmOpen}
         title={t('project-settings.type-change.title')}
-        description={t('project-settings.type-change.description', {
-          count: brandCount,
-        })}
+        description={
+          typeof brandCount === 'number'
+            ? t('project-settings.type-change.description', {
+                count: brandCount,
+              })
+            : t('project-settings.type-change.description-unknown')
+        }
         confirmLabel={t('project-settings.type-change.confirm')}
         onConfirm={save}
       />

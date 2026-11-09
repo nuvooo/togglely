@@ -3,6 +3,7 @@ import { type FormEvent, useEffect, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useNavigate } from 'react-router-dom'
 import { toast } from 'sonner'
+import { notifyWriteError } from '@/lib/permissions'
 import { Button } from '@/components/ui/button'
 import {
   Dialog,
@@ -52,7 +53,11 @@ export function DangerZone({ project }: { project: ProjectDetails }) {
         project.organizationId ? orgPath(project.organizationId) : ROUTES.orgs
       )
     } catch (error) {
-      toast.error(apiMessage(error, t('project-settings.danger.delete-failed')))
+      notifyWriteError(
+        error,
+        t,
+        apiMessage(error, t('project-settings.danger.delete-failed'))
+      )
       setBusy(false)
     }
   }

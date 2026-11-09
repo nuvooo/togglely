@@ -646,10 +646,16 @@ export const en = {
   'project-settings.general.save-failed': 'The project could not be saved.',
   'project-settings.type-change.title': 'Convert to a single project?',
   'project-settings.type-change.description_one':
-    'The brand and all of its brand-specific flag values are deleted permanently. Default values are kept.',
+    'The brand is kept with its flag values, but single projects ignore it: the SDK only serves the default values. Converting back to multi-brand makes its values apply again.',
   'project-settings.type-change.description_other':
-    'All {{count}} brands and their brand-specific flag values are deleted permanently. Default values are kept.',
-  'project-settings.type-change.confirm': 'Convert and delete brands',
+    'All {{count}} brands are kept with their flag values, but single projects ignore them: the SDK only serves the default values. Converting back to multi-brand makes their values apply again.',
+  'project-settings.type-change.description-unknown':
+    'The brands could not be loaded. Existing brands are kept with their flag values, but single projects ignore them: the SDK only serves the default values.',
+  'project-settings.type-change.confirm': 'Convert',
+  'project-settings.type-change.loading-brands':
+    'Loading the brands … saving is possible in a moment.',
+  'project-settings.type-change.brands-failed':
+    'The brands could not be loaded. Saving asks for confirmation.',
   'project-settings.origins.title': 'Allowed origins',
   'project-settings.origins.description':
     'Websites allowed to call the SDK endpoints from the browser. Empty list = all origins.',

@@ -1,13 +1,14 @@
-import { useCallback, useEffect, useState } from 'react'
+import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { useParams } from 'react-router-dom'
 import { ErrorState } from '@/components/feedback/ErrorState'
+import { RoleUnavailableNotice } from '@/components/feedback/RoleUnavailableNotice'
 import { PageHeader } from '@/components/page/PageHeader'
 import { Skeleton } from '@/components/ui/skeleton'
 import { IntegrationCard } from '@/components/webhooks/IntegrationCard'
 import api from '@/lib/axios'
 import { DangerZone } from './DangerZone'
-import { GeneralSection } from './GeneralSection'
+import { type BrandCount, GeneralSection } from './GeneralSection'
 import { OriginsSection } from './OriginsSection'
 import {
   fetchProject,
@@ -19,42 +20,64 @@ import { SettingsSection } from './SettingsSection'
 export default function ProjectSettingsPage() {
   const { t } = useTranslation()
   const { projectId = '' } = useParams<{ projectId: string }>()
-  const { canManage, roleLoading } = useCanManageProject(projectId)
+  const { canManage, roleLoading, roleUnavailable } =
+    useCanManageProject(projectId)
   const [project, setProject] = useState<ProjectDetails | null>(null)
-  const [brandCount, setBrandCount] = useState(0)
+  const [brandCount, setBrandCount] = useState<BrandCount>(0)
+  const loadId = useRef(0)
   const [isLoading, setIsLoading] = useState(true)
   const [loadError, setLoadError] = useState(false)
 
+  /**
+   * Brand count of a MULTI project. Only needed to warn before converting to
+   * SINGLE; saving a type change waits for it.
+   */
+  const loadBrandCount = useCallback(
+    (current: () => boolean) => {
+      setBrandCount('loading')
+      api
+        .get(`/brands/project/${projectId}`)
+        .then((response) => {
+          if (current()) setBrandCount((response.data.brands ?? []).length)
+        })
+        .catch(() => {
+          if (current()) setBrandCount('failed')
+        })
+    },
+    [projectId]
+  )
+
   const load = useCallback(async () => {
+    const id = ++loadId.current
+    const current = () => id === loadId.current
     setIsLoading(true)
     setLoadError(false)
     try {
       const loaded = await fetchProject(projectId)
+      if (!current()) return
       setProject(loaded)
-      setBrandCount(0)
-      if (loaded.type === 'MULTI') {
-        // Only needed to warn before converting to SINGLE.
-        api
-          .get(`/brands/project/${projectId}`)
-          .then((response) =>
-            setBrandCount((response.data.brands ?? []).length)
-          )
-          .catch(() => {})
-      }
+      if (loaded.type === 'MULTI') loadBrandCount(current)
+      else setBrandCount(0)
     } catch {
-      setLoadError(true)
+      if (current()) setLoadError(true)
     } finally {
-      setIsLoading(false)
+      if (current()) setIsLoading(false)
     }
-  }, [projectId])
+  }, [projectId, loadBrandCount])
 
   useEffect(() => {
     if (projectId) load()
   }, [projectId, load])
 
   const onSaved = (saved: ProjectDetails) => {
+    const wasMulti = project?.type === 'MULTI'
     setProject(saved)
-    if (saved.type === 'SINGLE') setBrandCount(0)
+    // Brands survive a conversion to SINGLE: count them again when the
+    // project becomes MULTI (again).
+    if (saved.type === 'MULTI' && !wasMulti) {
+      const id = loadId.current
+      loadBrandCount(() => id === loadId.current)
+    }
   }
 
   let content: React.ReactNode
@@ -117,6 +140,7 @@ export default function ProjectSettingsPage() {
         title={t('project-settings.title')}
         description={t('project-settings.subtitle')}
       />
+      <RoleUnavailableNotice show={roleUnavailable} />
       {content}
     </div>
   )

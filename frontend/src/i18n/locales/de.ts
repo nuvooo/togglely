@@ -651,10 +651,16 @@ export const de = {
   'project-settings.general.save-failed': 'Das Projekt konnte nicht gespeichert werden.',
   'project-settings.type-change.title': 'In ein Single-Projekt umwandeln?',
   'project-settings.type-change.description_one':
-    'Die Brand und alle ihre brand-spezifischen Flag-Werte werden dauerhaft gelöscht. Die Standardwerte bleiben erhalten.',
+    'Die Brand bleibt mit ihren Flag-Werten erhalten, wird in einem Single-Projekt aber ignoriert: Das SDK liefert nur noch die Standardwerte. Wandelst du zurück in Multi-Brand um, gelten ihre Werte wieder.',
   'project-settings.type-change.description_other':
-    'Alle {{count}} Brands und ihre brand-spezifischen Flag-Werte werden dauerhaft gelöscht. Die Standardwerte bleiben erhalten.',
-  'project-settings.type-change.confirm': 'Umwandeln und Brands löschen',
+    'Alle {{count}} Brands bleiben mit ihren Flag-Werten erhalten, werden in einem Single-Projekt aber ignoriert: Das SDK liefert nur noch die Standardwerte. Wandelst du zurück in Multi-Brand um, gelten ihre Werte wieder.',
+  'project-settings.type-change.description-unknown':
+    'Die Brands konnten nicht geladen werden. Vorhandene Brands bleiben mit ihren Flag-Werten erhalten, werden in einem Single-Projekt aber ignoriert: Das SDK liefert nur noch die Standardwerte.',
+  'project-settings.type-change.confirm': 'Umwandeln',
+  'project-settings.type-change.loading-brands':
+    'Brands werden geladen … Speichern ist gleich möglich.',
+  'project-settings.type-change.brands-failed':
+    'Die Brands konnten nicht geladen werden. Beim Speichern wirst du um Bestätigung gebeten.',
   'project-settings.origins.title': 'Erlaubte Origins',
   'project-settings.origins.description':
     'Websites, die die SDK-Endpunkte aus dem Browser aufrufen dürfen. Leere Liste = alle Origins.',
