@@ -7,7 +7,7 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "lint": "eslint . --ext ts,tsx",
-    "lint:colors": "node scripts/check-raw-colors.mjs src/components/shell src/components/ui src/components/routing src/components/auth src/pages/Setup.tsx src/pages/Login.tsx src/components/members src/pages/organizations/OrganizationMembers.tsx src/pages/InviteAccept.tsx src/components/PendingInvitesBanner.tsx src/pages/VerifyEmail.tsx src/pages/ForgotPassword.tsx src/pages/ResetPassword.tsx src/components/webhooks src/lib/webhooks.ts src/pages/projects src/pages/experiments src/components/page src/components/data src/components/feedback",
+    "lint:colors": "node scripts/check-raw-colors.mjs src/pages src/components src/lib",
     "test": "vitest run",
     "test:unit:watch": "vitest",
     "test:e2e": "cypress run",
