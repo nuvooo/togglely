@@ -49,6 +49,10 @@ services:
       # Recommended when the instance is publicly reachable before setup
       SETUP_TOKEN: ${SETUP_TOKEN:-}
       SKIP_DB_PUSH: ${SKIP_DB_PUSH:-false}
+      # Webhooks: private/http targets are blocked unless explicitly allowed
+      WEBHOOK_ALLOW_PRIVATE: ${WEBHOOK_ALLOW_PRIVATE:-false}
+      WEBHOOK_ALLOW_INSECURE: ${WEBHOOK_ALLOW_INSECURE:-false}
+      WEBHOOK_WORKER_DISABLED: ${WEBHOOK_WORKER_DISABLED:-false}
       # Live change stream limits (CLIENT keys vs. SERVER/SDK keys)
       SSE_MAX_PER_CLIENT_KEY: ${SSE_MAX_PER_CLIENT_KEY:-10000}
       SSE_MAX_PER_CLIENT_IP: ${SSE_MAX_PER_CLIENT_IP:-50}
