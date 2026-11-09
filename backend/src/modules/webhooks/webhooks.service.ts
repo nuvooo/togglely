@@ -108,6 +108,14 @@ export function toDeliveryView(delivery: WebhookDelivery): WebhookDeliveryView {
   }
 }
 
+function limitReached() {
+  return new BadRequestException({
+    message: `A project can have at most ${MAX_WEBHOOKS_PER_PROJECT} webhooks`,
+    error: 'Bad Request',
+    code: 'webhook_limit_reached',
+  })
+}
+
 interface Actor {
   userId: string
   organizationId: string
@@ -145,13 +153,7 @@ export class WebhooksService {
 
   async create(projectId: string, actor: Actor, dto: CreateWebhookDto) {
     const count = await this.prisma.webhook.count({ where: { projectId } })
-    if (count >= MAX_WEBHOOKS_PER_PROJECT) {
-      throw new BadRequestException({
-        message: `A project can have at most ${MAX_WEBHOOKS_PER_PROJECT} webhooks`,
-        error: 'Bad Request',
-        code: 'webhook_limit_reached',
-      })
-    }
+    if (count >= MAX_WEBHOOKS_PER_PROJECT) throw limitReached()
     const url = await this.validateUrl(dto.url)
     const environmentIds = await this.validateEnvironments(
       projectId,
@@ -172,6 +174,19 @@ export class WebhooksService {
         createdById: actor.userId,
       },
     })
+    // Concurrent creates can all pass the count above. Re-check after the
+    // insert: the oldest MAX webhooks (createdAt, then id) win, any later
+    // one removes itself, so the project never keeps more than MAX.
+    const ordered = await this.prisma.webhook.findMany({
+      where: { projectId },
+      orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+      select: { id: true },
+    })
+    const position = ordered.findIndex((w) => w.id === webhook.id)
+    if (position >= MAX_WEBHOOKS_PER_PROJECT) {
+      await this.prisma.webhook.deleteMany({ where: { id: webhook.id } })
+      throw limitReached()
+    }
     await this.audit('webhook.created', webhook, actor, undefined, {
       url: webhook.url,
       environmentIds: webhook.environmentIds,

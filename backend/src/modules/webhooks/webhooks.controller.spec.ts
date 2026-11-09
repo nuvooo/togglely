@@ -252,6 +252,29 @@ describe('WebhooksController', () => {
     await expect(createWebhook(controller)).rejects.toThrow(BadRequestException)
   })
 
+  it('enforces the limit when creates race (count-then-create)', async () => {
+    const { controller, prisma, auditLogs } = setup()
+    for (let i = 0; i < MAX_WEBHOOKS_PER_PROJECT - 1; i++)
+      await createWebhook(controller)
+    auditLogs.create.mockClear()
+
+    // Both requests pass the initial count before either has created
+    const results = await Promise.allSettled([
+      createWebhook(controller, { description: 'first' }),
+      createWebhook(controller, { description: 'second' }),
+    ])
+
+    expect(prisma.webhook.count).toHaveBeenCalled()
+    expect(prisma.webhook.rows).toHaveLength(MAX_WEBHOOKS_PER_PROJECT)
+    const rejected = results.filter((r) => r.status === 'rejected')
+    expect(rejected).toHaveLength(1)
+    const error = (rejected[0] as PromiseRejectedResult).reason
+    expect(error).toBeInstanceOf(BadRequestException)
+    expect(error.getResponse()).toMatchObject({ code: 'webhook_limit_reached' })
+    // Only the surviving webhook is audited
+    expect(auditLogs.create).toHaveBeenCalledTimes(1)
+  })
+
   it('rejects environments of other projects', async () => {
     const { controller, prisma } = setup()
     await expect(
