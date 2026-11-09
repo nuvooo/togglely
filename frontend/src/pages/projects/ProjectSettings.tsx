@@ -52,6 +52,7 @@ import {
 import { Separator } from '@/components/ui/separator'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs'
 import api from '@/lib/axios'
+import { IntegrationCard } from '@/components/webhooks/IntegrationCard'
 import { brandPath, orgPath, projectPath, ROUTES } from '@/lib/routes'
 import { useWorkspaceStore } from '@/store/workspaceStore'
 
@@ -604,6 +605,8 @@ export default function ProjectSettings() {
               </form>
             </CardContent>
           </Card>
+
+          <IntegrationCard projectId={projectId} projectKey={project.key} environments={environments} />
 
           {/* Danger Zone - Only visible to OWNER/ADMIN */}
           {(currentUserRole === 'OWNER' || currentUserRole === 'ADMIN') && (
