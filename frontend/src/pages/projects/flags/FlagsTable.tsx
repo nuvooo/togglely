@@ -201,7 +201,6 @@ export function FlagsTable({
           </span>
         ),
         width: multi ? ENV_COLUMN_WIDTH_MULTI : ENV_COLUMN_WIDTH,
-        align: 'center',
         className: cn(
           'whitespace-nowrap',
           multi ? 'max-w-[12rem]' : 'max-w-[9.5rem]'
