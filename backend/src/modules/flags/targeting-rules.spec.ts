@@ -20,6 +20,9 @@ const FLAG = '64a000000000000000000030'
 const ENV = '64a000000000000000000040'
 const FLAG_ENV = '64a000000000000000000050'
 const RULE = '64a000000000000000000060'
+const BRAND = '64a000000000000000000070'
+const BRAND_FLAG_ENV = '64a000000000000000000051'
+const BRAND_RULE = '64a000000000000000000061'
 
 type Role = 'VIEWER' | 'MEMBER' | 'ADMIN' | 'OWNER' | null
 
@@ -48,9 +51,15 @@ function setup(
     envProject?: string
     flagType?: string
     ruleOfFlag?: boolean
+    brandProject?: string
+    /** The brand-level FlagEnvironment row of BRAND exists */
+    brandRow?: boolean
+    /** The brand row has own rules */
+    brandRules?: boolean
   } = {}
 ) {
   const envProject = opts.envProject ?? PROJECT
+  const brandProject = opts.brandProject ?? PROJECT
   const prisma: any = {
     project: {
       findUnique: jest
@@ -87,12 +96,50 @@ function setup(
           )
         ),
     },
+    brand: {
+      findFirst: jest
+        .fn()
+        .mockImplementation(({ where }: any) =>
+          Promise.resolve(
+            where.projectId === brandProject ? { id: where.id } : null
+          )
+        ),
+    },
     flagEnvironment: {
-      findFirst: jest.fn().mockResolvedValue({ id: FLAG_ENV }),
-      create: jest.fn().mockResolvedValue({ id: FLAG_ENV }),
+      findFirst: jest.fn().mockImplementation(({ where }: any) =>
+        Promise.resolve(
+          where.brandId
+            ? opts.brandRow
+              ? { id: BRAND_FLAG_ENV }
+              : null
+            : { id: FLAG_ENV, enabled: true, defaultValue: 'true' }
+        )
+      ),
+      create: jest
+        .fn()
+        .mockImplementation(({ data }: any) =>
+          Promise.resolve({ id: data.brandId ? BRAND_FLAG_ENV : FLAG_ENV })
+        ),
     },
     targetingRule: {
-      findMany: jest.fn().mockResolvedValue([storedRule()]),
+      findMany: jest.fn().mockImplementation(({ where }: any) => {
+        if (where.flagEnvironment?.brandId) {
+          return Promise.resolve(
+            opts.brandRules
+              ? [
+                  storedRule({
+                    id: BRAND_RULE,
+                    flagEnvironment: { environmentId: ENV, brandId: BRAND },
+                  }),
+                ]
+              : []
+          )
+        }
+        if (where.flagEnvId) {
+          return Promise.resolve(opts.brandRules ? [{ id: BRAND_RULE }] : [])
+        }
+        return Promise.resolve([storedRule()])
+      }),
       findFirst: jest.fn().mockImplementation(({ where }: any) => {
         if (where.flagEnvironment) {
           return Promise.resolve(
@@ -108,6 +155,7 @@ function setup(
         ),
       update: jest.fn().mockResolvedValue(storedRule({ enabled: false })),
       delete: jest.fn().mockResolvedValue({}),
+      deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     ruleCondition: {
       deleteMany: jest.fn().mockResolvedValue({}),
@@ -400,6 +448,142 @@ describe('TargetingRulesService change events', () => {
     prisma.targetingRule.delete.mockRejectedValue(new Error('db down'))
     await expect(controller.delete(FLAG, RULE, req)).rejects.toThrow()
     expect(changes.recordChange).not.toHaveBeenCalled()
+  })
+})
+
+describe('Brand targeting rules', () => {
+  it('returns the own rules of a brand', async () => {
+    const { controller, req } = setup('VIEWER', {
+      brandRow: true,
+      brandRules: true,
+    })
+    const result = await controller.findAll(FLAG, req, ENV, BRAND)
+    expect(result.inherited).toBe(false)
+    expect(result.rules).toEqual([
+      expect.objectContaining({ id: BRAND_RULE, brandId: BRAND }),
+    ])
+  })
+
+  it('returns the environment rules as inherited without own rules', async () => {
+    const { controller, req } = setup('VIEWER', { brandRow: true })
+    const result = await controller.findAll(FLAG, req, ENV, BRAND)
+    expect(result.inherited).toBe(true)
+    expect(result.rules).toEqual([
+      expect.objectContaining({ id: RULE, brandId: null }),
+    ])
+  })
+
+  it('reports environment rules as not inherited', async () => {
+    const { controller, req } = setup('VIEWER')
+    const result = await controller.findAll(FLAG, req, ENV)
+    expect(result.inherited).toBe(false)
+  })
+
+  it('requires an environment when a brand is given', async () => {
+    const { controller, req } = setup('VIEWER')
+    await expect(
+      controller.findAll(FLAG, req, undefined, BRAND)
+    ).rejects.toBeInstanceOf(BadRequestException)
+  })
+
+  it('hides brands of another project (404)', async () => {
+    const { controller, req, prisma } = setup('MEMBER', {
+      brandProject: OTHER_PROJECT,
+    })
+    await expect(
+      controller.findAll(FLAG, req, ENV, BRAND)
+    ).rejects.toBeInstanceOf(NotFoundException)
+    await expect(
+      controller.create(FLAG, createDto({ brandId: BRAND }), req)
+    ).rejects.toBeInstanceOf(NotFoundException)
+    await expect(
+      controller.resetBrandRules(FLAG, req, ENV, BRAND)
+    ).rejects.toBeInstanceOf(NotFoundException)
+    expect(prisma.targetingRule.create).not.toHaveBeenCalled()
+    expect(prisma.targetingRule.deleteMany).not.toHaveBeenCalled()
+  })
+
+  it('creates the brand override with the environment values on the first rule', async () => {
+    const { controller, req, prisma } = setup('MEMBER')
+    await controller.create(FLAG, createDto({ brandId: BRAND }), req)
+    expect(prisma.flagEnvironment.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: {
+          flagId: FLAG,
+          environmentId: ENV,
+          brandId: BRAND,
+          enabled: true,
+          defaultValue: 'true',
+        },
+      })
+    )
+    expect(prisma.targetingRule.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ flagEnvId: BRAND_FLAG_ENV }),
+      })
+    )
+  })
+
+  it('adds rules to an existing brand override', async () => {
+    const { controller, req, prisma } = setup('MEMBER', { brandRow: true })
+    await controller.create(FLAG, createDto({ brandId: BRAND }), req)
+    expect(prisma.flagEnvironment.create).not.toHaveBeenCalled()
+    expect(prisma.targetingRule.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ flagEnvId: BRAND_FLAG_ENV }),
+      })
+    )
+  })
+
+  it('reset deletes only the rules of the brand override', async () => {
+    const { controller, req, prisma, auditLogs, changes } = setup('MEMBER', {
+      brandRow: true,
+      brandRules: true,
+    })
+    await expect(
+      controller.resetBrandRules(FLAG, req, ENV, BRAND)
+    ).resolves.toEqual({ deleted: 1 })
+    expect(prisma.ruleCondition.deleteMany).toHaveBeenCalledWith({
+      where: { ruleId: { in: [BRAND_RULE] } },
+    })
+    expect(prisma.targetingRule.deleteMany).toHaveBeenCalledWith({
+      where: { flagEnvId: BRAND_FLAG_ENV },
+    })
+    expect(changes.recordChange).toHaveBeenCalledWith(
+      expect.objectContaining({ environmentIds: [ENV] })
+    )
+    expect(auditLogs.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        action: 'targeting_rule.brand_reset',
+        newValues: expect.objectContaining({
+          environmentId: ENV,
+          brandId: BRAND,
+          deletedRules: 1,
+        }),
+      })
+    )
+  })
+
+  it('reset without own rules changes nothing', async () => {
+    const { controller, req, prisma, changes } = setup('MEMBER', {
+      brandRow: true,
+    })
+    await expect(
+      controller.resetBrandRules(FLAG, req, ENV, BRAND)
+    ).resolves.toEqual({ deleted: 0 })
+    expect(prisma.targetingRule.deleteMany).not.toHaveBeenCalled()
+    expect(changes.recordChange).not.toHaveBeenCalled()
+  })
+
+  it('forbids VIEWERs to reset brand rules', async () => {
+    const { controller, req, prisma } = setup('VIEWER', {
+      brandRow: true,
+      brandRules: true,
+    })
+    await expect(
+      controller.resetBrandRules(FLAG, req, ENV, BRAND)
+    ).rejects.toBeInstanceOf(ForbiddenException)
+    expect(prisma.targetingRule.deleteMany).not.toHaveBeenCalled()
   })
 })
 

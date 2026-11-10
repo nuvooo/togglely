@@ -51,7 +51,8 @@ interface FlagRef {
 
 /**
  * CRUD for targeting rules. Rules belong to the environment-level
- * FlagEnvironment (brandId = null) and are inherited by brand overrides.
+ * FlagEnvironment (brandId = null) or to a brand override. A brand without
+ * own rules inherits the environment rules (see SdkService).
  * Access checks are done by the controller.
  */
 @Injectable()
@@ -64,12 +65,36 @@ export class TargetingRulesService {
     private readonly changes: ChangeEventsService
   ) {}
 
-  async findAll(flagId: string, environmentId?: string) {
+  /**
+   * Environment rules, or the rules of a brand (needs environmentId). A
+   * brand without own rules gets the environment rules with
+   * `inherited: true`.
+   */
+  async findAll(flagId: string, environmentId?: string, brandId?: string) {
+    if (brandId && environmentId) {
+      const own = await this.findRules(flagId, environmentId, brandId)
+      if (own.length > 0) return { rules: own, inherited: false }
+      return {
+        rules: await this.findRules(flagId, environmentId, null),
+        inherited: true,
+      }
+    }
+    return {
+      rules: await this.findRules(flagId, environmentId, null),
+      inherited: false,
+    }
+  }
+
+  private async findRules(
+    flagId: string,
+    environmentId: string | undefined,
+    brandId: string | null
+  ) {
     const rules = await this.prisma.targetingRule.findMany({
       where: {
         flagEnvironment: {
           flagId,
-          brandId: null,
+          brandId,
           ...(environmentId ? { environmentId } : {}),
         },
       },
@@ -84,11 +109,18 @@ export class TargetingRulesService {
     this.validateServeValue(flagType, dto.serveValue)
     this.validateConditions(dto.conditions)
 
-    const flagEnv = await this.getOrCreateFlagEnvironment(
-      flag.id,
-      dto.environmentId,
-      flagType
-    )
+    const flagEnv = dto.brandId
+      ? await this.getOrCreateBrandFlagEnvironment(
+          flag.id,
+          dto.environmentId,
+          dto.brandId,
+          flagType
+        )
+      : await this.getOrCreateFlagEnvironment(
+          flag.id,
+          dto.environmentId,
+          flagType
+        )
 
     const priority =
       dto.priority ??
@@ -116,6 +148,7 @@ export class TargetingRulesService {
 
     await this.audit('targeting_rule.created', flag, rule.id, userId, {
       environmentId: dto.environmentId,
+      ...(dto.brandId ? { brandId: dto.brandId } : {}),
       serveValue: rule.serveValue,
     })
 
@@ -188,6 +221,47 @@ export class TargetingRulesService {
     )
   }
 
+  /**
+   * Deletes all own rules of a brand override; the brand then inherits the
+   * environment rules again. The override values (enabled, default) stay.
+   */
+  async resetBrandRules(
+    flag: FlagRef,
+    environmentId: string,
+    brandId: string,
+    userId: string
+  ) {
+    const brandEnv = await this.prisma.flagEnvironment.findFirst({
+      where: { flagId: flag.id, environmentId, brandId },
+      select: { id: true },
+    })
+    const ruleIds = brandEnv
+      ? (
+          await this.prisma.targetingRule.findMany({
+            where: { flagEnvId: brandEnv.id },
+            select: { id: true },
+          })
+        ).map((r) => r.id)
+      : []
+    if (!brandEnv || ruleIds.length === 0) return { deleted: 0 }
+
+    await this.prisma.$transaction([
+      this.prisma.ruleCondition.deleteMany({
+        where: { ruleId: { in: ruleIds } },
+      }),
+      this.prisma.targetingRule.deleteMany({
+        where: { flagEnvId: brandEnv.id },
+      }),
+    ])
+    this.recordRulesChanged(flag, environmentId)
+    await this.audit('targeting_rule.brand_reset', flag, brandEnv.id, userId, {
+      environmentId,
+      brandId,
+      deletedRules: ruleIds.length,
+    })
+    return { deleted: ruleIds.length }
+  }
+
   /** Loads a rule and ensures it belongs to the given flag. */
   private async findRuleOfFlag(flagId: string, ruleId: string) {
     const rule = isObjectId(ruleId)
@@ -227,6 +301,38 @@ export class TargetingRulesService {
         brandId: null,
         enabled: false,
         defaultValue: getDefaultFlagValue(flagType),
+      },
+      select: { id: true },
+    })
+  }
+
+  /**
+   * Brand override row; created on the first brand rule with the current
+   * environment values, so the brand keeps behaving the same.
+   */
+  private async getOrCreateBrandFlagEnvironment(
+    flagId: string,
+    environmentId: string,
+    brandId: string,
+    flagType: FlagType
+  ) {
+    const existing = await this.prisma.flagEnvironment.findFirst({
+      where: { flagId, environmentId, brandId },
+      select: { id: true },
+    })
+    if (existing) return existing
+
+    const envDefault = await this.prisma.flagEnvironment.findFirst({
+      where: { flagId, environmentId, brandId: null },
+      select: { enabled: true, defaultValue: true },
+    })
+    return this.prisma.flagEnvironment.create({
+      data: {
+        flagId,
+        environmentId,
+        brandId,
+        enabled: envDefault?.enabled ?? false,
+        defaultValue: envDefault?.defaultValue ?? getDefaultFlagValue(flagType),
       },
       select: { id: true },
     })

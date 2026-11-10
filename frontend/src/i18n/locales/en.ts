@@ -1169,6 +1169,18 @@ export const en = {
   'flag-detail.targeting.updated': 'Targeting rule updated',
   'flag-detail.targeting.edit-label': 'Edit rule "{{name}}"',
   'flag-detail.targeting.edit-title': 'Edit rule',
+  'flag-detail.targeting.brand': 'Brand',
+  'flag-detail.targeting.brand-all': 'All brands (environment)',
+  'flag-detail.targeting.inherited-info':
+    'This brand uses the rules of the environment. Adding a rule gives {{brand}} its own rules; its on/off state and default value are then kept as a brand override.',
+  'flag-detail.targeting.own-brand-rules':
+    '{{brand}} has its own rules in this environment; the environment rules do not apply.',
+  'flag-detail.targeting.reset-brand': 'Use environment rules',
+  'flag-detail.targeting.reset-brand-title': 'Use environment rules?',
+  'flag-detail.targeting.reset-brand-description':
+    'All own rules of {{brand}} in this environment are deleted. The brand then uses the environment rules again.',
+  'flag-detail.targeting.reset-brand-confirm': 'Reset',
+  'flag-detail.targeting.reset-brand-done': 'The brand uses the environment rules again',
   'flag-detail.targeting.deleted': 'Targeting rule deleted',
   'flag-detail.targeting.no-environments': 'This flag has no environments yet.',
   'flag-detail.targeting.load-error': 'The targeting rules could not be loaded.',
