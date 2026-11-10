@@ -1,6 +1,7 @@
 import { Building2, Flag, LayoutGrid, UserRound } from 'lucide-react'
 import { useTranslation } from 'react-i18next'
 import { Link, useLocation } from 'react-router-dom'
+import { Logo } from '@/components/Logo'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { getArea, orgPath, projectPath, ROUTES } from '@/lib/routes'
 import { cn } from '@/lib/utils'
@@ -64,10 +65,10 @@ export function Rail({ orientation = 'side' }: { orientation?: 'side' | 'bottom'
     >
       <Link
         to={ROUTES.overview}
-        className="mb-3 grid h-8 w-8 place-items-center rounded-lg bg-primary text-sm font-bold text-primary-foreground"
+        className="mb-3 grid h-9 w-9 place-items-center rounded-lg transition-colors hover:bg-sidebar-accent"
         aria-label={t('common.app-name')}
       >
-        T
+        <Logo className="h-6 w-8" />
       </Link>
       {items.map(({ area, label, icon: Icon, href }) => (
         <Tooltip key={area}>

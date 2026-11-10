@@ -1,7 +1,8 @@
-import { AlertCircle, FlagIcon, Loader2 } from 'lucide-react'
+import { AlertCircle, Loader2 } from 'lucide-react'
 import type { ReactNode } from 'react'
 import { useTranslation } from 'react-i18next'
 import { LanguageSwitcher } from '@/components/LanguageSwitcher'
+import { Logo } from '@/components/Logo'
 import { ThemeToggle } from '@/components/ThemeToggle'
 import { cn } from '@/lib/utils'
 
@@ -24,12 +25,7 @@ export function AuthLayout({
       <main className="flex flex-1 flex-col items-center justify-center px-4 py-10">
         <div className="w-full max-w-sm">
           <div className="mb-6 flex items-center justify-center gap-2.5">
-            <span
-              className="grid h-8 w-8 place-items-center rounded-lg bg-primary"
-              aria-hidden="true"
-            >
-              <FlagIcon className="h-4 w-4 text-primary-foreground" />
-            </span>
+            <Logo className="h-8 w-10" />
             <span className="text-lg font-semibold tracking-tight">
               {t('common.app-name')}
             </span>
