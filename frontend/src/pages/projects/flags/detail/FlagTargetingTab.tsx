@@ -20,6 +20,7 @@ import {
   isListOperator,
   MAX_CONDITIONS,
   nextPriority,
+  normalizeConditionValue,
   type RuleMatchOperator,
   sortRulesByPriority,
   type TargetingRule,
@@ -151,13 +152,7 @@ export function FlagTargetingTab({
       conditions: conditions.map((c) => ({
         attribute: c.attribute.trim(),
         operator: c.operator,
-        value: isListOperator(c.operator)
-          ? c.value
-              .split(',')
-              .map((v) => v.trim())
-              .filter(Boolean)
-              .join(',')
-          : c.value,
+        value: normalizeConditionValue(c.operator, c.value),
       })),
     }
 
