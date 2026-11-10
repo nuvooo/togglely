@@ -218,6 +218,10 @@ model TargetingRule {
   isDefault      Boolean      @default(false)
   enabled        Boolean      @default(true)
   priority       Int          @default(0)
+  // Condition groups: `operator` combines the groups, groupOperators[i]
+  // combines the conditions of group i (RuleCondition.groupIndex). Rules
+  // without groupOperators are one group combined with `operator`.
+  groupOperators RuleOperator[]
   // Optional time window: the rule applies while activeFrom <= now < activeUntil
   activeFrom     DateTime?
   activeUntil    DateTime?
@@ -241,12 +245,14 @@ enum RuleOperator {
 }
 
 model RuleCondition {
-  id        String            @id @default(auto()) @map("_id") @db.ObjectId
-  ruleId    String            @db.ObjectId
-  attribute String
-  operator  ConditionOperator
-  value     String
-  createdAt DateTime          @default(now())
+  id         String            @id @default(auto()) @map("_id") @db.ObjectId
+  ruleId     String            @db.ObjectId
+  attribute  String
+  operator   ConditionOperator
+  value      String
+  // Condition group of the rule (index into groupOperators); null = group 0
+  groupIndex Int?
+  createdAt  DateTime          @default(now())
 
   // Relations
   rule TargetingRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)

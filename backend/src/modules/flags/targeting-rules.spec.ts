@@ -106,15 +106,17 @@ function setup(
         ),
     },
     flagEnvironment: {
-      findFirst: jest.fn().mockImplementation(({ where }: any) =>
-        Promise.resolve(
-          where.brandId
-            ? opts.brandRow
-              ? { id: BRAND_FLAG_ENV }
-              : null
-            : { id: FLAG_ENV, enabled: true, defaultValue: 'true' }
-        )
-      ),
+      findFirst: jest
+        .fn()
+        .mockImplementation(({ where }: any) =>
+          Promise.resolve(
+            where.brandId
+              ? opts.brandRow
+                ? { id: BRAND_FLAG_ENV }
+                : null
+              : { id: FLAG_ENV, enabled: true, defaultValue: 'true' }
+          )
+        ),
       create: jest
         .fn()
         .mockImplementation(({ data }: any) =>
@@ -276,7 +278,14 @@ describe('TargetingRulesService behaviour', () => {
           operator: 'AND',
           enabled: true,
           conditions: {
-            create: [{ attribute: 'country', operator: 'EQUALS', value: 'DE' }],
+            create: [
+              {
+                attribute: 'country',
+                operator: 'EQUALS',
+                value: 'DE',
+                groupIndex: 0,
+              },
+            ],
           },
         }),
       })
@@ -387,7 +396,13 @@ describe('TargetingRulesService behaviour', () => {
     })
     expect(prisma.ruleCondition.createMany).toHaveBeenCalledWith({
       data: [
-        { ruleId: RULE, attribute: 'plan', operator: 'IN', value: 'pro,team' },
+        {
+          ruleId: RULE,
+          attribute: 'plan',
+          operator: 'IN',
+          value: 'pro,team',
+          groupIndex: 0,
+        },
       ],
     })
   })
@@ -680,6 +695,164 @@ describe('Targeting rule time windows', () => {
   })
 })
 
+describe('Targeting rule condition groups', () => {
+  const de = { attribute: 'country', operator: 'EQUALS' as const, value: 'DE' }
+  const pro = { attribute: 'plan', operator: 'EQUALS' as const, value: 'pro' }
+  const beta = { attribute: 'beta', operator: 'EQUALS' as const, value: 'yes' }
+  const groupsDto = {
+    operator: 'AND' as const,
+    conditions: undefined,
+    groups: [
+      { operator: 'AND' as const, conditions: [de] },
+      { operator: 'OR' as const, conditions: [pro, beta] },
+    ],
+  }
+
+  it('stores groups as groupIndex and groupOperators', async () => {
+    const { controller, req, prisma } = setup('MEMBER')
+    await controller.create(FLAG, createDto(groupsDto), req)
+    expect(prisma.targetingRule.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          operator: 'AND',
+          groupOperators: ['AND', 'OR'],
+          conditions: {
+            create: [
+              { ...de, groupIndex: 0 },
+              { ...pro, groupIndex: 1 },
+              { ...beta, groupIndex: 1 },
+            ],
+          },
+        }),
+      })
+    )
+  })
+
+  it('stores flat conditions as one group', async () => {
+    const { controller, req, prisma } = setup('MEMBER')
+    await controller.create(FLAG, createDto({ operator: 'OR' }), req)
+    expect(prisma.targetingRule.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          operator: 'OR',
+          groupOperators: ['OR'],
+          conditions: { create: [{ ...de, groupIndex: 0 }] },
+        }),
+      })
+    )
+  })
+
+  it.each([
+    ['both conditions and groups', { ...groupsDto, conditions: [de] }],
+    ['neither conditions nor groups', { conditions: undefined }],
+    [
+      'more than 20 conditions over all groups',
+      {
+        conditions: undefined,
+        groups: [
+          { operator: 'AND' as const, conditions: Array(11).fill(de) },
+          { operator: 'AND' as const, conditions: Array(10).fill(pro) },
+        ],
+      },
+    ],
+  ])('rejects %s', async (_, overrides) => {
+    const { controller, req, prisma } = setup('MEMBER')
+    await expect(
+      controller.create(FLAG, createDto(overrides), req)
+    ).rejects.toBeInstanceOf(BadRequestException)
+    expect(prisma.targetingRule.create).not.toHaveBeenCalled()
+  })
+
+  it('replaces the conditions with groups on update', async () => {
+    const { controller, req, prisma } = setup('MEMBER')
+    await controller.update(
+      FLAG,
+      RULE,
+      { operator: 'OR', groups: groupsDto.groups },
+      req
+    )
+    expect(prisma.ruleCondition.deleteMany).toHaveBeenCalledWith({
+      where: { ruleId: RULE },
+    })
+    expect(prisma.ruleCondition.createMany).toHaveBeenCalledWith({
+      data: [
+        { ruleId: RULE, ...de, groupIndex: 0 },
+        { ruleId: RULE, ...pro, groupIndex: 1 },
+        { ruleId: RULE, ...beta, groupIndex: 1 },
+      ],
+    })
+    expect(prisma.targetingRule.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          operator: 'OR',
+          groupOperators: ['AND', 'OR'],
+        }),
+      })
+    )
+  })
+
+  it('an operator-only update of a single-group rule changes its group operator', async () => {
+    const { controller, req, prisma } = setup('MEMBER')
+    prisma.targetingRule.findFirst.mockResolvedValue(
+      storedRule({ groupOperators: ['AND'] })
+    )
+    await controller.update(FLAG, RULE, { operator: 'OR' }, req)
+    expect(prisma.targetingRule.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          operator: 'OR',
+          groupOperators: ['OR'],
+        }),
+      })
+    )
+  })
+
+  it('an operator-only update of a grouped rule only changes how groups combine', async () => {
+    const { controller, req, prisma } = setup('MEMBER')
+    prisma.targetingRule.findFirst.mockResolvedValue(
+      storedRule({ groupOperators: ['AND', 'OR'] })
+    )
+    await controller.update(FLAG, RULE, { operator: 'OR' }, req)
+    const { data } = prisma.targetingRule.update.mock.calls[0][0]
+    expect(data.operator).toBe('OR')
+    expect(data.groupOperators).toBeUndefined()
+  })
+
+  it('returns the groups of a rule', async () => {
+    const { controller, req, prisma } = setup('VIEWER')
+    prisma.targetingRule.findMany.mockResolvedValue([
+      storedRule({
+        operator: 'AND',
+        groupOperators: ['AND', 'OR'],
+        conditions: [
+          { id: 'c1', ...de, groupIndex: 0 },
+          { id: 'c2', ...pro, groupIndex: 1 },
+          { id: 'c3', ...beta, groupIndex: 1 },
+        ],
+      }),
+    ])
+    const { rules } = await controller.findAll(FLAG, req, ENV)
+    expect(rules[0].groups).toEqual([
+      { operator: 'AND', conditions: [{ id: 'c1', ...de }] },
+      {
+        operator: 'OR',
+        conditions: [
+          { id: 'c2', ...pro },
+          { id: 'c3', ...beta },
+        ],
+      },
+    ])
+  })
+
+  it('returns a rule saved before groups existed as one group', async () => {
+    const { controller, req } = setup('VIEWER')
+    const { rules } = await controller.findAll(FLAG, req, ENV)
+    expect(rules[0].groups).toEqual([
+      { operator: 'AND', conditions: [{ id: 'c1', ...de }] },
+    ])
+  })
+})
+
 describe('Targeting rule DTO validation', () => {
   const pipe = new ValidationPipe({ whitelist: true, transform: true })
   const validate = (metatype: any, value: unknown) =>
@@ -739,6 +912,36 @@ describe('Targeting rule DTO validation', () => {
     await expect(
       validate(UpdateTargetingRuleDto, { activeFrom: null, activeUntil: null })
     ).resolves.toEqual({ activeFrom: null, activeUntil: null })
+  })
+
+  it('accepts groups instead of conditions', async () => {
+    const { conditions, ...rest } = createDto()
+    await expect(
+      validate(CreateTargetingRuleDto, {
+        ...rest,
+        groups: [{ operator: 'OR', conditions }],
+      })
+    ).resolves.toBeDefined()
+  })
+
+  it.each([
+    ['an empty group', [{ operator: 'AND', conditions: [] }]],
+    [
+      'an unknown group operator',
+      [{ operator: 'XOR', conditions: createDto().conditions }],
+    ],
+    [
+      'more than 10 groups',
+      Array.from({ length: 11 }, () => ({
+        operator: 'AND',
+        conditions: createDto().conditions,
+      })),
+    ],
+    ['no groups', []],
+  ])('rejects %s', async (_, groups) => {
+    await expect(
+      validate(UpdateTargetingRuleDto, { groups })
+    ).rejects.toBeInstanceOf(BadRequestException)
   })
 
   it.each([['not a date'], [42], [{ $gt: '' }]])(

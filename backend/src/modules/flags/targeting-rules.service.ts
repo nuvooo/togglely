@@ -4,30 +4,37 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common'
-import { FlagType } from '@prisma/client'
+import { FlagType, RuleOperator } from '@prisma/client'
 import { isObjectId } from '../../shared/access/access.service'
 import { PrismaService } from '../../shared/prisma.service'
 import { AuditLogsService } from '../audit-logs/audit-logs.service'
 import { writeAudit } from '../audit-logs/write-audit'
 import { ChangeEventsService } from '../change-events/change-events.service'
+import { groupConditions } from '../sdk/condition-groups'
 import { isRegexPatternAllowed } from '../sdk/evaluation.service'
 import { nextBoundaryAfter } from '../sdk/rule-schedule'
 import { getDefaultFlagValue } from '../sdk/sdk.helpers'
 import {
+  ConditionGroupDto,
   CreateTargetingRuleDto,
+  RULE_CONDITIONS_MAX,
   RuleConditionDto,
   UpdateTargetingRuleDto,
 } from './dto/targeting-rule.dto'
 
 const RULE_INCLUDE = {
-  conditions: { orderBy: { createdAt: 'asc' as const } },
+  // createMany shares one createdAt; the id keeps the insertion order
+  conditions: {
+    orderBy: [{ createdAt: 'asc' as const }, { id: 'asc' as const }],
+  },
   flagEnvironment: { select: { environmentId: true, brandId: true } },
 }
 
 type RuleWithRelations = {
   id: string
   name: string | null
-  operator: string
+  operator: RuleOperator
+  groupOperators?: RuleOperator[]
   serveValue: string
   priority: number
   isDefault: boolean
@@ -42,8 +49,16 @@ type RuleWithRelations = {
     attribute: string
     operator: string
     value: string
+    groupIndex?: number | null
   }[]
 }
+
+const toConditionResponse = (c: RuleWithRelations['conditions'][number]) => ({
+  id: c.id,
+  attribute: c.attribute,
+  operator: c.operator,
+  value: c.value,
+})
 
 interface FlagRef {
   id: string
@@ -110,7 +125,10 @@ export class TargetingRulesService {
   async create(flag: FlagRef, dto: CreateTargetingRuleDto, userId: string) {
     const flagType = await this.getFlagType(flag.id)
     this.validateServeValue(flagType, dto.serveValue)
-    this.validateConditions(dto.conditions)
+    const groups = this.conditionData(dto, 'AND')
+    if (!groups) {
+      throw new BadRequestException('At least one condition is required')
+    }
     const window = {
       activeFrom: null,
       activeUntil: null,
@@ -145,12 +163,13 @@ export class TargetingRulesService {
       data: {
         flagEnvId: flagEnv.id,
         name: dto.name ?? null,
-        operator: dto.operator ?? 'AND',
+        operator: groups.operator,
+        groupOperators: groups.groupOperators,
         serveValue: dto.serveValue,
         priority,
         enabled: dto.enabled ?? true,
         ...window,
-        conditions: { create: dto.conditions.map((c) => this.toCondition(c)) },
+        conditions: { create: groups.conditions },
       },
       include: RULE_INCLUDE,
     })
@@ -176,23 +195,29 @@ export class TargetingRulesService {
     if (dto.serveValue !== undefined) {
       this.validateServeValue(await this.getFlagType(flag.id), dto.serveValue)
     }
-    if (dto.conditions) {
-      this.validateConditions(dto.conditions)
-    }
+    const groups = this.conditionData(dto, existing.operator)
+    // Rules with one group keep rule and group operator in sync, so clients
+    // that only know `operator` keep working
+    const groupOperators =
+      groups?.groupOperators ??
+      (dto.operator && existing.groupOperators.length <= 1
+        ? [dto.operator]
+        : undefined)
     const window = this.windowData(dto, existing)
 
     const rule = await this.prisma.$transaction(async (tx) => {
-      if (dto.conditions) {
+      if (groups) {
         await tx.ruleCondition.deleteMany({ where: { ruleId } })
         await tx.ruleCondition.createMany({
-          data: dto.conditions.map((c) => ({ ruleId, ...this.toCondition(c) })),
+          data: groups.conditions.map((c) => ({ ruleId, ...c })),
         })
       }
       return tx.targetingRule.update({
         where: { id: ruleId },
         data: {
           name: dto.name,
-          operator: dto.operator,
+          operator: groups?.operator ?? dto.operator,
+          groupOperators,
           serveValue: dto.serveValue,
           priority: dto.priority,
           enabled: dto.enabled,
@@ -400,8 +425,57 @@ export class TargetingRulesService {
     }
   }
 
-  private toCondition(c: RuleConditionDto) {
-    return { attribute: c.attribute, operator: c.operator, value: c.value }
+  private toCondition(c: RuleConditionDto, groupIndex: number) {
+    return {
+      attribute: c.attribute,
+      operator: c.operator,
+      value: c.value,
+      groupIndex,
+    }
+  }
+
+  /**
+   * Conditions to store (with their group) and the operators, from either
+   * flat `conditions` (one group combined with `operator`) or `groups`
+   * (`operator` combines the groups). Null when the DTO sets neither.
+   */
+  private conditionData(
+    dto: {
+      operator?: RuleOperator
+      conditions?: RuleConditionDto[]
+      groups?: ConditionGroupDto[]
+    },
+    defaultOperator: RuleOperator
+  ) {
+    if (dto.conditions && dto.groups) {
+      throw new BadRequestException('Use either conditions or groups, not both')
+    }
+    const operator = dto.operator ?? defaultOperator
+    if (dto.groups) {
+      const all = dto.groups.flatMap((g) => g.conditions)
+      if (all.length > RULE_CONDITIONS_MAX) {
+        throw new BadRequestException(
+          `At most ${RULE_CONDITIONS_MAX} conditions are allowed`
+        )
+      }
+      this.validateConditions(all)
+      return {
+        operator,
+        groupOperators: dto.groups.map((g) => g.operator),
+        conditions: dto.groups.flatMap((g, index) =>
+          g.conditions.map((c) => this.toCondition(c, index))
+        ),
+      }
+    }
+    if (dto.conditions) {
+      this.validateConditions(dto.conditions)
+      return {
+        operator,
+        groupOperators: [operator],
+        conditions: dto.conditions.map((c) => this.toCondition(c, 0)),
+      }
+    }
+    return null
   }
 
   private toResponse(rule: RuleWithRelations) {
@@ -417,11 +491,10 @@ export class TargetingRulesService {
       enabled: rule.enabled,
       activeFrom: rule.activeFrom?.toISOString() ?? null,
       activeUntil: rule.activeUntil?.toISOString() ?? null,
-      conditions: rule.conditions.map((c) => ({
-        id: c.id,
-        attribute: c.attribute,
-        operator: c.operator,
-        value: c.value,
+      conditions: rule.conditions.map(toConditionResponse),
+      groups: groupConditions(rule).map((group) => ({
+        operator: group.operator,
+        conditions: group.conditions.map(toConditionResponse),
       })),
       createdAt: rule.createdAt,
       updatedAt: rule.updatedAt,
@@ -453,7 +526,10 @@ export class TargetingRulesService {
     return {
       activeFrom,
       activeUntil,
-      nextBoundaryAt: nextBoundaryAfter({ activeFrom, activeUntil }, new Date()),
+      nextBoundaryAt: nextBoundaryAfter(
+        { activeFrom, activeUntil },
+        new Date()
+      ),
     }
   }
 
