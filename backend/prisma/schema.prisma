@@ -210,22 +210,28 @@ model FlagEnvironment {
 }
 
 model TargetingRule {
-  id         String       @id @default(auto()) @map("_id") @db.ObjectId
-  flagEnvId  String       @db.ObjectId
-  name       String?
-  operator   RuleOperator @default(AND)
-  serveValue String
-  isDefault  Boolean      @default(false)
-  enabled    Boolean      @default(true)
-  priority   Int          @default(0)
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime     @updatedAt
+  id             String       @id @default(auto()) @map("_id") @db.ObjectId
+  flagEnvId      String       @db.ObjectId
+  name           String?
+  operator       RuleOperator @default(AND)
+  serveValue     String
+  isDefault      Boolean      @default(false)
+  enabled        Boolean      @default(true)
+  priority       Int          @default(0)
+  // Optional time window: the rule applies while activeFrom <= now < activeUntil
+  activeFrom     DateTime?
+  activeUntil    DateTime?
+  // Next window bound not yet announced to SDK clients (RuleScheduleWorker)
+  nextBoundaryAt DateTime?
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
 
   // Relations
   flagEnvironment FlagEnvironment @relation(fields: [flagEnvId], references: [id], onDelete: Cascade)
   conditions      RuleCondition[]
 
   @@index([flagEnvId])
+  @@index([nextBoundaryAt])
   @@map("targeting_rules")
 }
 

@@ -457,6 +457,67 @@ describe('EvaluationService', () => {
   })
 
   describe('evaluateRules', () => {
+    describe('time windows', () => {
+      const NOW = new Date('2026-11-28T12:00:00.000Z')
+      const windowRule = (
+        serveValue: string,
+        priority: number,
+        window: { activeFrom?: Date | null; activeUntil?: Date | null }
+      ): TargetingRuleWithConditions => ({
+        id: serveValue,
+        name: serveValue,
+        operator: 'AND',
+        serveValue,
+        isDefault: false,
+        priority,
+        conditions: [],
+        ...window,
+      })
+
+      it('skips rules that have not started yet', () => {
+        const rules = [
+          windowRule('future', 0, {
+            activeFrom: new Date('2026-12-01T00:00:00.000Z'),
+          }),
+          windowRule('always', 1, {}),
+        ]
+        expect(service.evaluateRules(rules, {}, NOW)).toBe('always')
+      })
+
+      it('skips expired rules', () => {
+        const rules = [
+          windowRule('expired', 0, {
+            activeUntil: new Date('2026-11-28T12:00:00.000Z'),
+          }),
+          windowRule('always', 1, {}),
+        ]
+        expect(service.evaluateRules(rules, {}, NOW)).toBe('always')
+      })
+
+      it('applies rules inside their window', () => {
+        const rules = [
+          windowRule('black-friday', 0, {
+            activeFrom: new Date('2026-11-27T00:00:00.000Z'),
+            activeUntil: new Date('2026-11-30T00:00:00.000Z'),
+          }),
+          windowRule('always', 1, {}),
+        ]
+        expect(service.evaluateRules(rules, {}, NOW)).toBe('black-friday')
+      })
+
+      it('skips a default rule outside its window', () => {
+        const rules = [
+          {
+            ...windowRule('default', 0, {
+              activeUntil: new Date('2026-11-01T00:00:00.000Z'),
+            }),
+            isDefault: true,
+          },
+        ]
+        expect(service.evaluateRules(rules, {}, NOW)).toBeNull()
+      })
+    })
+
     it('should return null for empty rules', () => {
       expect(service.evaluateRules([], {})).toBeNull()
     })

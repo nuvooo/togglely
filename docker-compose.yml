@@ -53,6 +53,8 @@ services:
       WEBHOOK_ALLOW_PRIVATE: ${WEBHOOK_ALLOW_PRIVATE:-false}
       WEBHOOK_ALLOW_INSECURE: ${WEBHOOK_ALLOW_INSECURE:-false}
       WEBHOOK_WORKER_DISABLED: ${WEBHOOK_WORKER_DISABLED:-false}
+      # Targeting rule time windows: announces window starts/ends to SDK clients
+      RULE_SCHEDULER_DISABLED: ${RULE_SCHEDULER_DISABLED:-false}
       # Live change stream limits (CLIENT keys vs. SERVER/SDK keys)
       SSE_MAX_PER_CLIENT_KEY: ${SSE_MAX_PER_CLIENT_KEY:-10000}
       SSE_MAX_PER_CLIENT_IP: ${SSE_MAX_PER_CLIENT_IP:-50}

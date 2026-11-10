@@ -1,5 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { ConditionOperator, RuleOperator } from '@prisma/client'
+import { isRuleActiveAt } from './rule-schedule'
 
 export interface ToggleContext {
   userId?: string
@@ -17,6 +18,9 @@ export interface TargetingRuleWithConditions {
   isDefault: boolean
   enabled?: boolean
   priority: number
+  /** Optional time window, see isRuleActiveAt */
+  activeFrom?: Date | null
+  activeUntil?: Date | null
   conditions: RuleConditionData[]
 }
 
@@ -80,18 +84,20 @@ export class EvaluationService {
    * Rules are evaluated in priority order (lowest number = highest priority).
    * The first matching rule wins and its serveValue is returned.
    * Default rules (isDefault=true) are evaluated last as fallback.
+   * Disabled rules and rules outside their time window are skipped.
    */
   evaluateRules(
     rules: TargetingRuleWithConditions[],
-    context: ToggleContext
+    context: ToggleContext,
+    now: Date = new Date()
   ): string | null {
     if (rules.length === 0) {
       return null
     }
 
-    // Sort by priority (lowest number = highest priority); skip disabled rules
+    // Sort by priority (lowest number = highest priority)
     const sorted = rules
-      .filter((r) => r.enabled !== false)
+      .filter((r) => r.enabled !== false && isRuleActiveAt(r, now))
       .sort((a, b) => a.priority - b.priority)
 
     // Evaluate non-default rules first

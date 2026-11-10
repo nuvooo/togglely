@@ -587,6 +587,99 @@ describe('Brand targeting rules', () => {
   })
 })
 
+describe('Targeting rule time windows', () => {
+  const FROM = '2099-11-27T00:00:00.000Z'
+  const UNTIL = '2099-11-30T00:00:00.000Z'
+
+  it('stores the window and the next bound on create', async () => {
+    const { controller, req, prisma } = setup('MEMBER')
+    await controller.create(
+      FLAG,
+      createDto({ activeFrom: FROM, activeUntil: UNTIL }),
+      req
+    )
+    expect(prisma.targetingRule.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          activeFrom: new Date(FROM),
+          activeUntil: new Date(UNTIL),
+          nextBoundaryAt: new Date(FROM),
+        }),
+      })
+    )
+  })
+
+  it('has no next bound for a rule without window or with a past window', async () => {
+    const { controller, req, prisma } = setup('MEMBER')
+    await controller.create(FLAG, createDto(), req)
+    await controller.create(
+      FLAG,
+      createDto({ activeUntil: '2000-01-01T00:00:00.000Z' }),
+      req
+    )
+    for (const [call] of prisma.targetingRule.create.mock.calls) {
+      expect(call.data.nextBoundaryAt).toBeNull()
+    }
+  })
+
+  it('rejects a window that ends before it starts', async () => {
+    const { controller, req, prisma } = setup('MEMBER')
+    await expect(
+      controller.create(
+        FLAG,
+        createDto({ activeFrom: UNTIL, activeUntil: FROM }),
+        req
+      )
+    ).rejects.toBeInstanceOf(BadRequestException)
+    expect(prisma.targetingRule.create).not.toHaveBeenCalled()
+  })
+
+  it('checks a partial update against the stored window', async () => {
+    const { controller, req, prisma } = setup('MEMBER')
+    prisma.targetingRule.findFirst.mockResolvedValue(
+      storedRule({ activeFrom: new Date(UNTIL), activeUntil: null })
+    )
+    await expect(
+      controller.update(FLAG, RULE, { activeUntil: FROM }, req)
+    ).rejects.toBeInstanceOf(BadRequestException)
+    expect(prisma.targetingRule.update).not.toHaveBeenCalled()
+  })
+
+  it('clears a bound with null and recomputes the next bound', async () => {
+    const { controller, req, prisma } = setup('MEMBER')
+    prisma.targetingRule.findFirst.mockResolvedValue(
+      storedRule({ activeFrom: new Date(FROM), activeUntil: new Date(UNTIL) })
+    )
+    await controller.update(FLAG, RULE, { activeFrom: null }, req)
+    expect(prisma.targetingRule.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          activeFrom: null,
+          nextBoundaryAt: new Date(UNTIL),
+        }),
+      })
+    )
+  })
+
+  it('leaves the window alone when an update does not touch it', async () => {
+    const { controller, req, prisma } = setup('MEMBER')
+    await controller.update(FLAG, RULE, { enabled: false }, req)
+    const { data } = prisma.targetingRule.update.mock.calls[0][0]
+    expect(data.activeFrom).toBeUndefined()
+    expect(data.activeUntil).toBeUndefined()
+    expect(data.nextBoundaryAt).toBeUndefined()
+  })
+
+  it('returns the window as ISO strings', async () => {
+    const { controller, req, prisma } = setup('VIEWER')
+    prisma.targetingRule.findMany.mockResolvedValue([
+      storedRule({ activeFrom: new Date(FROM), activeUntil: null }),
+    ])
+    const { rules } = await controller.findAll(FLAG, req, ENV)
+    expect(rules[0]).toMatchObject({ activeFrom: FROM, activeUntil: null })
+  })
+})
+
 describe('Targeting rule DTO validation', () => {
   const pipe = new ValidationPipe({ whitelist: true, transform: true })
   const validate = (metatype: any, value: unknown) =>
@@ -634,4 +727,26 @@ describe('Targeting rule DTO validation', () => {
       validate(UpdateTargetingRuleDto, { conditions: [] })
     ).rejects.toBeInstanceOf(BadRequestException)
   })
+
+  it('accepts ISO time window bounds, and null on update', async () => {
+    await expect(
+      validate(CreateTargetingRuleDto, {
+        ...createDto(),
+        activeFrom: '2099-11-27T00:00:00.000Z',
+        activeUntil: '2099-11-30T00:00:00Z',
+      })
+    ).resolves.toBeDefined()
+    await expect(
+      validate(UpdateTargetingRuleDto, { activeFrom: null, activeUntil: null })
+    ).resolves.toEqual({ activeFrom: null, activeUntil: null })
+  })
+
+  it.each([['not a date'], [42], [{ $gt: '' }]])(
+    'rejects %p as time window bound',
+    async (value) => {
+      await expect(
+        validate(CreateTargetingRuleDto, { ...createDto(), activeFrom: value })
+      ).rejects.toBeInstanceOf(BadRequestException)
+    }
+  )
 })

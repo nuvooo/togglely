@@ -11,6 +11,7 @@ import { AuditLogsService } from '../audit-logs/audit-logs.service'
 import { writeAudit } from '../audit-logs/write-audit'
 import { ChangeEventsService } from '../change-events/change-events.service'
 import { isRegexPatternAllowed } from '../sdk/evaluation.service'
+import { nextBoundaryAfter } from '../sdk/rule-schedule'
 import { getDefaultFlagValue } from '../sdk/sdk.helpers'
 import {
   CreateTargetingRuleDto,
@@ -31,6 +32,8 @@ type RuleWithRelations = {
   priority: number
   isDefault: boolean
   enabled: boolean
+  activeFrom?: Date | null
+  activeUntil?: Date | null
   createdAt: Date
   updatedAt: Date
   flagEnvironment: { environmentId: string; brandId: string | null }
@@ -108,6 +111,12 @@ export class TargetingRulesService {
     const flagType = await this.getFlagType(flag.id)
     this.validateServeValue(flagType, dto.serveValue)
     this.validateConditions(dto.conditions)
+    const window = {
+      activeFrom: null,
+      activeUntil: null,
+      nextBoundaryAt: null,
+      ...this.windowData(dto),
+    }
 
     const flagEnv = dto.brandId
       ? await this.getOrCreateBrandFlagEnvironment(
@@ -140,6 +149,7 @@ export class TargetingRulesService {
         serveValue: dto.serveValue,
         priority,
         enabled: dto.enabled ?? true,
+        ...window,
         conditions: { create: dto.conditions.map((c) => this.toCondition(c)) },
       },
       include: RULE_INCLUDE,
@@ -169,6 +179,7 @@ export class TargetingRulesService {
     if (dto.conditions) {
       this.validateConditions(dto.conditions)
     }
+    const window = this.windowData(dto, existing)
 
     const rule = await this.prisma.$transaction(async (tx) => {
       if (dto.conditions) {
@@ -185,6 +196,7 @@ export class TargetingRulesService {
           serveValue: dto.serveValue,
           priority: dto.priority,
           enabled: dto.enabled,
+          ...window,
         },
         include: RULE_INCLUDE,
       })
@@ -403,6 +415,8 @@ export class TargetingRulesService {
       priority: rule.priority,
       isDefault: rule.isDefault,
       enabled: rule.enabled,
+      activeFrom: rule.activeFrom?.toISOString() ?? null,
+      activeUntil: rule.activeUntil?.toISOString() ?? null,
       conditions: rule.conditions.map((c) => ({
         id: c.id,
         attribute: c.attribute,
@@ -411,6 +425,35 @@ export class TargetingRulesService {
       })),
       createdAt: rule.createdAt,
       updatedAt: rule.updatedAt,
+    }
+  }
+
+  /**
+   * Window fields for a write: the effective window (stored values unless
+   * the DTO sets or clears them) must not end before it starts. Returns
+   * nothing when the DTO does not touch the window.
+   */
+  private windowData(
+    dto: { activeFrom?: string | null; activeUntil?: string | null },
+    stored: { activeFrom?: Date | null; activeUntil?: Date | null } = {}
+  ) {
+    if (dto.activeFrom === undefined && dto.activeUntil === undefined) {
+      return {}
+    }
+    const toDate = (
+      value: string | null | undefined,
+      current?: Date | null
+    ): Date | null =>
+      value === undefined ? (current ?? null) : value ? new Date(value) : null
+    const activeFrom = toDate(dto.activeFrom, stored.activeFrom)
+    const activeUntil = toDate(dto.activeUntil, stored.activeUntil)
+    if (activeFrom && activeUntil && activeFrom >= activeUntil) {
+      throw new BadRequestException('activeFrom must be before activeUntil')
+    }
+    return {
+      activeFrom,
+      activeUntil,
+      nextBoundaryAt: nextBoundaryAfter({ activeFrom, activeUntil }, new Date()),
     }
   }
 

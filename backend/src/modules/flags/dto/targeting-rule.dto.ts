@@ -5,6 +5,7 @@ import {
   ArrayMinSize,
   IsArray,
   IsBoolean,
+  IsDateString,
   IsEnum,
   IsInt,
   IsMongoId,
@@ -60,6 +61,16 @@ class TargetingRuleFieldsDto {
   @IsBoolean()
   @IsOptional()
   enabled?: boolean
+
+  /** ISO timestamp; the rule applies from then on. null clears it (update). */
+  @IsDateString({ strict: true })
+  @IsOptional()
+  activeFrom?: string | null
+
+  /** ISO timestamp; the rule stops applying then. null clears it (update). */
+  @IsDateString({ strict: true })
+  @IsOptional()
+  activeUntil?: string | null
 }
 
 export class CreateTargetingRuleDto extends TargetingRuleFieldsDto {
