@@ -220,6 +220,8 @@ export const en = {
   'password.digit': 'Password must contain a number.',
   'password.mismatch': 'Passwords do not match.',
   'password.hint': 'At least 8 characters with upper- and lowercase letters and a number.',
+  'password.show': 'Show password',
+  'password.hide': 'Hide password',
 
   // First-run setup
   'setup.title': 'Set up Togglely',

@@ -221,6 +221,8 @@ export const de = {
   'password.digit': 'Das Passwort braucht mindestens eine Ziffer.',
   'password.mismatch': 'Die Passwörter stimmen nicht überein.',
   'password.hint': 'Mindestens 8 Zeichen, mit Groß- und Kleinbuchstaben und einer Ziffer.',
+  'password.show': 'Passwort anzeigen',
+  'password.hide': 'Passwort verbergen',
 
   // Ersteinrichtung
   'setup.title': 'Togglely einrichten',

@@ -8,6 +8,7 @@ import { AuthCard, AuthLayout, FormError,
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { PasswordInput } from '@/components/ui/password-input'
 import api from '@/lib/axios'
 import { getErrorMessage, getErrorStatus } from '@/lib/errors'
 import { passwordIssue } from '@/lib/password'
@@ -111,10 +112,9 @@ export default function SetupPage() {
 
           <div className="space-y-2">
             <Label htmlFor="setup-password">{t('setup.password-label')}</Label>
-            <Input
+            <PasswordInput
               {...fieldErrorProps('setup-error', Boolean(error), 'setup-password-hint')}
               id="setup-password"
-              type="password"
               autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -132,10 +132,9 @@ export default function SetupPage() {
             <Label htmlFor="setup-confirm">
               {t('setup.confirm-password-label')}
             </Label>
-            <Input
+            <PasswordInput
               {...fieldErrorProps('setup-error', Boolean(error))}
               id="setup-confirm"
-              type="password"
               autoComplete="new-password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}

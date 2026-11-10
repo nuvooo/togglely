@@ -19,6 +19,7 @@ import { THEME_OPTIONS } from '@/components/ThemeToggle'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { PasswordInput } from '@/components/ui/password-input'
 import { Skeleton } from '@/components/ui/skeleton'
 import api from '@/lib/axios'
 import { getErrorCode, getErrorMessage } from '@/lib/errors'
@@ -248,9 +249,8 @@ function PasswordForm() {
         <Label htmlFor="account-current-password">
           {t('settings.password.current')}
         </Label>
-        <Input
+        <PasswordInput
           id="account-current-password"
-          type="password"
           autoComplete="current-password"
           value={currentPassword}
           onChange={(e) => setCurrentPassword(e.target.value)}
@@ -261,9 +261,8 @@ function PasswordForm() {
         <Label htmlFor="account-new-password">
           {t('settings.password.new')}
         </Label>
-        <Input
+        <PasswordInput
           id="account-new-password"
-          type="password"
           autoComplete="new-password"
           value={newPassword}
           onChange={(e) => setNewPassword(e.target.value)}
@@ -281,9 +280,8 @@ function PasswordForm() {
         <Label htmlFor="account-confirm-password">
           {t('settings.password.confirm')}
         </Label>
-        <Input
+        <PasswordInput
           id="account-confirm-password"
-          type="password"
           autoComplete="new-password"
           value={confirmPassword}
           onChange={(e) => setConfirmPassword(e.target.value)}
