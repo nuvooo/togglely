@@ -3,6 +3,7 @@ import {
   formatCondition,
   formatConditions,
   nextPriority,
+  normalizeConditionValue,
   sortRulesByPriority,
   type TargetingRule,
   validateRuleInput,
@@ -100,5 +101,16 @@ describe('targeting-rules helpers', () => {
     expect(validateRuleInput('BOOLEAN', { ...base, serveValue: '1' })).toMatch(
       /true or false/
     )
+  })
+})
+
+describe('normalizeConditionValue', () => {
+  it('trims list entries and drops empty ones for IN / NOT_IN', () => {
+    expect(normalizeConditionValue('IN', ' DE, AT ,,CH ')).toBe('DE,AT,CH')
+    expect(normalizeConditionValue('NOT_IN', 'x, ')).toBe('x')
+  })
+
+  it('keeps other values unchanged', () => {
+    expect(normalizeConditionValue('EQUALS', ' DE ')).toBe(' DE ')
   })
 })

@@ -566,6 +566,141 @@ describe('Flag detail page', () => {
       expect(screen.getByText('No targeting rules')).toBeInTheDocument()
     })
 
+    it('edits a rule', async () => {
+      state.rules = [rule()]
+      mocks.patch.mockResolvedValue({
+        data: {
+          rule: rule({
+            name: 'Austrian users',
+            serveValue: 'false',
+            conditions: [
+              { id: 'c2', attribute: 'country', operator: 'IN', value: 'AT,CH' },
+            ],
+          }),
+        },
+      })
+      const user = userEvent.setup()
+      renderPage('?tab=targeting')
+      await user.click(
+        await screen.findByRole('button', { name: 'Edit rule "German users"' })
+      )
+
+      // Prefilled from the rule
+      expect(screen.getByLabelText(/Rule name/)).toHaveValue('German users')
+      expect(screen.getByLabelText('Condition 1 attribute')).toHaveValue(
+        'country'
+      )
+      expect(screen.getByLabelText('Condition 1 value')).toHaveValue('DE')
+
+      await user.clear(screen.getByLabelText(/Rule name/))
+      await user.type(screen.getByLabelText(/Rule name/), 'Austrian users')
+      await user.selectOptions(
+        screen.getByLabelText('Condition 1 operator'),
+        'IN'
+      )
+      await user.clear(screen.getByLabelText('Condition 1 value'))
+      await user.type(screen.getByLabelText('Condition 1 value'), 'AT, CH')
+      await user.selectOptions(
+        screen.getByLabelText('Serve value (BOOLEAN)'),
+        'false'
+      )
+      const form = screen
+        .getByLabelText('Condition 1 value')
+        .closest('form') as HTMLFormElement
+      await user.click(within(form).getByRole('button', { name: 'Save' }))
+
+      await waitFor(() =>
+        expect(mocks.patch).toHaveBeenCalledWith(
+          `/feature-flags/${FLAG}/targeting-rules/r1`,
+          {
+            name: 'Austrian users',
+            operator: 'AND',
+            serveValue: 'false',
+            conditions: [
+              { attribute: 'country', operator: 'IN', value: 'AT,CH' },
+            ],
+          }
+        )
+      )
+      expect(await screen.findByText('Austrian users')).toBeInTheDocument()
+      expect(screen.queryByText('German users')).not.toBeInTheDocument()
+      expect(toast.success).toHaveBeenCalledWith('Targeting rule updated')
+      expect(
+        screen.queryByRole('button', { name: 'Save' })
+      ).not.toBeInTheDocument()
+    })
+
+    it('clears the rule name when emptied while editing', async () => {
+      state.rules = [rule()]
+      mocks.patch.mockResolvedValue({ data: { rule: rule({ name: '' }) } })
+      const user = userEvent.setup()
+      renderPage('?tab=targeting')
+      await user.click(
+        await screen.findByRole('button', { name: 'Edit rule "German users"' })
+      )
+      await user.clear(screen.getByLabelText(/Rule name/))
+      await user.click(screen.getByRole('button', { name: 'Save' }))
+      await waitFor(() =>
+        expect(mocks.patch).toHaveBeenCalledWith(
+          `/feature-flags/${FLAG}/targeting-rules/r1`,
+          expect.objectContaining({ name: '' })
+        )
+      )
+    })
+
+    it('discards edits on cancel', async () => {
+      state.rules = [rule()]
+      const user = userEvent.setup()
+      renderPage('?tab=targeting')
+      await user.click(
+        await screen.findByRole('button', { name: 'Edit rule "German users"' })
+      )
+      await user.type(screen.getByLabelText(/Rule name/), ' changed')
+      await user.click(screen.getByRole('button', { name: 'Cancel' }))
+      expect(mocks.patch).not.toHaveBeenCalled()
+      expect(screen.queryByLabelText(/Rule name/)).not.toBeInTheDocument()
+      expect(screen.getByText('German users')).toBeInTheDocument()
+    })
+
+    it('shows a server error when saving an edit fails', async () => {
+      state.rules = [rule()]
+      mocks.patch.mockRejectedValue(axiosError(400, 'Invalid regex'))
+      const user = userEvent.setup()
+      renderPage('?tab=targeting')
+      await user.click(
+        await screen.findByRole('button', { name: 'Edit rule "German users"' })
+      )
+      const form = screen
+        .getByLabelText('Condition 1 value')
+        .closest('form') as HTMLFormElement
+      await user.click(within(form).getByRole('button', { name: 'Save' }))
+      expect(await within(form).findByRole('alert')).toHaveTextContent(
+        'Invalid regex'
+      )
+      expect(screen.getByLabelText(/Rule name/)).toHaveValue('German users')
+    })
+
+    it('closes the edit form when the environment changes', async () => {
+      state.rules = [rule()]
+      const user = userEvent.setup()
+      renderPage('?tab=targeting')
+      await user.click(
+        await screen.findByRole('button', { name: 'Edit rule "German users"' })
+      )
+      await user.selectOptions(screen.getByLabelText('Environment'), ENV_PROD)
+      expect(screen.queryByLabelText(/Rule name/)).not.toBeInTheDocument()
+    })
+
+    it('hides the edit button for viewers', async () => {
+      mocks.role = 'VIEWER'
+      state.rules = [rule()]
+      renderPage('?tab=targeting')
+      await screen.findByText('German users')
+      expect(
+        screen.queryByRole('button', { name: 'Edit rule "German users"' })
+      ).not.toBeInTheDocument()
+    })
+
     it('keeps the rule form across tab switches', async () => {
       const user = userEvent.setup()
       renderPage('?tab=targeting')

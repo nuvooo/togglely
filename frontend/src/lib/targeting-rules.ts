@@ -82,6 +82,19 @@ export function isListOperator(operator: ConditionOperator): boolean {
   return operator === 'IN' || operator === 'NOT_IN'
 }
 
+/** IN / NOT_IN: comma-separated entries, trimmed, empty ones dropped. */
+export function normalizeConditionValue(
+  operator: ConditionOperator,
+  value: string
+): string {
+  if (!isListOperator(operator)) return value
+  return value
+    .split(',')
+    .map((v) => v.trim())
+    .filter(Boolean)
+    .join(',')
+}
+
 /** "country EQUALS DE" */
 export function formatCondition(condition: ConditionInput): string {
   return `${condition.attribute} ${condition.operator} ${condition.value}`
