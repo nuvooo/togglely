@@ -66,6 +66,11 @@ export class CreateTargetingRuleDto extends TargetingRuleFieldsDto {
   @IsMongoId()
   environmentId: string
 
+  /** Creates the rule for this brand (brand override) instead of the environment. */
+  @IsMongoId()
+  @IsOptional()
+  brandId?: string
+
   @IsString()
   @MaxLength(FLAG_VALUE_MAX_LENGTH)
   serveValue: string
