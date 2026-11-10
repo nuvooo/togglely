@@ -20,7 +20,7 @@
     "@modelcontextprotocol/sdk": "^1.32.2",
     "@nestjs-modules/mailer": "^2.3.10",
     "@nestjs/common": "^11.1.25",
-    "@nestjs/config": "^4.0.4",
+    "@nestjs/config": "^12.1.1",
     "@nestjs/core": "^11.1.25",
     "@nestjs/platform-express": "^11.1.25",
     "@nestjs/swagger": "^11.4.4",
