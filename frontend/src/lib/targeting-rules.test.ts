@@ -1,19 +1,23 @@
 import { describe, expect, it } from 'vitest'
 import {
+  type ConditionNode,
+  type ConditionTree,
   formatCondition,
   formatConditions,
-  formatRuleGroups,
+  formatTree,
   fromLocalInputValue,
+  hasNestedBlocks,
   nextPriority,
   normalizeConditionValue,
-  ruleGroups,
   ruleScheduleStatus,
+  ruleTree,
   sortRulesByPriority,
   type TargetingRule,
   toLocalInputValue,
-  validateGroups,
+  treeLeaves,
   validateRuleInput,
   validateServeValue,
+  validateTree,
   validateWindow,
 } from './targeting-rules'
 
@@ -184,53 +188,107 @@ describe('ruleScheduleStatus', () => {
   })
 })
 
-describe('condition groups', () => {
-  const c = (id: string, value: string) => ({
-    id,
-    attribute: 'country',
+describe('condition tree', () => {
+  const c = (attribute: string, value: string) => ({
+    attribute,
     operator: 'EQUALS' as const,
     value,
   })
+  const leaf = (attribute: string, value: string) => ({
+    type: 'condition' as const,
+    ...c(attribute, value),
+  })
+  // country = DE AND (plan = pro OR NOT (beta = no OR email = x))
+  const tree = {
+    type: 'AND' as const,
+    children: [
+      leaf('country', 'DE'),
+      {
+        type: 'OR' as const,
+        children: [
+          leaf('plan', 'pro'),
+          {
+            type: 'NOT' as const,
+            children: [leaf('beta', 'no'), leaf('email', 'x')],
+          },
+        ],
+      },
+    ],
+  }
 
-  it('uses the groups of the API response', () => {
-    const groups = [
-      { operator: 'AND' as const, conditions: [c('1', 'DE')] },
-      { operator: 'OR' as const, conditions: [c('2', 'AT'), c('3', 'CH')] },
-    ]
+  it('uses the tree of the API response', () => {
     expect(
-      ruleGroups({ operator: 'OR', conditions: [], groups })
-    ).toEqual(groups)
+      ruleTree({ operator: 'AND', conditions: [], conditionTree: tree })
+    ).toBe(tree)
   })
 
-  it('falls back to one group for older API versions', () => {
-    expect(ruleGroups({ operator: 'OR', conditions: [c('1', 'DE')] })).toEqual(
-      [{ operator: 'OR', conditions: [c('1', 'DE')] }]
-    )
-    expect(ruleGroups({ operator: 'AND', conditions: [] })).toEqual([])
+  it('builds a tree for older API versions', () => {
+    expect(
+      ruleTree({ operator: 'OR', conditions: [{ id: '1', ...c('a', '1') }] })
+    ).toEqual({ type: 'OR', children: [leaf('a', '1')] })
+    expect(
+      ruleTree({
+        operator: 'OR',
+        conditions: [],
+        groups: [
+          { operator: 'AND', conditions: [{ id: '1', ...c('a', '1') }] },
+          {
+            operator: 'AND',
+            conditions: [
+              { id: '2', ...c('b', '2') },
+              { id: '3', ...c('c', '3') },
+            ],
+          },
+        ],
+      })
+    ).toEqual({
+      type: 'OR',
+      children: [
+        leaf('a', '1'),
+        { type: 'AND', children: [leaf('b', '2'), leaf('c', '3')] },
+      ],
+    })
+    expect(ruleTree({ operator: 'OR', conditions: [] })).toEqual({
+      type: 'AND',
+      children: [],
+    })
   })
 
-  it('formats groups with parentheses only when there are several', () => {
-    expect(
-      formatRuleGroups('AND', [
-        { operator: 'OR', conditions: [c('1', 'DE'), c('2', 'AT')] },
-      ])
-    ).toBe('country EQUALS DE OR country EQUALS AT')
-    expect(
-      formatRuleGroups('OR', [
-        { operator: 'AND', conditions: [c('1', 'DE')] },
-        { operator: 'OR', conditions: [c('2', 'AT'), c('3', 'CH')] },
-      ])
-    ).toBe(
-      '(country EQUALS DE) OR (country EQUALS AT OR country EQUALS CH)'
+  it('formats blocks with parentheses and NOT', () => {
+    expect(formatTree(tree)).toBe(
+      'country EQUALS DE AND (plan EQUALS pro OR NOT (beta EQUALS no OR email EQUALS x))'
     )
   })
 
-  it('validates group count and empty groups', () => {
-    const one = { operator: 'AND' as const, conditions: [c('1', 'DE')] }
-    expect(validateGroups([one, one])).toBeNull()
-    expect(validateGroups([one, { operator: 'OR', conditions: [] }])).toMatch(
-      /Group 2/
+  it('lists leaves depth-first and detects nesting', () => {
+    expect(treeLeaves(tree).map((l) => l.attribute)).toEqual([
+      'country',
+      'plan',
+      'beta',
+      'email',
+    ])
+    expect(hasNestedBlocks(tree)).toBe(true)
+    expect(hasNestedBlocks({ type: 'OR', children: [leaf('a', '1')] })).toBe(
+      false
     )
-    expect(validateGroups(Array(11).fill(one))).toMatch(/10 groups/)
+  })
+
+  it('validates empty blocks, depth and the condition limit', () => {
+    expect(validateTree(tree)).toBeNull()
+    expect(
+      validateTree({ type: 'AND', children: [{ type: 'NOT', children: [] }] })
+    ).toMatch(/at least one entry/)
+    const deep = (depth: number): ConditionNode =>
+      depth === 0
+        ? leaf('a', '1')
+        : { type: 'AND', children: [deep(depth - 1)] }
+    expect(validateTree(deep(5) as ConditionTree)).toBeNull()
+    expect(validateTree(deep(6) as ConditionTree)).toMatch(/5 levels/)
+    expect(
+      validateTree({
+        type: 'AND',
+        children: Array.from({ length: 21 }, () => leaf('a', '1')),
+      })
+    ).toMatch(/20 conditions/)
   })
 })

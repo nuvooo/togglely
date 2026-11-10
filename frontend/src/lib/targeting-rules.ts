@@ -47,12 +47,11 @@ export interface TargetingRule extends Partial<RuleScope> {
   /** Optional time window (ISO); missing on older API versions. */
   activeFrom?: string | null
   activeUntil?: string | null
-  /** All conditions, flat (see `groups` for their grouping). */
+  /** All conditions, flat (see `conditionTree` for their logic). */
   conditions: TargetingCondition[]
-  /**
-   * Condition groups; `operator` combines them. Missing on older API
-   * versions, see ruleGroups.
-   */
+  /** Conditions as AND/OR/NOT blocks; missing on older API versions. */
+  conditionTree?: ConditionTree
+  /** Condition groups of an older API version, see ruleTree. */
   groups?: TargetingRuleGroup[]
   createdAt: string
   updatedAt: string
@@ -131,39 +130,113 @@ export function formatConditions(
   return conditions.map(formatCondition).join(` ${operator} `)
 }
 
-export const MAX_GROUPS = 10
+export const MAX_TREE_DEPTH = 5
 
-/** Condition groups of a rule; older APIs have one implicit group. */
-export function ruleGroups(
-  rule: Pick<TargetingRule, 'operator' | 'conditions' | 'groups'>
-): TargetingRuleGroup[] {
-  if (rule.groups && rule.groups.length > 0) return rule.groups
-  if (rule.conditions.length === 0) return []
-  return [{ operator: rule.operator, conditions: rule.conditions }]
+/** A single comparison against the evaluation context. */
+export interface ConditionLeaf extends ConditionInput {
+  type: 'condition'
 }
 
-/** "(a AND b) OR (c)"; a single group without parentheses. */
-export function formatRuleGroups(
-  operator: RuleMatchOperator,
-  groups: { operator: RuleMatchOperator; conditions: ConditionInput[] }[]
-): string {
+/**
+ * AND: all children match, OR: at least one matches, NOT: none matches
+ * (like the "not" condition in Home Assistant).
+ */
+export interface ConditionBlock {
+  type: 'AND' | 'OR' | 'NOT'
+  children: ConditionNode[]
+}
+
+export type ConditionNode = ConditionLeaf | ConditionBlock
+
+/** Root of a rule's conditions: always an AND or OR block. */
+export interface ConditionTree extends ConditionBlock {
+  type: RuleMatchOperator
+}
+
+const toLeaf = (c: ConditionInput): ConditionLeaf => ({
+  type: 'condition',
+  attribute: c.attribute,
+  operator: c.operator,
+  value: c.value,
+})
+
+/**
+ * The rule's condition tree; older API versions only send flat conditions
+ * (one block with the rule operator) or groups (blocks under the rule
+ * operator, single conditions stay leaves).
+ */
+export function ruleTree(
+  rule: Pick<
+    TargetingRule,
+    'operator' | 'conditions' | 'groups' | 'conditionTree'
+  >
+): ConditionTree {
+  if (rule.conditionTree) return rule.conditionTree
+  const groups = rule.groups?.length
+    ? rule.groups
+    : rule.conditions.length
+      ? [{ operator: rule.operator, conditions: rule.conditions }]
+      : []
+  if (groups.length === 0) return { type: 'AND', children: [] }
   if (groups.length === 1) {
-    return formatConditions(groups[0].conditions, groups[0].operator)
+    return {
+      type: groups[0].operator,
+      children: groups[0].conditions.map(toLeaf),
+    }
   }
-  return groups
-    .map((g) => `(${formatConditions(g.conditions, g.operator)})`)
-    .join(` ${operator} `)
+  return {
+    type: rule.operator,
+    children: groups.map((g) =>
+      g.conditions.length === 1
+        ? toLeaf(g.conditions[0])
+        : { type: g.operator, children: g.conditions.map(toLeaf) }
+    ),
+  }
 }
 
-/** Client-side mirror of the backend group limits. */
-export function validateGroups(
-  groups: { operator: RuleMatchOperator; conditions: unknown[] }[]
-): string | null {
-  if (groups.length > MAX_GROUPS) {
-    return `At most ${MAX_GROUPS} groups are allowed`
+/** All conditions of a tree, depth-first. */
+export function treeLeaves(node: ConditionNode): ConditionLeaf[] {
+  if (node.type === 'condition') return [node]
+  return node.children.flatMap(treeLeaves)
+}
+
+/** Whether the tree has blocks below the root. */
+export function hasNestedBlocks(tree: ConditionTree): boolean {
+  return tree.children.some((child) => child.type !== 'condition')
+}
+
+/**
+ * "a AND (b OR NOT (c OR d))": blocks below the root in parentheses; NOT
+ * means none of its entries match, shown as NOT (x OR y).
+ */
+export function formatTree(node: ConditionNode, root = true): string {
+  if (node.type === 'condition') return formatCondition(node)
+  const separator = node.type === 'AND' ? ' AND ' : ' OR '
+  const inner = node.children.map((c) => formatTree(c, false)).join(separator)
+  if (node.type === 'NOT') return `NOT (${inner})`
+  return root ? inner : `(${inner})`
+}
+
+/** Client-side mirror of the backend tree limits. */
+export function validateTree(tree: ConditionTree): string | null {
+  let error: string | null = null
+  const visit = (node: ConditionNode, depth: number) => {
+    if (error || node.type === 'condition') return
+    if (depth > MAX_TREE_DEPTH) {
+      error = `Blocks can be nested at most ${MAX_TREE_DEPTH} levels deep`
+      return
+    }
+    if (node.children.length === 0) {
+      error = 'Every block needs at least one entry'
+      return
+    }
+    for (const child of node.children) visit(child, depth + 1)
   }
-  const empty = groups.findIndex((g) => g.conditions.length === 0)
-  if (empty >= 0) return `Group ${empty + 1} needs at least one condition`
+  visit(tree, 1)
+  if (error) return error
+  if (treeLeaves(tree).length > MAX_CONDITIONS) {
+    return `At most ${MAX_CONDITIONS} conditions are allowed`
+  }
   return null
 }
 
