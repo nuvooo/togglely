@@ -57,7 +57,7 @@
     "@types/react": "^19.3.0",
     "@types/react-dom": "^19.3.0",
     "@vitejs/plugin-react": "^6.0.2",
-    "cypress": "^15.16.0",
+    "cypress": "^16.2.1",
     "istanbul-lib-coverage": "^3.2.2",
     "jsdom": "^29.1.1",
     "nyc": "^18.0.0",
