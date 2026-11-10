@@ -514,9 +514,17 @@ describe('Flag detail page', () => {
             serveValue: 'false',
             priority: 0,
             enabled: true,
-            conditions: [
-              { attribute: 'country', operator: 'IN', value: 'DE,AT' },
-            ],
+            conditionTree: {
+              type: 'AND',
+              children: [
+                {
+                  type: 'condition',
+                  attribute: 'country',
+                  operator: 'IN',
+                  value: 'DE,AT',
+                },
+              ],
+            },
           }
         )
       )
@@ -637,9 +645,17 @@ describe('Flag detail page', () => {
             name: 'Austrian users',
             operator: 'AND',
             serveValue: 'false',
-            conditions: [
-              { attribute: 'country', operator: 'IN', value: 'AT,CH' },
-            ],
+            conditionTree: {
+              type: 'AND',
+              children: [
+                {
+                  type: 'condition',
+                  attribute: 'country',
+                  operator: 'IN',
+                  value: 'AT,CH',
+                },
+              ],
+            },
             // Always sent on edit, so emptied fields clear the window
             activeFrom: null,
             activeUntil: null,
@@ -868,36 +884,35 @@ describe('Flag detail page', () => {
       })
     })
 
-    describe('condition groups', () => {
-      const cond = (id: string, attribute: string, value: string) => ({
-        id,
+    describe('condition tree', () => {
+      const leaf = (attribute: string, value: string, operator = 'EQUALS') => ({
+        type: 'condition',
         attribute,
-        operator: 'EQUALS',
+        operator,
         value,
       })
-      const groupedRule = () =>
-        rule({
-          name: 'DE or beta',
-          operator: 'OR',
-          conditions: [
-            cond('c1', 'country', 'DE'),
-            cond('c2', 'plan', 'pro'),
-            cond('c3', 'beta', 'yes'),
-          ],
-          groups: [
-            { operator: 'AND', conditions: [cond('c1', 'country', 'DE')] },
-            {
-              operator: 'OR',
-              conditions: [
-                cond('c2', 'plan', 'pro'),
-                cond('c3', 'beta', 'yes'),
-              ],
-            },
-          ],
-        })
+      // country = DE AND (plan = pro OR NOT (email ends with @test.de))
+      const tree = {
+        type: 'AND',
+        children: [
+          leaf('country', 'DE'),
+          {
+            type: 'OR',
+            children: [
+              leaf('plan', 'pro'),
+              {
+                type: 'NOT',
+                children: [leaf('email', '@test.de', 'ENDS_WITH')],
+              },
+            ],
+          },
+        ],
+      }
+      const treeRule = () =>
+        rule({ name: 'Nested', conditions: [], conditionTree: tree })
 
-      it('creates a rule with condition groups', async () => {
-        mocks.post.mockResolvedValue({ data: { rule: groupedRule() } })
+      it('builds nested AND / OR / NOT blocks', async () => {
+        mocks.post.mockResolvedValue({ data: { rule: treeRule() } })
         const user = userEvent.setup()
         renderPage('?tab=targeting')
         await user.click(
@@ -908,17 +923,20 @@ describe('Flag detail page', () => {
           'country'
         )
         await user.type(screen.getByLabelText('Condition 1 value'), 'DE')
-        await user.click(screen.getByRole('button', { name: 'Add group' }))
 
-        await user.selectOptions(screen.getByLabelText('Group 2 match'), 'OR')
+        await user.click(screen.getByRole('button', { name: 'OR block' }))
         await user.type(screen.getByLabelText('Condition 2 attribute'), 'plan')
         await user.type(screen.getByLabelText('Condition 2 value'), 'pro')
+
         await user.click(
-          screen.getByRole('button', { name: 'Add condition to group 2' })
+          screen.getByRole('button', { name: 'Add NOT block to block 1' })
         )
-        await user.type(screen.getByLabelText('Condition 3 attribute'), 'beta')
-        await user.type(screen.getByLabelText('Condition 3 value'), 'yes')
-        await user.selectOptions(screen.getByLabelText('Combine groups'), 'AND')
+        await user.type(screen.getByLabelText('Condition 3 attribute'), 'email')
+        await user.selectOptions(
+          screen.getByLabelText('Condition 3 operator'),
+          'ENDS_WITH'
+        )
+        await user.type(screen.getByLabelText('Condition 3 value'), '@test.de')
 
         const form = screen
           .getByLabelText('Condition 1 value')
@@ -927,52 +945,38 @@ describe('Flag detail page', () => {
 
         await waitFor(() => expect(mocks.post).toHaveBeenCalled())
         const body = mocks.post.mock.calls[0][1]
-        expect(body).toMatchObject({
-          operator: 'AND',
-          groups: [
-            {
-              operator: 'AND',
-              conditions: [
-                { attribute: 'country', operator: 'EQUALS', value: 'DE' },
-              ],
-            },
-            {
-              operator: 'OR',
-              conditions: [
-                { attribute: 'plan', operator: 'EQUALS', value: 'pro' },
-                { attribute: 'beta', operator: 'EQUALS', value: 'yes' },
-              ],
-            },
-          ],
-        })
+        expect(body.conditionTree).toEqual(tree)
+        expect(body.operator).toBe('AND')
         expect(body).not.toHaveProperty('conditions')
+        expect(body).not.toHaveProperty('groups')
       })
 
-      it('shows grouped rules with parentheses', async () => {
-        state.rules = [groupedRule()]
+      it('shows nested rules with parentheses and NOT', async () => {
+        state.rules = [treeRule()]
         renderPage('?tab=targeting')
-        const name = await screen.findByText('DE or beta')
+        const name = await screen.findByText('Nested')
         const item = name.closest('li') as HTMLElement
         expect(item.textContent?.replace(/\s+/g, ' ')).toMatch(
-          /\( ?country EQUALS DE ?\) ?OR ?\( ?plan EQUALS pro ?OR ?beta EQUALS yes ?\)/
+          /country EQUALS DE ?AND ?\( ?plan EQUALS pro ?OR ?NOT ?\( ?email ENDS_WITH @test\.de ?\) ?\)/
         )
       })
 
-      it('prefills groups on edit and saves a single group flat again', async () => {
-        state.rules = [groupedRule()]
+      it('prefills the tree on edit and removes a block', async () => {
+        state.rules = [treeRule()]
         mocks.patch.mockResolvedValue({ data: { rule: rule() } })
         const user = userEvent.setup()
         renderPage('?tab=targeting')
         await user.click(
-          await screen.findByRole('button', { name: 'Edit rule "DE or beta"' })
+          await screen.findByRole('button', { name: 'Edit rule "Nested"' })
         )
-        expect(screen.getByLabelText('Combine groups')).toHaveValue('OR')
-        expect(screen.getByLabelText('Group 2 match')).toHaveValue('OR')
-        expect(screen.getByLabelText('Condition 3 value')).toHaveValue('yes')
+        expect(screen.getByLabelText('Condition 3 value')).toHaveValue(
+          '@test.de'
+        )
+        expect(screen.getByText('NOT – none may match')).toBeInTheDocument()
 
-        await user.click(screen.getByRole('button', { name: 'Remove group 2' }))
+        await user.click(screen.getByRole('button', { name: 'Remove block 1' }))
         expect(
-          screen.queryByLabelText('Combine groups')
+          screen.queryByLabelText('Condition 2 attribute')
         ).not.toBeInTheDocument()
         await user.click(screen.getByRole('button', { name: 'Save' }))
 
@@ -980,14 +984,43 @@ describe('Flag detail page', () => {
           expect(mocks.patch).toHaveBeenCalledWith(
             `/feature-flags/${FLAG}/targeting-rules/r1`,
             expect.objectContaining({
-              operator: 'AND',
-              conditions: [
-                { attribute: 'country', operator: 'EQUALS', value: 'DE' },
-              ],
+              conditionTree: { type: 'AND', children: [leaf('country', 'DE')] },
             })
           )
         )
-        expect(mocks.patch.mock.calls[0][1]).not.toHaveProperty('groups')
+      })
+
+      it('reads older rules with groups as blocks', async () => {
+        state.rules = [
+          rule({
+            name: 'Old groups',
+            operator: 'OR',
+            conditions: [],
+            groups: [
+              {
+                operator: 'AND',
+                conditions: [
+                  { id: 'c1', attribute: 'a', operator: 'EQUALS', value: '1' },
+                  { id: 'c2', attribute: 'b', operator: 'EQUALS', value: '2' },
+                ],
+              },
+              {
+                operator: 'AND',
+                conditions: [
+                  { id: 'c3', attribute: 'c', operator: 'EQUALS', value: '3' },
+                ],
+              },
+            ],
+          }),
+        ]
+        const user = userEvent.setup()
+        renderPage('?tab=targeting')
+        await user.click(
+          await screen.findByRole('button', { name: 'Edit rule "Old groups"' })
+        )
+        expect(screen.getByLabelText('Match')).toHaveValue('OR')
+        expect(screen.getByText('AND – all must match')).toBeInTheDocument()
+        expect(screen.getByLabelText('Condition 3 attribute')).toHaveValue('c')
       })
     })
 

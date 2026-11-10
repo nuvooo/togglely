@@ -1,5 +1,5 @@
 import { Info, Pencil, Plus, Trash2, Users } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { Fragment, useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
 import { EmptyState } from '@/components/feedback/EmptyState'
@@ -14,27 +14,30 @@ import api from '@/lib/api'
 import { getErrorMessage } from '@/lib/errors'
 import { handleForbidden, notifyWriteError } from '@/lib/permissions'
 import {
+  type ConditionNode,
   formatCondition,
   fromLocalInputValue,
+  hasNestedBlocks,
   nextPriority,
-  normalizeConditionValue,
   type RuleMatchOperator,
   type RuleScope,
-  ruleGroups,
   ruleScheduleStatus,
+  ruleTree,
   sortRulesByPriority,
   type TargetingRule,
   toLocalInputValue,
-  validateGroups,
+  treeLeaves,
   validateRuleInput,
+  validateTree,
   validateWindow,
 } from '@/lib/targeting-rules'
 import {
-  emptyGroup,
+  draftFromTree,
+  emptyRoot,
   fieldClass,
-  type GroupDraft,
-  groupsFromRule,
+  type RootDraft,
   RuleConditionsEditor,
+  treeFromDraft,
 } from './RuleConditionsEditor'
 import {
   EMPTY_SCOPE,
@@ -90,9 +93,7 @@ export function FlagTargetingTab({
   const [saving, setSaving] = useState(false)
   const [ruleName, setRuleName] = useState('')
   const [scope, setScope] = useState<RuleScope>(EMPTY_SCOPE)
-  /** Combines the condition groups (with more than one group). */
-  const [ruleOperator, setRuleOperator] = useState<RuleMatchOperator>('AND')
-  const [groups, setGroups] = useState<GroupDraft[]>(() => [emptyGroup()])
+  const [conditionRoot, setConditionRoot] = useState<RootDraft>(emptyRoot)
   const [serveValue, setServeValue] = useState(() =>
     defaultServeValue(flagType)
   )
@@ -128,8 +129,7 @@ export function FlagTargetingTab({
   const resetForm = () => {
     setRuleName('')
     setScope(EMPTY_SCOPE)
-    setRuleOperator('AND')
-    setGroups([emptyGroup()])
+    setConditionRoot(emptyRoot())
     setServeValue(defaultServeValue(flagType))
     setActiveFrom('')
     setActiveUntil('')
@@ -141,8 +141,7 @@ export function FlagTargetingTab({
     setEditingRule(rule)
     setRuleName(rule.name ?? '')
     setScope(scopeOf(rule))
-    setRuleOperator(rule.operator)
-    setGroups(groupsFromRule(rule))
+    setConditionRoot(draftFromTree(ruleTree(rule)))
     setServeValue(rule.serveValue)
     setActiveFrom(toLocalInputValue(rule.activeFrom))
     setActiveUntil(toLocalInputValue(rule.activeUntil))
@@ -153,23 +152,8 @@ export function FlagTargetingTab({
   const handleSubmitRule = async (e: React.FormEvent) => {
     e.preventDefault()
 
-    const groupInputs = groups.map((g) => ({
-      operator: g.operator,
-      conditions: g.conditions.map((c) => ({
-        attribute: c.attribute.trim(),
-        operator: c.operator,
-        value: normalizeConditionValue(c.operator, c.value),
-      })),
-    }))
-    // One group goes as flat conditions (as before), several as `groups`
-    const fields =
-      groupInputs.length === 1
-        ? {
-            operator: groupInputs[0].operator,
-            serveValue,
-            conditions: groupInputs[0].conditions,
-          }
-        : { operator: ruleOperator, serveValue, groups: groupInputs }
+    const conditionTree = treeFromDraft(conditionRoot)
+    const fields = { operator: conditionTree.type, serveValue, conditionTree }
     const name = ruleName.trim()
     const window = {
       activeFrom: fromLocalInputValue(activeFrom),
@@ -177,11 +161,11 @@ export function FlagTargetingTab({
     }
 
     const validationError =
-      validateGroups(groupInputs) ??
+      validateTree(conditionTree) ??
       validateRuleInput(flagType, {
-        operator: fields.operator,
+        operator: conditionTree.type,
         serveValue,
-        conditions: groupInputs.flatMap((g) => g.conditions),
+        conditions: treeLeaves(conditionTree),
         name: name || undefined,
       }) ??
       validateWindow(window.activeFrom, window.activeUntil)
@@ -301,6 +285,47 @@ export function FlagTargetingTab({
       : names
   }
 
+  // Stable React keys for tree nodes (nodes have no ids)
+  const nodeIds = new Map<ConditionNode, number>()
+  const nodeId = (node: ConditionNode) => {
+    if (!nodeIds.has(node)) nodeIds.set(node, nodeIds.size + 1)
+    return nodeIds.get(node)
+  }
+
+  /**
+   * Conditions as chips with AND / OR between them; blocks below the root
+   * in parentheses, NOT (none of its entries matches) as NOT (x OR y).
+   */
+  const renderTree = (node: ConditionNode, root = true): React.ReactNode => {
+    if (node.type === 'condition') {
+      return (
+        <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+          {formatCondition(node)}
+        </code>
+      )
+    }
+    const parens = !root || node.type === 'NOT'
+    return (
+      <span className="inline-flex flex-wrap items-center gap-1.5">
+        {node.type === 'NOT' && (
+          <span className="text-xs font-semibold text-destructive">NOT</span>
+        )}
+        {parens && <span className="text-muted-foreground">(</span>}
+        {node.children.map((child, index) => (
+          <Fragment key={nodeId(child)}>
+            {index > 0 && (
+              <span className="text-xs font-semibold text-primary">
+                {node.type === 'AND' ? 'AND' : 'OR'}
+              </span>
+            )}
+            {renderTree(child, false)}
+          </Fragment>
+        ))}
+        {parens && <span className="text-muted-foreground">)</span>}
+      </span>
+    )
+  }
+
   let list: React.ReactNode
   if (loading) {
     list = (
@@ -331,7 +356,7 @@ export function FlagTargetingTab({
         {sortRulesByPriority(rules).map((rule, index) => {
           const name = rule.name || t('flag-detail.targeting.unnamed')
           const schedule = ruleScheduleStatus(rule)
-          const groupsOfRule = ruleGroups(rule)
+          const tree = ruleTree(rule)
           const ruleScope = scopeOf(rule)
           return (
             <li
@@ -350,10 +375,8 @@ export function FlagTargetingTab({
                         ? t('flag-detail.targeting.active')
                         : t('flag-detail.targeting.inactive')}
                     </Badge>
-                    {groupsOfRule.length <= 1 && (
-                      <Badge variant="outline">
-                        {matchLabel(groupsOfRule[0]?.operator ?? rule.operator)}
-                      </Badge>
+                    {!hasNestedBlocks(tree) && tree.children.length > 1 && (
+                      <Badge variant="outline">{matchLabel(tree.type)}</Badge>
                     )}
                     {schedule && (
                       <Badge
@@ -386,42 +409,7 @@ export function FlagTargetingTab({
                     )}
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-1.5 text-sm">
-                    {groupsOfRule.map((group, gIndex) => {
-                      const grouped = groupsOfRule.length > 1
-                      return (
-                        <span
-                          key={group.conditions.map((c) => c.id).join('-')}
-                          className="inline-flex flex-wrap items-center gap-1.5"
-                        >
-                          {gIndex > 0 && (
-                            <span className="text-xs font-semibold text-primary">
-                              {rule.operator}
-                            </span>
-                          )}
-                          {grouped && (
-                            <span className="text-muted-foreground">(</span>
-                          )}
-                          {group.conditions.map((condition, cIndex) => (
-                            <span
-                              key={condition.id ?? cIndex}
-                              className="inline-flex items-center gap-1.5"
-                            >
-                              {cIndex > 0 && (
-                                <span className="text-xs font-semibold text-primary">
-                                  {group.operator}
-                                </span>
-                              )}
-                              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-                                {formatCondition(condition)}
-                              </code>
-                            </span>
-                          ))}
-                          {grouped && (
-                            <span className="text-muted-foreground">)</span>
-                          )}
-                        </span>
-                      )
-                    })}
+                    {renderTree(tree)}
                   </div>
                   <p className="mt-2 text-sm text-muted-foreground">
                     {t('flag-detail.targeting.serve')}{' '}
@@ -556,10 +544,8 @@ export function FlagTargetingTab({
           />
 
           <RuleConditionsEditor
-            groups={groups}
-            ruleOperator={ruleOperator}
-            onGroupsChange={setGroups}
-            onRuleOperatorChange={setRuleOperator}
+            root={conditionRoot}
+            onChange={setConditionRoot}
           />
 
           <div>
