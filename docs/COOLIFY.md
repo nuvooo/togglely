@@ -33,7 +33,7 @@ Configure these in Coolify UI:
 | `MONGODB_PORT` | `27017` | No | MongoDB port |
 | `REDIS_PORT` | `6379` | No | Redis port |
 | `CORS_ORIGIN` | `*` | No | Allowed CORS origins |
-| `VITE_API_URL` | `http://backend:4000` | No | API URL for frontend |
+| `VITE_API_URL` | `/api` | No | API URL the browser calls (build time). Keep `/api`; never `http://backend:4000` |
 
 ### Generate JWT_SECRET
 

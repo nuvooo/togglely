@@ -143,5 +143,5 @@ See `.env.example` for all required variables. Critical ones:
 | `DATABASE_URL` | Yes | MongoDB connection string |
 | `JWT_SECRET` | Yes | Must be unique per environment |
 | `CORS_ORIGINS` | Yes | Comma-separated allowed origins |
-| `VITE_API_URL` | Yes | Backend API URL for frontend |
+| `VITE_API_URL` | No | API URL the browser calls, baked in at build time (default `/api`, proxied by the frontend nginx) |
 | `FRONTEND_URL` | Yes | Frontend URL for email links |
