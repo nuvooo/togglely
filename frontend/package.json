@@ -59,7 +59,7 @@
     "@vitejs/plugin-react": "^6.0.2",
     "cypress": "^15.16.0",
     "istanbul-lib-coverage": "^3.2.2",
-    "jsdom": "^29.1.1",
+    "jsdom": "^31.0.0",
     "nyc": "^18.0.0",
     "typescript": "^5.3.3",
     "vite": "^8.3.7",
