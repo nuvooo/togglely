@@ -9,6 +9,7 @@ import { Environment, Project } from '@prisma/client'
 import { PrismaService } from '../../shared/prisma.service'
 import { EvaluationService, ToggleContext } from './evaluation.service'
 import { HashingService } from './hashing.service'
+import { ruleAppliesTo } from './rule-scope'
 import {
   getDefaultFlagValue,
   isOriginAllowed,
@@ -158,6 +159,30 @@ export class SdkService {
   }
 
   /**
+   * Flag-wide targeting rules of the given flags that apply to this
+   * environment and brand (see ruleAppliesTo), by flag id, in priority order.
+   */
+  private async loadScopedRules(
+    flagIds: string[],
+    environmentId: string,
+    brandId: string | null
+  ) {
+    const rules = await this.prisma.targetingRule.findMany({
+      where: { flagId: { in: flagIds } },
+      include: { conditions: true },
+      orderBy: { priority: 'asc' },
+    })
+    const byFlag = new Map<string, typeof rules>()
+    for (const rule of rules) {
+      if (!rule.flagId || !ruleAppliesTo(rule, environmentId, brandId)) {
+        continue
+      }
+      byFlag.set(rule.flagId, [...(byFlag.get(rule.flagId) ?? []), rule])
+    }
+    return byFlag
+  }
+
+  /**
    * Resolve a brand of the given project by key, or by id when the value is a
    * valid ObjectId. Anything else is treated as "not found".
    */
@@ -239,33 +264,23 @@ export class SdkService {
 
     const brandId = await this.resolveBrandId(project, brandKey)
 
-    const include = {
-      targetingRules: {
-        include: { conditions: true },
-        orderBy: { priority: 'asc' as const },
-      },
-    }
-
     // A brand override (own row) wins; without one the brand inherits the
     // environment default live. Reads never create brand rows.
     const brandEnv = brandId
       ? await this.prisma.flagEnvironment.findFirst({
           where: { flagId: flag.id, environmentId: environment.id, brandId },
-          include,
         })
       : null
 
-    let defaultEnv =
-      brandEnv && brandEnv.targetingRules.length > 0
-        ? null
-        : await this.prisma.flagEnvironment.findFirst({
-            where: {
-              flagId: flag.id,
-              environmentId: environment.id,
-              brandId: null,
-            },
-            include,
-          })
+    let defaultEnv = brandEnv
+      ? null
+      : await this.prisma.flagEnvironment.findFirst({
+          where: {
+            flagId: flag.id,
+            environmentId: environment.id,
+            brandId: null,
+          },
+        })
 
     // Only the environment default is ever auto-created on read
     if (!brandEnv && !defaultEnv) {
@@ -280,17 +295,14 @@ export class SdkService {
           enabled: false,
           defaultValue: getDefaultFlagValue(flag.flagType),
         },
-        include,
       })
     }
 
     const flagEnv = (brandEnv ?? defaultEnv) as NonNullable<typeof defaultEnv>
-    // Brand overrides inherit the environment-level rules unless they define
-    // their own
     const rules =
-      brandEnv && brandEnv.targetingRules.length > 0
-        ? brandEnv.targetingRules
-        : (defaultEnv?.targetingRules ?? [])
+      (await this.loadScopedRules([flag.id], environment.id, brandId)).get(
+        flag.id
+      ) ?? []
 
     this.logger.debug(
       `[SDK Service] FlagEnvironment: enabled=${flagEnv.enabled}, value=${flagEnv.defaultValue}, rules=${rules.length}, inherited=${!!brandId && !brandEnv}`
@@ -371,19 +383,18 @@ export class SdkService {
 
     const brandId = await this.resolveBrandId(project, brandKey)
 
-    // Get all flag environments for this environment and brand, including targeting rules
+    // Flag environments (enabled, default value) for this environment and brand
     const flagEnvs = await this.prisma.flagEnvironment.findMany({
       where: {
         environmentId: environment.id,
         OR: [{ brandId: brandId }, { brandId: null }],
       },
-      include: {
-        targetingRules: {
-          include: { conditions: true },
-          orderBy: { priority: 'asc' },
-        },
-      },
     })
+    const rulesByFlag = await this.loadScopedRules(
+      flags.map((f) => f.id),
+      environment.id,
+      brandId
+    )
 
     const results: Record<string, any> = {}
 
@@ -411,12 +422,6 @@ export class SdkService {
             enabled: false,
             defaultValue: getDefaultFlagValue(flag.flagType),
           },
-          include: {
-            targetingRules: {
-              include: { conditions: true },
-              orderBy: { priority: 'asc' },
-            },
-          },
         })
       }
 
@@ -438,14 +443,8 @@ export class SdkService {
               variantKey: expResult.variantKey,
             }
           } else {
-            // Brand overrides inherit environment-level rules unless they
-            // define their own
-            const rules =
-              brandEnv && brandEnv.targetingRules.length > 0
-                ? brandEnv.targetingRules
-                : (defaultEnv?.targetingRules ?? [])
             const ruleResult = this.evaluationService.evaluateRules(
-              rules,
+              rulesByFlag.get(flag.id) ?? [],
               context
             )
             if (ruleResult !== null) {

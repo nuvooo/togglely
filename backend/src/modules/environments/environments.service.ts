@@ -2,6 +2,7 @@ import { BadRequestException, Injectable, Logger } from '@nestjs/common'
 import { PrismaService } from '../../shared/prisma.service'
 import { AuditLogsService } from '../audit-logs/audit-logs.service'
 import { ChangeEventsService } from '../change-events/change-events.service'
+import { removeFromRuleScopes } from '../flags/rule-scope-cleanup'
 import { ENVIRONMENT_ORDER_BY } from './environment-order'
 
 @Injectable()
@@ -75,6 +76,7 @@ export class EnvironmentsService {
     await this.prisma.flagEnvironment.deleteMany({
       where: { environmentId: envId },
     })
+    await removeFromRuleScopes(this.prisma, 'environment', envId)
     const environment = await this.prisma.environment.delete({
       where: { id: envId },
     })

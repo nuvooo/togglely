@@ -37,6 +37,7 @@ function setup(role: string | null) {
       delete: jest.fn(),
     },
     flagEnvironment: { deleteMany: jest.fn() },
+    targetingRule: { findMany: jest.fn().mockResolvedValue([]) },
     $transaction: jest.fn(async (ops: any[]) => Promise.all(ops)),
     organizationMember: {
       findFirst: jest

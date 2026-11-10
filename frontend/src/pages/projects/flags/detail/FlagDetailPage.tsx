@@ -451,7 +451,6 @@ export default function FlagDetailPage() {
             flagType={flag.type}
             environments={environments}
             brands={isMulti ? targetingBrands : undefined}
-            onBrandRulesChanged={() => void loadBrandValues()}
             readOnly={!canEdit}
           />
         </TabsContent>

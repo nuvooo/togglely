@@ -25,19 +25,43 @@ export interface TargetingCondition {
   value: string
 }
 
-export interface TargetingRule {
+/**
+ * Where a flag-wide rule applies; empty lists mean "all", *Excluded turns
+ * "one of" into "none of".
+ */
+export interface RuleScope {
+  environmentIds: string[]
+  environmentsExcluded: boolean
+  brandIds: string[]
+  brandsExcluded: boolean
+}
+
+export interface TargetingRule extends Partial<RuleScope> {
   id: string
-  environmentId: string
-  brandId: string | null
   name: string | null
   operator: RuleMatchOperator
   serveValue: string
   priority: number
   isDefault: boolean
   enabled: boolean
+  /** Optional time window (ISO); missing on older API versions. */
+  activeFrom?: string | null
+  activeUntil?: string | null
+  /** All conditions, flat (see `groups` for their grouping). */
   conditions: TargetingCondition[]
+  /**
+   * Condition groups; `operator` combines them. Missing on older API
+   * versions, see ruleGroups.
+   */
+  groups?: TargetingRuleGroup[]
   createdAt: string
   updatedAt: string
+}
+
+/** Conditions combined with the group operator (AND: all, OR: any). */
+export interface TargetingRuleGroup {
+  operator: RuleMatchOperator
+  conditions: TargetingCondition[]
 }
 
 export interface ConditionInput {
@@ -47,7 +71,6 @@ export interface ConditionInput {
 }
 
 export interface CreateTargetingRuleInput {
-  environmentId: string
   name?: string
   operator: RuleMatchOperator
   serveValue: string
@@ -108,6 +131,42 @@ export function formatConditions(
   return conditions.map(formatCondition).join(` ${operator} `)
 }
 
+export const MAX_GROUPS = 10
+
+/** Condition groups of a rule; older APIs have one implicit group. */
+export function ruleGroups(
+  rule: Pick<TargetingRule, 'operator' | 'conditions' | 'groups'>
+): TargetingRuleGroup[] {
+  if (rule.groups && rule.groups.length > 0) return rule.groups
+  if (rule.conditions.length === 0) return []
+  return [{ operator: rule.operator, conditions: rule.conditions }]
+}
+
+/** "(a AND b) OR (c)"; a single group without parentheses. */
+export function formatRuleGroups(
+  operator: RuleMatchOperator,
+  groups: { operator: RuleMatchOperator; conditions: ConditionInput[] }[]
+): string {
+  if (groups.length === 1) {
+    return formatConditions(groups[0].conditions, groups[0].operator)
+  }
+  return groups
+    .map((g) => `(${formatConditions(g.conditions, g.operator)})`)
+    .join(` ${operator} `)
+}
+
+/** Client-side mirror of the backend group limits. */
+export function validateGroups(
+  groups: { operator: RuleMatchOperator; conditions: unknown[] }[]
+): string | null {
+  if (groups.length > MAX_GROUPS) {
+    return `At most ${MAX_GROUPS} groups are allowed`
+  }
+  const empty = groups.findIndex((g) => g.conditions.length === 0)
+  if (empty >= 0) return `Group ${empty + 1} needs at least one condition`
+  return null
+}
+
 export function sortRulesByPriority(rules: TargetingRule[]): TargetingRule[] {
   return [...rules].sort((a, b) => a.priority - b.priority)
 }
@@ -116,6 +175,56 @@ export function sortRulesByPriority(rules: TargetingRule[]): TargetingRule[] {
 export function nextPriority(rules: Pick<TargetingRule, 'priority'>[]): number {
   if (rules.length === 0) return 0
   return Math.max(...rules.map((r) => r.priority)) + 1
+}
+
+const pad = (n: number) => String(n).padStart(2, '0')
+
+/** ISO timestamp → value of an `<input type="datetime-local">` (local time). */
+export function toLocalInputValue(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/** `datetime-local` value (local time) → ISO timestamp, '' → null. */
+export function fromLocalInputValue(value: string): string | null {
+  return value ? new Date(value).toISOString() : null
+}
+
+/** Client-side mirror of the backend check: a window must end after it starts. */
+export function validateWindow(
+  activeFrom: string | null,
+  activeUntil: string | null
+): string | null {
+  if (activeFrom && activeUntil && activeFrom >= activeUntil) {
+    return '"Active from" must be before "Active until"'
+  }
+  return null
+}
+
+export type RuleScheduleStatus = {
+  kind: 'scheduled' | 'active-until' | 'expired'
+  /** ISO timestamp the status refers to. */
+  at: string
+}
+
+/**
+ * Status of a rule's time window for the rule list (window is
+ * activeFrom <= now < activeUntil); null when nothing is worth showing.
+ */
+export function ruleScheduleStatus(
+  rule: Pick<TargetingRule, 'activeFrom' | 'activeUntil'>,
+  now: Date = new Date()
+): RuleScheduleStatus | null {
+  const { activeFrom, activeUntil } = rule
+  if (activeUntil && now >= new Date(activeUntil)) {
+    return { kind: 'expired', at: activeUntil }
+  }
+  if (activeFrom && now < new Date(activeFrom)) {
+    return { kind: 'scheduled', at: activeFrom }
+  }
+  if (activeUntil) return { kind: 'active-until', at: activeUntil }
+  return null
 }
 
 /** Returns an error message, or null if the serve value fits the flag type. */
@@ -147,7 +256,7 @@ export function validateServeValue(
 /** Client-side mirror of the backend validation. Server stays authoritative. */
 export function validateRuleInput(
   flagType: FlagType,
-  input: Omit<CreateTargetingRuleInput, 'environmentId' | 'priority'>
+  input: Omit<CreateTargetingRuleInput, 'priority'>
 ): string | null {
   if (input.name && input.name.length > MAX_RULE_NAME_LENGTH) {
     return `Rule name must be at most ${MAX_RULE_NAME_LENGTH} characters`

@@ -18,26 +18,29 @@ const PROJECT = '64a000000000000000000020'
 const OTHER_PROJECT = '64a000000000000000000021'
 const FLAG = '64a000000000000000000030'
 const ENV = '64a000000000000000000040'
-const FLAG_ENV = '64a000000000000000000050'
+const ENV_2 = '64a000000000000000000041'
 const RULE = '64a000000000000000000060'
 const BRAND = '64a000000000000000000070'
-const BRAND_FLAG_ENV = '64a000000000000000000051'
-const BRAND_RULE = '64a000000000000000000061'
 
 type Role = 'VIEWER' | 'MEMBER' | 'ADMIN' | 'OWNER' | null
 
 function storedRule(overrides: Record<string, unknown> = {}) {
   return {
     id: RULE,
+    flagId: FLAG,
+    environmentIds: [ENV],
+    environmentsExcluded: false,
+    brandIds: [],
+    brandsExcluded: false,
     name: 'DE users',
     operator: 'AND',
+    groupOperators: [],
     serveValue: 'true',
     priority: 0,
     isDefault: false,
     enabled: true,
     createdAt: new Date(),
     updatedAt: new Date(),
-    flagEnvironment: { environmentId: ENV, brandId: null },
     conditions: [
       { id: 'c1', attribute: 'country', operator: 'EQUALS', value: 'DE' },
     ],
@@ -52,14 +55,15 @@ function setup(
     flagType?: string
     ruleOfFlag?: boolean
     brandProject?: string
-    /** The brand-level FlagEnvironment row of BRAND exists */
-    brandRow?: boolean
-    /** The brand row has own rules */
-    brandRules?: boolean
   } = {}
 ) {
   const envProject = opts.envProject ?? PROJECT
   const brandProject = opts.brandProject ?? PROJECT
+  // count of the requested ids that belong to the project
+  const countIn =
+    (project: string) =>
+    ({ where }: any) =>
+      Promise.resolve(where.projectId === project ? where.id.in.length : 0)
   const prisma: any = {
     project: {
       findUnique: jest
@@ -87,61 +91,12 @@ function setup(
           role ? { userId: USER, organizationId: ORG, role } : null
         ),
     },
-    environment: {
-      findFirst: jest
-        .fn()
-        .mockImplementation(({ where }: any) =>
-          Promise.resolve(
-            where.projectId === envProject ? { id: where.id } : null
-          )
-        ),
-    },
-    brand: {
-      findFirst: jest
-        .fn()
-        .mockImplementation(({ where }: any) =>
-          Promise.resolve(
-            where.projectId === brandProject ? { id: where.id } : null
-          )
-        ),
-    },
-    flagEnvironment: {
-      findFirst: jest.fn().mockImplementation(({ where }: any) =>
-        Promise.resolve(
-          where.brandId
-            ? opts.brandRow
-              ? { id: BRAND_FLAG_ENV }
-              : null
-            : { id: FLAG_ENV, enabled: true, defaultValue: 'true' }
-        )
-      ),
-      create: jest
-        .fn()
-        .mockImplementation(({ data }: any) =>
-          Promise.resolve({ id: data.brandId ? BRAND_FLAG_ENV : FLAG_ENV })
-        ),
-    },
+    environment: { count: jest.fn().mockImplementation(countIn(envProject)) },
+    brand: { count: jest.fn().mockImplementation(countIn(brandProject)) },
     targetingRule: {
-      findMany: jest.fn().mockImplementation(({ where }: any) => {
-        if (where.flagEnvironment?.brandId) {
-          return Promise.resolve(
-            opts.brandRules
-              ? [
-                  storedRule({
-                    id: BRAND_RULE,
-                    flagEnvironment: { environmentId: ENV, brandId: BRAND },
-                  }),
-                ]
-              : []
-          )
-        }
-        if (where.flagEnvId) {
-          return Promise.resolve(opts.brandRules ? [{ id: BRAND_RULE }] : [])
-        }
-        return Promise.resolve([storedRule()])
-      }),
+      findMany: jest.fn().mockResolvedValue([storedRule()]),
       findFirst: jest.fn().mockImplementation(({ where }: any) => {
-        if (where.flagEnvironment) {
+        if (where.id) {
           return Promise.resolve(
             opts.ruleOfFlag === false ? null : storedRule()
           )
@@ -151,11 +106,12 @@ function setup(
       create: jest
         .fn()
         .mockImplementation(({ data }: any) =>
-          Promise.resolve(storedRule({ priority: data.priority }))
+          Promise.resolve(
+            storedRule({ ...data, conditions: storedRule().conditions })
+          )
         ),
       update: jest.fn().mockResolvedValue(storedRule({ enabled: false })),
       delete: jest.fn().mockResolvedValue({}),
-      deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
     },
     ruleCondition: {
       deleteMany: jest.fn().mockResolvedValue({}),
@@ -198,11 +154,11 @@ const createDto = (
 describe('TargetingRulesController access', () => {
   it('lets a VIEWER read rules in the API shape', async () => {
     const { controller, req } = setup('VIEWER')
-    const result = await controller.findAll(FLAG, req, ENV)
+    const result = await controller.findAll(FLAG, req)
     expect(result.rules[0]).toMatchObject({
       id: RULE,
-      environmentId: ENV,
-      brandId: null,
+      environmentIds: [ENV],
+      brandIds: [],
       enabled: true,
       conditions: [{ attribute: 'country', operator: 'EQUALS', value: 'DE' }],
     })
@@ -272,11 +228,18 @@ describe('TargetingRulesService behaviour', () => {
     expect(prisma.targetingRule.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          flagEnvId: FLAG_ENV,
+          flagId: FLAG,
           operator: 'AND',
           enabled: true,
           conditions: {
-            create: [{ attribute: 'country', operator: 'EQUALS', value: 'DE' }],
+            create: [
+              {
+                attribute: 'country',
+                operator: 'EQUALS',
+                value: 'DE',
+                groupIndex: 0,
+              },
+            ],
           },
         }),
       })
@@ -387,7 +350,13 @@ describe('TargetingRulesService behaviour', () => {
     })
     expect(prisma.ruleCondition.createMany).toHaveBeenCalledWith({
       data: [
-        { ruleId: RULE, attribute: 'plan', operator: 'IN', value: 'pro,team' },
+        {
+          ruleId: RULE,
+          attribute: 'plan',
+          operator: 'IN',
+          value: 'pro,team',
+          groupIndex: 0,
+        },
       ],
     })
   })
@@ -451,139 +420,373 @@ describe('TargetingRulesService change events', () => {
   })
 })
 
-describe('Brand targeting rules', () => {
-  it('returns the own rules of a brand', async () => {
-    const { controller, req } = setup('VIEWER', {
-      brandRow: true,
-      brandRules: true,
-    })
-    const result = await controller.findAll(FLAG, req, ENV, BRAND)
-    expect(result.inherited).toBe(false)
-    expect(result.rules).toEqual([
-      expect.objectContaining({ id: BRAND_RULE, brandId: BRAND }),
-    ])
+describe('Targeting rule scope', () => {
+  it('lists all rules of the flag', async () => {
+    const { controller, req, prisma } = setup('VIEWER')
+    await controller.findAll(FLAG, req)
+    expect(prisma.targetingRule.findMany).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { flagId: FLAG } })
+    )
   })
 
-  it('returns the environment rules as inherited without own rules', async () => {
-    const { controller, req } = setup('VIEWER', { brandRow: true })
-    const result = await controller.findAll(FLAG, req, ENV, BRAND)
-    expect(result.inherited).toBe(true)
-    expect(result.rules).toEqual([
-      expect.objectContaining({ id: RULE, brandId: null }),
-    ])
-  })
-
-  it('reports environment rules as not inherited', async () => {
-    const { controller, req } = setup('VIEWER')
-    const result = await controller.findAll(FLAG, req, ENV)
-    expect(result.inherited).toBe(false)
-  })
-
-  it('requires an environment when a brand is given', async () => {
-    const { controller, req } = setup('VIEWER')
-    await expect(
-      controller.findAll(FLAG, req, undefined, BRAND)
-    ).rejects.toBeInstanceOf(BadRequestException)
-  })
-
-  it('hides brands of another project (404)', async () => {
-    const { controller, req, prisma } = setup('MEMBER', {
-      brandProject: OTHER_PROJECT,
-    })
-    await expect(
-      controller.findAll(FLAG, req, ENV, BRAND)
-    ).rejects.toBeInstanceOf(NotFoundException)
-    await expect(
-      controller.create(FLAG, createDto({ brandId: BRAND }), req)
-    ).rejects.toBeInstanceOf(NotFoundException)
-    await expect(
-      controller.resetBrandRules(FLAG, req, ENV, BRAND)
-    ).rejects.toBeInstanceOf(NotFoundException)
-    expect(prisma.targetingRule.create).not.toHaveBeenCalled()
-    expect(prisma.targetingRule.deleteMany).not.toHaveBeenCalled()
-  })
-
-  it('creates the brand override with the environment values on the first rule', async () => {
+  it('stores the scope of a new rule', async () => {
     const { controller, req, prisma } = setup('MEMBER')
-    await controller.create(FLAG, createDto({ brandId: BRAND }), req)
-    expect(prisma.flagEnvironment.create).toHaveBeenCalledWith(
+    await controller.create(
+      FLAG,
+      createDto({
+        environmentId: undefined,
+        environmentIds: [ENV, ENV_2, ENV],
+        brandIds: [BRAND],
+        brandsExcluded: true,
+      }),
+      req
+    )
+    expect(prisma.targetingRule.create).toHaveBeenCalledWith(
       expect.objectContaining({
-        data: {
+        data: expect.objectContaining({
           flagId: FLAG,
-          environmentId: ENV,
-          brandId: BRAND,
-          enabled: true,
-          defaultValue: 'true',
-        },
-      })
-    )
-    expect(prisma.targetingRule.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ flagEnvId: BRAND_FLAG_ENV }),
-      })
-    )
-  })
-
-  it('adds rules to an existing brand override', async () => {
-    const { controller, req, prisma } = setup('MEMBER', { brandRow: true })
-    await controller.create(FLAG, createDto({ brandId: BRAND }), req)
-    expect(prisma.flagEnvironment.create).not.toHaveBeenCalled()
-    expect(prisma.targetingRule.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({ flagEnvId: BRAND_FLAG_ENV }),
-      })
-    )
-  })
-
-  it('reset deletes only the rules of the brand override', async () => {
-    const { controller, req, prisma, auditLogs, changes } = setup('MEMBER', {
-      brandRow: true,
-      brandRules: true,
-    })
-    await expect(
-      controller.resetBrandRules(FLAG, req, ENV, BRAND)
-    ).resolves.toEqual({ deleted: 1 })
-    expect(prisma.ruleCondition.deleteMany).toHaveBeenCalledWith({
-      where: { ruleId: { in: [BRAND_RULE] } },
-    })
-    expect(prisma.targetingRule.deleteMany).toHaveBeenCalledWith({
-      where: { flagEnvId: BRAND_FLAG_ENV },
-    })
-    expect(changes.recordChange).toHaveBeenCalledWith(
-      expect.objectContaining({ environmentIds: [ENV] })
-    )
-    expect(auditLogs.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        action: 'targeting_rule.brand_reset',
-        newValues: expect.objectContaining({
-          environmentId: ENV,
-          brandId: BRAND,
-          deletedRules: 1,
+          environmentIds: [ENV, ENV_2],
+          environmentsExcluded: false,
+          brandIds: [BRAND],
+          brandsExcluded: true,
         }),
       })
     )
   })
 
-  it('reset without own rules changes nothing', async () => {
-    const { controller, req, prisma, changes } = setup('MEMBER', {
-      brandRow: true,
-    })
-    await expect(
-      controller.resetBrandRules(FLAG, req, ENV, BRAND)
-    ).resolves.toEqual({ deleted: 0 })
-    expect(prisma.targetingRule.deleteMany).not.toHaveBeenCalled()
-    expect(changes.recordChange).not.toHaveBeenCalled()
+  it('applies a new rule everywhere without a scope', async () => {
+    const { controller, req, prisma, changes } = setup('MEMBER')
+    await controller.create(FLAG, createDto({ environmentId: undefined }), req)
+    expect(prisma.targetingRule.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ environmentIds: [], brandIds: [] }),
+      })
+    )
+    expect(changes.recordChange).toHaveBeenCalledWith(
+      expect.objectContaining({ environmentIds: 'all' })
+    )
   })
 
-  it('forbids VIEWERs to reset brand rules', async () => {
-    const { controller, req, prisma } = setup('VIEWER', {
-      brandRow: true,
-      brandRules: true,
-    })
+  it('accepts the legacy environmentId / brandId shorthand', async () => {
+    const { controller, req, prisma } = setup('MEMBER')
+    await controller.create(FLAG, createDto({ brandId: BRAND }), req)
+    expect(prisma.targetingRule.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          environmentIds: [ENV],
+          brandIds: [BRAND],
+        }),
+      })
+    )
+  })
+
+  it.each([
+    ['an environment', { envProject: OTHER_PROJECT }],
+    ['a brand', { brandProject: OTHER_PROJECT }],
+  ])('rejects %s of another project (404)', async (_, opts) => {
+    const { controller, req, prisma } = setup('MEMBER', opts)
     await expect(
-      controller.resetBrandRules(FLAG, req, ENV, BRAND)
-    ).rejects.toBeInstanceOf(ForbiddenException)
-    expect(prisma.targetingRule.deleteMany).not.toHaveBeenCalled()
+      controller.create(FLAG, createDto({ brandIds: [BRAND] }), req)
+    ).rejects.toBeInstanceOf(NotFoundException)
+    await expect(
+      controller.update(
+        FLAG,
+        RULE,
+        { brandIds: [BRAND], environmentIds: [ENV] },
+        req
+      )
+    ).rejects.toBeInstanceOf(NotFoundException)
+    expect(prisma.targetingRule.create).not.toHaveBeenCalled()
+    expect(prisma.targetingRule.update).not.toHaveBeenCalled()
+  })
+
+  it('changes the scope on update and announces old and new environments', async () => {
+    const { controller, req, prisma, changes } = setup('MEMBER')
+    prisma.targetingRule.update.mockResolvedValue(
+      storedRule({ environmentIds: [ENV_2] })
+    )
+    await controller.update(FLAG, RULE, { environmentIds: [ENV_2] }, req)
+    expect(prisma.targetingRule.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ environmentIds: [ENV_2] }),
+      })
+    )
+    expect(changes.recordChange).toHaveBeenCalledWith(
+      expect.objectContaining({ environmentIds: [ENV, ENV_2] })
+    )
+  })
+
+  it('leaves the scope alone when an update does not touch it', async () => {
+    const { controller, req, prisma } = setup('MEMBER')
+    await controller.update(FLAG, RULE, { enabled: false }, req)
+    const { data } = prisma.targetingRule.update.mock.calls[0][0]
+    expect(data.environmentIds).toBeUndefined()
+    expect(data.brandIds).toBeUndefined()
+  })
+
+  it('returns the scope of a rule', async () => {
+    const { controller, req, prisma } = setup('VIEWER')
+    prisma.targetingRule.findMany.mockResolvedValue([
+      storedRule({ brandIds: [BRAND], brandsExcluded: true }),
+    ])
+    const { rules } = await controller.findAll(FLAG, req)
+    expect(rules[0]).toMatchObject({
+      environmentIds: [ENV],
+      environmentsExcluded: false,
+      brandIds: [BRAND],
+      brandsExcluded: true,
+    })
+  })
+})
+
+describe('Targeting rule time windows', () => {
+  const FROM = '2099-11-27T00:00:00.000Z'
+  const UNTIL = '2099-11-30T00:00:00.000Z'
+
+  it('stores the window and the next bound on create', async () => {
+    const { controller, req, prisma } = setup('MEMBER')
+    await controller.create(
+      FLAG,
+      createDto({ activeFrom: FROM, activeUntil: UNTIL }),
+      req
+    )
+    expect(prisma.targetingRule.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          activeFrom: new Date(FROM),
+          activeUntil: new Date(UNTIL),
+          nextBoundaryAt: new Date(FROM),
+        }),
+      })
+    )
+  })
+
+  it('has no next bound for a rule without window or with a past window', async () => {
+    const { controller, req, prisma } = setup('MEMBER')
+    await controller.create(FLAG, createDto(), req)
+    await controller.create(
+      FLAG,
+      createDto({ activeUntil: '2000-01-01T00:00:00.000Z' }),
+      req
+    )
+    for (const [call] of prisma.targetingRule.create.mock.calls) {
+      expect(call.data.nextBoundaryAt).toBeNull()
+    }
+  })
+
+  it('rejects a window that ends before it starts', async () => {
+    const { controller, req, prisma } = setup('MEMBER')
+    await expect(
+      controller.create(
+        FLAG,
+        createDto({ activeFrom: UNTIL, activeUntil: FROM }),
+        req
+      )
+    ).rejects.toBeInstanceOf(BadRequestException)
+    expect(prisma.targetingRule.create).not.toHaveBeenCalled()
+  })
+
+  it('checks a partial update against the stored window', async () => {
+    const { controller, req, prisma } = setup('MEMBER')
+    prisma.targetingRule.findFirst.mockResolvedValue(
+      storedRule({ activeFrom: new Date(UNTIL), activeUntil: null })
+    )
+    await expect(
+      controller.update(FLAG, RULE, { activeUntil: FROM }, req)
+    ).rejects.toBeInstanceOf(BadRequestException)
+    expect(prisma.targetingRule.update).not.toHaveBeenCalled()
+  })
+
+  it('clears a bound with null and recomputes the next bound', async () => {
+    const { controller, req, prisma } = setup('MEMBER')
+    prisma.targetingRule.findFirst.mockResolvedValue(
+      storedRule({ activeFrom: new Date(FROM), activeUntil: new Date(UNTIL) })
+    )
+    await controller.update(FLAG, RULE, { activeFrom: null }, req)
+    expect(prisma.targetingRule.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          activeFrom: null,
+          nextBoundaryAt: new Date(UNTIL),
+        }),
+      })
+    )
+  })
+
+  it('leaves the window alone when an update does not touch it', async () => {
+    const { controller, req, prisma } = setup('MEMBER')
+    await controller.update(FLAG, RULE, { enabled: false }, req)
+    const { data } = prisma.targetingRule.update.mock.calls[0][0]
+    expect(data.activeFrom).toBeUndefined()
+    expect(data.activeUntil).toBeUndefined()
+    expect(data.nextBoundaryAt).toBeUndefined()
+  })
+
+  it('returns the window as ISO strings', async () => {
+    const { controller, req, prisma } = setup('VIEWER')
+    prisma.targetingRule.findMany.mockResolvedValue([
+      storedRule({ activeFrom: new Date(FROM), activeUntil: null }),
+    ])
+    const { rules } = await controller.findAll(FLAG, req)
+    expect(rules[0]).toMatchObject({ activeFrom: FROM, activeUntil: null })
+  })
+})
+
+describe('Targeting rule condition groups', () => {
+  const de = { attribute: 'country', operator: 'EQUALS' as const, value: 'DE' }
+  const pro = { attribute: 'plan', operator: 'EQUALS' as const, value: 'pro' }
+  const beta = { attribute: 'beta', operator: 'EQUALS' as const, value: 'yes' }
+  const groupsDto = {
+    operator: 'AND' as const,
+    conditions: undefined,
+    groups: [
+      { operator: 'AND' as const, conditions: [de] },
+      { operator: 'OR' as const, conditions: [pro, beta] },
+    ],
+  }
+
+  it('stores groups as groupIndex and groupOperators', async () => {
+    const { controller, req, prisma } = setup('MEMBER')
+    await controller.create(FLAG, createDto(groupsDto), req)
+    expect(prisma.targetingRule.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          operator: 'AND',
+          groupOperators: ['AND', 'OR'],
+          conditions: {
+            create: [
+              { ...de, groupIndex: 0 },
+              { ...pro, groupIndex: 1 },
+              { ...beta, groupIndex: 1 },
+            ],
+          },
+        }),
+      })
+    )
+  })
+
+  it('stores flat conditions as one group', async () => {
+    const { controller, req, prisma } = setup('MEMBER')
+    await controller.create(FLAG, createDto({ operator: 'OR' }), req)
+    expect(prisma.targetingRule.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          operator: 'OR',
+          groupOperators: ['OR'],
+          conditions: { create: [{ ...de, groupIndex: 0 }] },
+        }),
+      })
+    )
+  })
+
+  it.each([
+    ['both conditions and groups', { ...groupsDto, conditions: [de] }],
+    ['neither conditions nor groups', { conditions: undefined }],
+    [
+      'more than 20 conditions over all groups',
+      {
+        conditions: undefined,
+        groups: [
+          { operator: 'AND' as const, conditions: Array(11).fill(de) },
+          { operator: 'AND' as const, conditions: Array(10).fill(pro) },
+        ],
+      },
+    ],
+  ])('rejects %s', async (_, overrides) => {
+    const { controller, req, prisma } = setup('MEMBER')
+    await expect(
+      controller.create(FLAG, createDto(overrides), req)
+    ).rejects.toBeInstanceOf(BadRequestException)
+    expect(prisma.targetingRule.create).not.toHaveBeenCalled()
+  })
+
+  it('replaces the conditions with groups on update', async () => {
+    const { controller, req, prisma } = setup('MEMBER')
+    await controller.update(
+      FLAG,
+      RULE,
+      { operator: 'OR', groups: groupsDto.groups },
+      req
+    )
+    expect(prisma.ruleCondition.deleteMany).toHaveBeenCalledWith({
+      where: { ruleId: RULE },
+    })
+    expect(prisma.ruleCondition.createMany).toHaveBeenCalledWith({
+      data: [
+        { ruleId: RULE, ...de, groupIndex: 0 },
+        { ruleId: RULE, ...pro, groupIndex: 1 },
+        { ruleId: RULE, ...beta, groupIndex: 1 },
+      ],
+    })
+    expect(prisma.targetingRule.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          operator: 'OR',
+          groupOperators: ['AND', 'OR'],
+        }),
+      })
+    )
+  })
+
+  it('an operator-only update of a single-group rule changes its group operator', async () => {
+    const { controller, req, prisma } = setup('MEMBER')
+    prisma.targetingRule.findFirst.mockResolvedValue(
+      storedRule({ groupOperators: ['AND'] })
+    )
+    await controller.update(FLAG, RULE, { operator: 'OR' }, req)
+    expect(prisma.targetingRule.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          operator: 'OR',
+          groupOperators: ['OR'],
+        }),
+      })
+    )
+  })
+
+  it('an operator-only update of a grouped rule only changes how groups combine', async () => {
+    const { controller, req, prisma } = setup('MEMBER')
+    prisma.targetingRule.findFirst.mockResolvedValue(
+      storedRule({ groupOperators: ['AND', 'OR'] })
+    )
+    await controller.update(FLAG, RULE, { operator: 'OR' }, req)
+    const { data } = prisma.targetingRule.update.mock.calls[0][0]
+    expect(data.operator).toBe('OR')
+    expect(data.groupOperators).toBeUndefined()
+  })
+
+  it('returns the groups of a rule', async () => {
+    const { controller, req, prisma } = setup('VIEWER')
+    prisma.targetingRule.findMany.mockResolvedValue([
+      storedRule({
+        operator: 'AND',
+        groupOperators: ['AND', 'OR'],
+        conditions: [
+          { id: 'c1', ...de, groupIndex: 0 },
+          { id: 'c2', ...pro, groupIndex: 1 },
+          { id: 'c3', ...beta, groupIndex: 1 },
+        ],
+      }),
+    ])
+    const { rules } = await controller.findAll(FLAG, req)
+    expect(rules[0].groups).toEqual([
+      { operator: 'AND', conditions: [{ id: 'c1', ...de }] },
+      {
+        operator: 'OR',
+        conditions: [
+          { id: 'c2', ...pro },
+          { id: 'c3', ...beta },
+        ],
+      },
+    ])
+  })
+
+  it('returns a rule saved before groups existed as one group', async () => {
+    const { controller, req } = setup('VIEWER')
+    const { rules } = await controller.findAll(FLAG, req)
+    expect(rules[0].groups).toEqual([
+      { operator: 'AND', conditions: [{ id: 'c1', ...de }] },
+    ])
   })
 })
 
@@ -634,4 +837,56 @@ describe('Targeting rule DTO validation', () => {
       validate(UpdateTargetingRuleDto, { conditions: [] })
     ).rejects.toBeInstanceOf(BadRequestException)
   })
+
+  it('accepts ISO time window bounds, and null on update', async () => {
+    await expect(
+      validate(CreateTargetingRuleDto, {
+        ...createDto(),
+        activeFrom: '2099-11-27T00:00:00.000Z',
+        activeUntil: '2099-11-30T00:00:00Z',
+      })
+    ).resolves.toBeDefined()
+    await expect(
+      validate(UpdateTargetingRuleDto, { activeFrom: null, activeUntil: null })
+    ).resolves.toEqual({ activeFrom: null, activeUntil: null })
+  })
+
+  it('accepts groups instead of conditions', async () => {
+    const { conditions, ...rest } = createDto()
+    await expect(
+      validate(CreateTargetingRuleDto, {
+        ...rest,
+        groups: [{ operator: 'OR', conditions }],
+      })
+    ).resolves.toBeDefined()
+  })
+
+  it.each([
+    ['an empty group', [{ operator: 'AND', conditions: [] }]],
+    [
+      'an unknown group operator',
+      [{ operator: 'XOR', conditions: createDto().conditions }],
+    ],
+    [
+      'more than 10 groups',
+      Array.from({ length: 11 }, () => ({
+        operator: 'AND',
+        conditions: createDto().conditions,
+      })),
+    ],
+    ['no groups', []],
+  ])('rejects %s', async (_, groups) => {
+    await expect(
+      validate(UpdateTargetingRuleDto, { groups })
+    ).rejects.toBeInstanceOf(BadRequestException)
+  })
+
+  it.each([['not a date'], [42], [{ $gt: '' }]])(
+    'rejects %p as time window bound',
+    async (value) => {
+      await expect(
+        validate(CreateTargetingRuleDto, { ...createDto(), activeFrom: value })
+      ).rejects.toBeInstanceOf(BadRequestException)
+    }
+  )
 })

@@ -1,4 +1,10 @@
-import { render, screen, waitFor, within } from '@testing-library/react'
+import {
+  fireEvent,
+  render,
+  screen,
+  waitFor,
+  within,
+} from '@testing-library/react'
 import userEvent from '@testing-library/user-event'
 import {
   MemoryRouter,
@@ -74,8 +80,10 @@ const envs = () => [
 
 const rule = (overrides: Record<string, unknown> = {}) => ({
   id: 'r1',
-  environmentId: ENV_DEV,
-  brandId: null,
+  environmentIds: [ENV_DEV],
+  environmentsExcluded: false,
+  brandIds: [],
+  brandsExcluded: false,
   name: 'German users',
   operator: 'AND',
   serveValue: 'true',
@@ -450,17 +458,17 @@ describe('Flag detail page', () => {
   })
 
   describe('targeting', () => {
-    it('lists rules of the selected environment', async () => {
+    it('lists all rules of the flag with their scope', async () => {
       state.rules = [rule()]
       renderPage('?tab=targeting')
-      expect(await screen.findByText('German users')).toBeInTheDocument()
+      const name = await screen.findByText('German users')
       expect(screen.getByText('country EQUALS DE')).toBeInTheDocument()
       expect(mocks.get).toHaveBeenCalledWith(
-        `/feature-flags/${FLAG}/targeting-rules`,
-        {
-          params: { environmentId: ENV_DEV },
-        }
+        `/feature-flags/${FLAG}/targeting-rules`
       )
+      expect(
+        within(name.closest('li') as HTMLElement).getByText('Development')
+      ).toBeInTheDocument()
     })
 
     it('creates a rule', async () => {
@@ -470,9 +478,14 @@ describe('Flag detail page', () => {
       const user = userEvent.setup()
       renderPage('?tab=targeting')
       await screen.findByText('No targeting rules')
-      await user.selectOptions(screen.getByLabelText('Environment'), ENV_PROD)
       await user.click(screen.getByRole('button', { name: 'Add rule' }))
       await user.type(screen.getByLabelText(/Rule name/), 'Beta')
+      await user.click(
+        within(screen.getByRole('group', { name: 'Environments' })).getByRole(
+          'checkbox',
+          { name: 'Production' }
+        )
+      )
       await user.type(screen.getByLabelText('Condition 1 attribute'), 'country')
       await user.selectOptions(
         screen.getByLabelText('Condition 1 operator'),
@@ -492,7 +505,10 @@ describe('Flag detail page', () => {
         expect(mocks.post).toHaveBeenCalledWith(
           `/feature-flags/${FLAG}/targeting-rules`,
           {
-            environmentId: ENV_PROD,
+            environmentIds: [ENV_PROD],
+            environmentsExcluded: false,
+            brandIds: [],
+            brandsExcluded: false,
             name: 'Beta',
             operator: 'AND',
             serveValue: 'false',
@@ -574,7 +590,12 @@ describe('Flag detail page', () => {
             name: 'Austrian users',
             serveValue: 'false',
             conditions: [
-              { id: 'c2', attribute: 'country', operator: 'IN', value: 'AT,CH' },
+              {
+                id: 'c2',
+                attribute: 'country',
+                operator: 'IN',
+                value: 'AT,CH',
+              },
             ],
           }),
         },
@@ -619,6 +640,14 @@ describe('Flag detail page', () => {
             conditions: [
               { attribute: 'country', operator: 'IN', value: 'AT,CH' },
             ],
+            // Always sent on edit, so emptied fields clear the window
+            activeFrom: null,
+            activeUntil: null,
+            // Scope as prefilled from the rule
+            environmentIds: [ENV_DEV],
+            environmentsExcluded: false,
+            brandIds: [],
+            brandsExcluded: false,
           }
         )
       )
@@ -680,15 +709,31 @@ describe('Flag detail page', () => {
       expect(screen.getByLabelText(/Rule name/)).toHaveValue('German users')
     })
 
-    it('closes the edit form when the environment changes', async () => {
+    it('prefills and changes the scope on edit', async () => {
       state.rules = [rule()]
+      mocks.patch.mockResolvedValue({ data: { rule: rule() } })
       const user = userEvent.setup()
       renderPage('?tab=targeting')
       await user.click(
         await screen.findByRole('button', { name: 'Edit rule "German users"' })
       )
-      await user.selectOptions(screen.getByLabelText('Environment'), ENV_PROD)
-      expect(screen.queryByLabelText(/Rule name/)).not.toBeInTheDocument()
+      const envs = within(screen.getByRole('group', { name: 'Environments' }))
+      expect(envs.getByRole('checkbox', { name: 'Development' })).toBeChecked()
+      await user.click(envs.getByRole('checkbox', { name: 'Production' }))
+      await user.selectOptions(
+        screen.getByLabelText('Environments mode'),
+        'none'
+      )
+      await user.click(screen.getByRole('button', { name: 'Save' }))
+      await waitFor(() =>
+        expect(mocks.patch).toHaveBeenCalledWith(
+          `/feature-flags/${FLAG}/targeting-rules/r1`,
+          expect.objectContaining({
+            environmentIds: [ENV_DEV, ENV_PROD],
+            environmentsExcluded: true,
+          })
+        )
+      )
     })
 
     it('hides the edit button for viewers', async () => {
@@ -713,23 +758,256 @@ describe('Flag detail page', () => {
       expect(screen.getByLabelText(/Rule name/)).toHaveValue('Beta testers')
     })
 
-    it('has no brand selection in single projects', async () => {
-      state.rules = [rule()]
-      renderPage('?tab=targeting')
-      await screen.findByText('German users')
-      expect(screen.queryByLabelText('Brand')).not.toBeInTheDocument()
+    describe('time windows', () => {
+      const local = (y: number, m: number, d: number, h = 0, min = 0) =>
+        new Date(y, m - 1, d, h, min).toISOString()
+
+      const openFormWithCondition = async (
+        user: ReturnType<typeof userEvent.setup>
+      ) => {
+        await user.click(
+          await screen.findByRole('button', { name: 'Add rule' })
+        )
+        await user.type(screen.getByLabelText('Condition 1 attribute'), 'plan')
+        await user.type(screen.getByLabelText('Condition 1 value'), 'pro')
+        return screen
+          .getByLabelText('Condition 1 value')
+          .closest('form') as HTMLFormElement
+      }
+
+      it('creates a rule with a time window', async () => {
+        mocks.post.mockResolvedValue({ data: { rule: rule({ id: 'r2' }) } })
+        const user = userEvent.setup()
+        renderPage('?tab=targeting')
+        const form = await openFormWithCondition(user)
+        fireEvent.change(screen.getByLabelText(/Active from/), {
+          target: { value: '2026-11-27T00:00' },
+        })
+        fireEvent.change(screen.getByLabelText(/Active until/), {
+          target: { value: '2026-11-30T08:30' },
+        })
+        await user.click(within(form).getByRole('button', { name: 'Add rule' }))
+        await waitFor(() =>
+          expect(mocks.post).toHaveBeenCalledWith(
+            `/feature-flags/${FLAG}/targeting-rules`,
+            expect.objectContaining({
+              activeFrom: local(2026, 11, 27),
+              activeUntil: local(2026, 11, 30, 8, 30),
+            })
+          )
+        )
+      })
+
+      it('sends no window when the fields stay empty', async () => {
+        mocks.post.mockResolvedValue({ data: { rule: rule({ id: 'r2' }) } })
+        const user = userEvent.setup()
+        renderPage('?tab=targeting')
+        const form = await openFormWithCondition(user)
+        await user.click(within(form).getByRole('button', { name: 'Add rule' }))
+        await waitFor(() => expect(mocks.post).toHaveBeenCalled())
+        expect(mocks.post.mock.calls[0][1]).not.toHaveProperty('activeFrom')
+        expect(mocks.post.mock.calls[0][1]).not.toHaveProperty('activeUntil')
+      })
+
+      it('rejects a window that ends before it starts', async () => {
+        const user = userEvent.setup()
+        renderPage('?tab=targeting')
+        const form = await openFormWithCondition(user)
+        fireEvent.change(screen.getByLabelText(/Active from/), {
+          target: { value: '2026-11-30T00:00' },
+        })
+        fireEvent.change(screen.getByLabelText(/Active until/), {
+          target: { value: '2026-11-27T00:00' },
+        })
+        await user.click(within(form).getByRole('button', { name: 'Add rule' }))
+        expect(await within(form).findByRole('alert')).toHaveTextContent(
+          /must be before/
+        )
+        expect(mocks.post).not.toHaveBeenCalled()
+      })
+
+      it('prefills the window on edit and clears it', async () => {
+        const from = local(2026, 11, 27, 9, 15)
+        state.rules = [rule({ activeFrom: from, activeUntil: null })]
+        mocks.patch.mockResolvedValue({ data: { rule: rule() } })
+        const user = userEvent.setup()
+        renderPage('?tab=targeting')
+        await user.click(
+          await screen.findByRole('button', {
+            name: 'Edit rule "German users"',
+          })
+        )
+        expect(screen.getByLabelText(/Active from/)).toHaveValue(
+          '2026-11-27T09:15'
+        )
+        fireEvent.change(screen.getByLabelText(/Active from/), {
+          target: { value: '' },
+        })
+        await user.click(screen.getByRole('button', { name: 'Save' }))
+        await waitFor(() =>
+          expect(mocks.patch).toHaveBeenCalledWith(
+            `/feature-flags/${FLAG}/targeting-rules/r1`,
+            expect.objectContaining({ activeFrom: null, activeUntil: null })
+          )
+        )
+      })
+
+      it('shows the window status in the rule list', async () => {
+        state.rules = [
+          rule({ activeUntil: '2000-01-01T00:00:00.000Z' }),
+          rule({
+            id: 'r2',
+            name: 'Holiday sale',
+            priority: 1,
+            activeFrom: '2099-12-24T00:00:00.000Z',
+          }),
+        ]
+        renderPage('?tab=targeting')
+        expect(await screen.findByText('Expired')).toBeInTheDocument()
+        expect(screen.getByText(/^Scheduled from /)).toBeInTheDocument()
+      })
     })
 
-    describe('brand rules (MULTI)', () => {
+    describe('condition groups', () => {
+      const cond = (id: string, attribute: string, value: string) => ({
+        id,
+        attribute,
+        operator: 'EQUALS',
+        value,
+      })
+      const groupedRule = () =>
+        rule({
+          name: 'DE or beta',
+          operator: 'OR',
+          conditions: [
+            cond('c1', 'country', 'DE'),
+            cond('c2', 'plan', 'pro'),
+            cond('c3', 'beta', 'yes'),
+          ],
+          groups: [
+            { operator: 'AND', conditions: [cond('c1', 'country', 'DE')] },
+            {
+              operator: 'OR',
+              conditions: [
+                cond('c2', 'plan', 'pro'),
+                cond('c3', 'beta', 'yes'),
+              ],
+            },
+          ],
+        })
+
+      it('creates a rule with condition groups', async () => {
+        mocks.post.mockResolvedValue({ data: { rule: groupedRule() } })
+        const user = userEvent.setup()
+        renderPage('?tab=targeting')
+        await user.click(
+          await screen.findByRole('button', { name: 'Add rule' })
+        )
+        await user.type(
+          screen.getByLabelText('Condition 1 attribute'),
+          'country'
+        )
+        await user.type(screen.getByLabelText('Condition 1 value'), 'DE')
+        await user.click(screen.getByRole('button', { name: 'Add group' }))
+
+        await user.selectOptions(screen.getByLabelText('Group 2 match'), 'OR')
+        await user.type(screen.getByLabelText('Condition 2 attribute'), 'plan')
+        await user.type(screen.getByLabelText('Condition 2 value'), 'pro')
+        await user.click(
+          screen.getByRole('button', { name: 'Add condition to group 2' })
+        )
+        await user.type(screen.getByLabelText('Condition 3 attribute'), 'beta')
+        await user.type(screen.getByLabelText('Condition 3 value'), 'yes')
+        await user.selectOptions(screen.getByLabelText('Combine groups'), 'AND')
+
+        const form = screen
+          .getByLabelText('Condition 1 value')
+          .closest('form') as HTMLFormElement
+        await user.click(within(form).getByRole('button', { name: 'Add rule' }))
+
+        await waitFor(() => expect(mocks.post).toHaveBeenCalled())
+        const body = mocks.post.mock.calls[0][1]
+        expect(body).toMatchObject({
+          operator: 'AND',
+          groups: [
+            {
+              operator: 'AND',
+              conditions: [
+                { attribute: 'country', operator: 'EQUALS', value: 'DE' },
+              ],
+            },
+            {
+              operator: 'OR',
+              conditions: [
+                { attribute: 'plan', operator: 'EQUALS', value: 'pro' },
+                { attribute: 'beta', operator: 'EQUALS', value: 'yes' },
+              ],
+            },
+          ],
+        })
+        expect(body).not.toHaveProperty('conditions')
+      })
+
+      it('shows grouped rules with parentheses', async () => {
+        state.rules = [groupedRule()]
+        renderPage('?tab=targeting')
+        const name = await screen.findByText('DE or beta')
+        const item = name.closest('li') as HTMLElement
+        expect(item.textContent?.replace(/\s+/g, ' ')).toMatch(
+          /\( ?country EQUALS DE ?\) ?OR ?\( ?plan EQUALS pro ?OR ?beta EQUALS yes ?\)/
+        )
+      })
+
+      it('prefills groups on edit and saves a single group flat again', async () => {
+        state.rules = [groupedRule()]
+        mocks.patch.mockResolvedValue({ data: { rule: rule() } })
+        const user = userEvent.setup()
+        renderPage('?tab=targeting')
+        await user.click(
+          await screen.findByRole('button', { name: 'Edit rule "DE or beta"' })
+        )
+        expect(screen.getByLabelText('Combine groups')).toHaveValue('OR')
+        expect(screen.getByLabelText('Group 2 match')).toHaveValue('OR')
+        expect(screen.getByLabelText('Condition 3 value')).toHaveValue('yes')
+
+        await user.click(screen.getByRole('button', { name: 'Remove group 2' }))
+        expect(
+          screen.queryByLabelText('Combine groups')
+        ).not.toBeInTheDocument()
+        await user.click(screen.getByRole('button', { name: 'Save' }))
+
+        await waitFor(() =>
+          expect(mocks.patch).toHaveBeenCalledWith(
+            `/feature-flags/${FLAG}/targeting-rules/r1`,
+            expect.objectContaining({
+              operator: 'AND',
+              conditions: [
+                { attribute: 'country', operator: 'EQUALS', value: 'DE' },
+              ],
+            })
+          )
+        )
+        expect(mocks.patch.mock.calls[0][1]).not.toHaveProperty('groups')
+      })
+    })
+
+    it('offers no brand scope in single projects', async () => {
+      const user = userEvent.setup()
+      renderPage('?tab=targeting')
+      await user.click(await screen.findByRole('button', { name: 'Add rule' }))
+      expect(
+        screen.getByRole('group', { name: 'Environments' })
+      ).toBeInTheDocument()
+      expect(
+        screen.queryByRole('group', { name: 'Brands' })
+      ).not.toBeInTheDocument()
+    })
+
+    describe('brand scope (MULTI)', () => {
       const BRAND = '64b0000000000000000000b1'
-      const brandRule = (overrides: Record<string, unknown> = {}) =>
-        rule({ id: 'br1', name: 'Acme beta', brandId: BRAND, ...overrides })
-      let brandRules: unknown[]
-      let inherited: boolean
 
       beforeEach(() => {
         mocks.projectType = 'MULTI'
-        state.rules = [rule()]
         state.flagsWithBrands = [
           {
             id: FLAG,
@@ -753,68 +1031,38 @@ describe('Flag detail page', () => {
             ],
           },
         ]
-        brandRules = []
-        inherited = true
-        const base = mocks.get.getMockImplementation()
-        mocks.get.mockImplementation((url: string, config?: any) => {
-          if (
-            url === `/feature-flags/${FLAG}/targeting-rules` &&
-            config?.params?.brandId
-          ) {
-            return Promise.resolve({
-              data: inherited
-                ? { rules: state.rules, inherited: true }
-                : { rules: brandRules, inherited: false },
-            })
-          }
-          return base?.(url, config)
-        })
       })
 
-      it('shows inherited environment rules for a brand without own rules', async () => {
-        const user = userEvent.setup()
+      it('shows where a rule applies', async () => {
+        state.rules = [
+          rule({
+            environmentIds: [],
+            brandIds: [BRAND],
+            brandsExcluded: true,
+          }),
+        ]
         renderPage('?tab=targeting')
-        await screen.findByText('German users')
-        await user.selectOptions(await screen.findByLabelText('Brand'), BRAND)
-
-        expect(mocks.get).toHaveBeenCalledWith(
-          `/feature-flags/${FLAG}/targeting-rules`,
-          { params: { environmentId: ENV_DEV, brandId: BRAND } }
-        )
+        const item = (await screen.findByText('German users')).closest(
+          'li'
+        ) as HTMLElement
+        expect(within(item).getByText('All environments')).toBeInTheDocument()
         expect(
-          await screen.findByText(/This brand uses the rules of the environment/)
+          within(item).getByText('All brands except Acme')
         ).toBeInTheDocument()
-        expect(screen.getByText('German users')).toBeInTheDocument()
-        // Inherited rules are read-only here
-        expect(
-          screen.queryByRole('button', { name: 'Edit rule "German users"' })
-        ).not.toBeInTheDocument()
-        expect(
-          screen.queryByRole('button', { name: 'Delete rule "German users"' })
-        ).not.toBeInTheDocument()
-        expect(
-          screen.getByRole('switch', { name: 'Rule "German users" enabled' })
-        ).toBeDisabled()
-        expect(
-          screen.queryByRole('button', { name: 'Use environment rules' })
-        ).not.toBeInTheDocument()
       })
 
-      it('creates the first own rule of a brand', async () => {
-        mocks.post.mockResolvedValue({ data: { rule: brandRule() } })
+      it('creates a rule for all brands except one', async () => {
+        mocks.post.mockResolvedValue({ data: { rule: rule({ id: 'r2' }) } })
         const user = userEvent.setup()
         renderPage('?tab=targeting')
-        await screen.findByText('German users')
-        await user.selectOptions(await screen.findByLabelText('Brand'), BRAND)
-        await screen.findByText(/This brand uses the rules of the environment/)
-        const brandLoads = mocks.get.mock.calls.filter(
-          ([url]) => url === `/projects/${PROJECT}/flags-with-brands`
-        ).length
-
-        await user.click(screen.getByRole('button', { name: 'Add rule' }))
-        await user.type(screen.getByLabelText(/Rule name/), 'Acme beta')
-        await user.type(screen.getByLabelText('Condition 1 attribute'), 'beta')
-        await user.type(screen.getByLabelText('Condition 1 value'), 'yes')
+        await user.click(
+          await screen.findByRole('button', { name: 'Add rule' })
+        )
+        const brands = within(screen.getByRole('group', { name: 'Brands' }))
+        await user.click(brands.getByRole('checkbox', { name: 'Acme' }))
+        await user.selectOptions(screen.getByLabelText('Brands mode'), 'none')
+        await user.type(screen.getByLabelText('Condition 1 attribute'), 'plan')
+        await user.type(screen.getByLabelText('Condition 1 value'), 'pro')
         const form = screen
           .getByLabelText('Condition 1 value')
           .closest('form') as HTMLFormElement
@@ -824,66 +1072,12 @@ describe('Flag detail page', () => {
           expect(mocks.post).toHaveBeenCalledWith(
             `/feature-flags/${FLAG}/targeting-rules`,
             expect.objectContaining({
-              environmentId: ENV_DEV,
-              brandId: BRAND,
-              priority: 0,
+              environmentIds: [],
+              brandIds: [BRAND],
+              brandsExcluded: true,
             })
           )
         )
-        // The own rule replaces the inherited list
-        expect(await screen.findByText('Acme beta')).toBeInTheDocument()
-        expect(screen.queryByText('German users')).not.toBeInTheDocument()
-        expect(
-          screen.queryByText(/This brand uses the rules of the environment/)
-        ).not.toBeInTheDocument()
-        // Brand values are reloaded (the brand override may be new)
-        await waitFor(() =>
-          expect(
-            mocks.get.mock.calls.filter(
-              ([url]) => url === `/projects/${PROJECT}/flags-with-brands`
-            ).length
-          ).toBeGreaterThan(brandLoads)
-        )
-      })
-
-      it('resets the own rules of a brand after confirmation', async () => {
-        inherited = false
-        brandRules = [brandRule()]
-        const user = userEvent.setup()
-        renderPage('?tab=targeting')
-        await screen.findByText('German users')
-        await user.selectOptions(await screen.findByLabelText('Brand'), BRAND)
-        expect(await screen.findByText('Acme beta')).toBeInTheDocument()
-        expect(
-          screen.getByRole('button', { name: 'Edit rule "Acme beta"' })
-        ).toBeInTheDocument()
-
-        await user.click(
-          screen.getByRole('button', { name: 'Use environment rules' })
-        )
-        const dialog = await screen.findByRole('dialog')
-        expect(mocks.del).not.toHaveBeenCalled()
-        inherited = true
-        await user.click(within(dialog).getByRole('button', { name: 'Reset' }))
-
-        await waitFor(() =>
-          expect(mocks.del).toHaveBeenCalledWith(
-            `/feature-flags/${FLAG}/targeting-rules`,
-            { params: { environmentId: ENV_DEV, brandId: BRAND } }
-          )
-        )
-        expect(
-          await screen.findByText(/This brand uses the rules of the environment/)
-        ).toBeInTheDocument()
-        expect(screen.getByText('German users')).toBeInTheDocument()
-      })
-
-      it('environment rules stay editable with "All brands" selected', async () => {
-        renderPage('?tab=targeting')
-        expect(
-          await screen.findByRole('button', { name: 'Edit rule "German users"' })
-        ).toBeInTheDocument()
-        expect(screen.getByLabelText('Brand')).toHaveValue('')
       })
     })
 

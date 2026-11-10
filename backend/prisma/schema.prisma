@@ -171,6 +171,7 @@ model FeatureFlag {
   updatedBy        User?             @relation("UpdatedFlags", fields: [updatedById], references: [id])
   flagEnvironments FlagEnvironment[]
   experiments      Experiment[]
+  targetingRules   TargetingRule[]
 
   @@unique([projectId, key])
   @@index([organizationId])
@@ -210,22 +211,43 @@ model FlagEnvironment {
 }
 
 model TargetingRule {
-  id         String       @id @default(auto()) @map("_id") @db.ObjectId
-  flagEnvId  String       @db.ObjectId
-  name       String?
-  operator   RuleOperator @default(AND)
-  serveValue String
-  isDefault  Boolean      @default(false)
-  enabled    Boolean      @default(true)
-  priority   Int          @default(0)
-  createdAt  DateTime     @default(now())
-  updatedAt  DateTime     @updatedAt
+  id                   String       @id @default(auto()) @map("_id") @db.ObjectId
+  // Rules are flag-wide; environment/brand only scope them (see below)
+  flagId               String?      @db.ObjectId
+  // Legacy: rules used to belong to one FlagEnvironment row. Only read by
+  // the startup migration (flag-wide-rules.migration.ts), then null.
+  flagEnvId            String?      @db.ObjectId
+  // Scope: empty list = all; *Excluded inverts the list ("none of")
+  environmentIds       String[]     @db.ObjectId
+  environmentsExcluded Boolean      @default(false)
+  brandIds             String[]     @db.ObjectId
+  brandsExcluded       Boolean      @default(false)
+  name                 String?
+  operator             RuleOperator @default(AND)
+  serveValue           String
+  isDefault            Boolean      @default(false)
+  enabled              Boolean      @default(true)
+  priority             Int          @default(0)
+  // Condition groups: `operator` combines the groups, groupOperators[i]
+  // combines the conditions of group i (RuleCondition.groupIndex). Rules
+  // without groupOperators are one group combined with `operator`.
+  groupOperators       RuleOperator[]
+  // Optional time window: the rule applies while activeFrom <= now < activeUntil
+  activeFrom           DateTime?
+  activeUntil          DateTime?
+  // Next window bound not yet announced to SDK clients (RuleScheduleWorker)
+  nextBoundaryAt       DateTime?
+  createdAt            DateTime     @default(now())
+  updatedAt            DateTime     @updatedAt
 
   // Relations
-  flagEnvironment FlagEnvironment @relation(fields: [flagEnvId], references: [id], onDelete: Cascade)
+  flag            FeatureFlag?     @relation(fields: [flagId], references: [id], onDelete: Cascade)
+  flagEnvironment FlagEnvironment? @relation(fields: [flagEnvId], references: [id], onDelete: Cascade)
   conditions      RuleCondition[]
 
+  @@index([flagId])
   @@index([flagEnvId])
+  @@index([nextBoundaryAt])
   @@map("targeting_rules")
 }
 
@@ -235,12 +257,14 @@ enum RuleOperator {
 }
 
 model RuleCondition {
-  id        String            @id @default(auto()) @map("_id") @db.ObjectId
-  ruleId    String            @db.ObjectId
-  attribute String
-  operator  ConditionOperator
-  value     String
-  createdAt DateTime          @default(now())
+  id         String            @id @default(auto()) @map("_id") @db.ObjectId
+  ruleId     String            @db.ObjectId
+  attribute  String
+  operator   ConditionOperator
+  value      String
+  // Condition group of the rule (index into groupOperators); null = group 0
+  groupIndex Int?
+  createdAt  DateTime          @default(now())
 
   // Relations
   rule TargetingRule @relation(fields: [ruleId], references: [id], onDelete: Cascade)

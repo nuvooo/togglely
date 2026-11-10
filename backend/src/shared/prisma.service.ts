@@ -7,6 +7,7 @@ import {
 import { PrismaClient } from '@prisma/client'
 import { migrateBrandInheritance } from './brand-inherit.migration'
 import { migrateEnvironmentSortOrder } from './environment-sort-order.migration'
+import { migrateFlagWideRules } from './flag-wide-rules.migration'
 
 @Injectable()
 export class PrismaService
@@ -18,8 +19,20 @@ export class PrismaService
   async onModuleInit() {
     await this.$connect()
     await this.normalizeLegacyDocuments()
+    await this.runFlagWideRulesMigration()
     await this.runBrandInheritanceMigration()
     await this.runEnvironmentSortOrderMigration()
+  }
+
+  /** Every start, best-effort: never blocks boot. */
+  private async runFlagWideRulesMigration() {
+    try {
+      await migrateFlagWideRules(this, this.logger)
+    } catch (error) {
+      this.logger.warn(
+        `Flag-wide targeting rules migration skipped: ${String(error)}`
+      )
+    }
   }
 
   /** One-time, best-effort: never blocks boot. */
@@ -93,6 +106,17 @@ export class PrismaService
           {
             q: { enabled: { $exists: false } },
             u: { $set: { enabled: true } },
+            multi: true,
+          },
+          // Rule scope flags were added later; missing means "one of"
+          {
+            q: { environmentsExcluded: { $exists: false } },
+            u: { $set: { environmentsExcluded: false } },
+            multi: true,
+          },
+          {
+            q: { brandsExcluded: { $exists: false } },
+            u: { $set: { brandsExcluded: false } },
             multi: true,
           },
         ],

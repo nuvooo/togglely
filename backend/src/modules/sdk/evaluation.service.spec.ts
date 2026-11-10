@@ -456,7 +456,139 @@ describe('EvaluationService', () => {
     })
   })
 
+  describe('condition groups', () => {
+    const c = (attribute: string, value: string, groupIndex: number) => ({
+      id: attribute + groupIndex,
+      attribute,
+      operator: 'EQUALS' as const,
+      value,
+      groupIndex,
+    })
+    const groupedRule = (
+      operator: 'AND' | 'OR',
+      groupOperators: ('AND' | 'OR')[],
+      conditions: ReturnType<typeof c>[]
+    ): TargetingRuleWithConditions => ({
+      id: 'g',
+      name: 'grouped',
+      operator,
+      groupOperators,
+      serveValue: 'on',
+      isDefault: false,
+      priority: 0,
+      conditions,
+    })
+
+    // country = DE AND (plan = pro OR beta = yes)
+    const deAndProOrBeta = groupedRule(
+      'AND',
+      ['AND', 'OR'],
+      [c('country', 'DE', 0), c('plan', 'pro', 1), c('beta', 'yes', 1)]
+    )
+
+    it.each([
+      [{ country: 'DE', plan: 'pro' }, true],
+      [{ country: 'DE', beta: 'yes' }, true],
+      [{ country: 'DE', plan: 'free' }, false],
+      [{ country: 'AT', plan: 'pro', beta: 'yes' }, false],
+    ])('A AND (B OR C) with %j -> %s', (context, expected) => {
+      expect(service.matchesRule(deAndProOrBeta, context)).toBe(expected)
+    })
+
+    // (country = DE AND plan = pro) OR (country = AT AND beta = yes)
+    const eitherPair = groupedRule(
+      'OR',
+      ['AND', 'AND'],
+      [
+        c('country', 'DE', 0),
+        c('plan', 'pro', 0),
+        c('country', 'AT', 1),
+        c('beta', 'yes', 1),
+      ]
+    )
+
+    it.each([
+      [{ country: 'DE', plan: 'pro' }, true],
+      [{ country: 'AT', beta: 'yes' }, true],
+      [{ country: 'DE', beta: 'yes' }, false],
+      [{ country: 'AT', plan: 'pro' }, false],
+    ])('(A AND B) OR (C AND D) with %j -> %s', (context, expected) => {
+      expect(service.matchesRule(eitherPair, context)).toBe(expected)
+    })
+
+    it('keeps rules without groups as one group with the rule operator', () => {
+      const legacy = groupedRule(
+        'OR',
+        [],
+        [c('country', 'DE', 0), c('country', 'AT', 0)]
+      )
+      expect(service.matchesRule(legacy, { country: 'AT' })).toBe(true)
+      expect(service.matchesRule(legacy, { country: 'CH' })).toBe(false)
+    })
+  })
+
   describe('evaluateRules', () => {
+    describe('time windows', () => {
+      const NOW = new Date('2026-11-28T12:00:00.000Z')
+      const windowRule = (
+        serveValue: string,
+        priority: number,
+        window: { activeFrom?: Date | null; activeUntil?: Date | null }
+      ): TargetingRuleWithConditions => ({
+        id: serveValue,
+        name: serveValue,
+        operator: 'AND',
+        serveValue,
+        isDefault: false,
+        priority,
+        conditions: [],
+        ...window,
+      })
+
+      it('skips rules that have not started yet', () => {
+        const rules = [
+          windowRule('future', 0, {
+            activeFrom: new Date('2026-12-01T00:00:00.000Z'),
+          }),
+          windowRule('always', 1, {}),
+        ]
+        expect(service.evaluateRules(rules, {}, NOW)).toBe('always')
+      })
+
+      it('skips expired rules', () => {
+        const rules = [
+          windowRule('expired', 0, {
+            activeUntil: new Date('2026-11-28T12:00:00.000Z'),
+          }),
+          windowRule('always', 1, {}),
+        ]
+        expect(service.evaluateRules(rules, {}, NOW)).toBe('always')
+      })
+
+      it('applies rules inside their window', () => {
+        const rules = [
+          windowRule('black-friday', 0, {
+            activeFrom: new Date('2026-11-27T00:00:00.000Z'),
+            activeUntil: new Date('2026-11-30T00:00:00.000Z'),
+          }),
+          windowRule('always', 1, {}),
+        ]
+        expect(service.evaluateRules(rules, {}, NOW)).toBe('black-friday')
+      })
+
+      it('skips a default rule outside its window', () => {
+        const rules = [
+          {
+            ...windowRule('default', 0, {
+              activeUntil: new Date('2026-11-01T00:00:00.000Z'),
+            }),
+            isDefault: true,
+          },
+        ]
+        expect(service.evaluateRules(rules, {}, NOW)).toBeNull()
+      })
+    })
+
     it('should return null for empty rules', () => {
       expect(service.evaluateRules([], {})).toBeNull()
     })

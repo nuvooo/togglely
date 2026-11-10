@@ -1,5 +1,7 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { ConditionOperator, RuleOperator } from '@prisma/client'
+import { groupConditions } from './condition-groups'
+import { isRuleActiveAt } from './rule-schedule'
 
 export interface ToggleContext {
   userId?: string
@@ -17,6 +19,11 @@ export interface TargetingRuleWithConditions {
   isDefault: boolean
   enabled?: boolean
   priority: number
+  /** Operators of the condition groups, see groupConditions */
+  groupOperators?: RuleOperator[] | null
+  /** Optional time window, see isRuleActiveAt */
+  activeFrom?: Date | null
+  activeUntil?: Date | null
   conditions: RuleConditionData[]
 }
 
@@ -25,6 +32,7 @@ export interface RuleConditionData {
   attribute: string
   operator: ConditionOperator
   value: string
+  groupIndex?: number | null
 }
 
 export interface EvaluationResult {
@@ -80,18 +88,20 @@ export class EvaluationService {
    * Rules are evaluated in priority order (lowest number = highest priority).
    * The first matching rule wins and its serveValue is returned.
    * Default rules (isDefault=true) are evaluated last as fallback.
+   * Disabled rules and rules outside their time window are skipped.
    */
   evaluateRules(
     rules: TargetingRuleWithConditions[],
-    context: ToggleContext
+    context: ToggleContext,
+    now: Date = new Date()
   ): string | null {
     if (rules.length === 0) {
       return null
     }
 
-    // Sort by priority (lowest number = highest priority); skip disabled rules
+    // Sort by priority (lowest number = highest priority)
     const sorted = rules
-      .filter((r) => r.enabled !== false)
+      .filter((r) => r.enabled !== false && isRuleActiveAt(r, now))
       .sort((a, b) => a.priority - b.priority)
 
     // Evaluate non-default rules first
@@ -116,24 +126,31 @@ export class EvaluationService {
   }
 
   /**
-   * Check if a single rule matches the given context.
-   * AND operator: all conditions must match.
-   * OR operator: at least one condition must match.
+   * Check if a single rule matches the given context. Each condition group
+   * combines its conditions with its operator (AND: all, OR: at least one);
+   * the rule operator combines the groups the same way. A rule without
+   * groups is one group with the rule operator.
    */
   matchesRule(
     rule: TargetingRuleWithConditions,
     context: ToggleContext
   ): boolean {
-    if (rule.conditions.length === 0) {
+    const groups = groupConditions(rule)
+    if (groups.length === 0) {
       return true
     }
 
-    if (rule.operator === 'AND') {
-      return rule.conditions.every((c) => this.matchesCondition(c, context))
-    }
+    const combine = <T>(
+      operator: RuleOperator,
+      items: T[],
+      test: (item: T) => boolean
+    ) => (operator === 'AND' ? items.every(test) : items.some(test))
 
-    // OR
-    return rule.conditions.some((c) => this.matchesCondition(c, context))
+    return combine(rule.operator, groups, (group) =>
+      combine(group.operator, group.conditions, (c) =>
+        this.matchesCondition(c, context)
+      )
+    )
   }
 
   /**

@@ -62,6 +62,10 @@ environment:
     default: "false"
     description: "Disable the webhook delivery worker on this instance"
 
+  - name: RULE_SCHEDULER_DISABLED
+    default: "false"
+    description: "Disable the targeting rule scheduler on this instance (announces time window starts/ends of targeting rules to SDK clients)"
+
   - name: CORS_ORIGINS
     description: "Comma-separated list of allowed CORS origins (e.g., https://app.togglely.de,https://www.mein-shop.de)"
     
@@ -147,6 +151,7 @@ services:
       - WEBHOOK_ALLOW_PRIVATE=${WEBHOOK_ALLOW_PRIVATE}
       - WEBHOOK_ALLOW_INSECURE=${WEBHOOK_ALLOW_INSECURE}
       - WEBHOOK_WORKER_DISABLED=${WEBHOOK_WORKER_DISABLED}
+      - RULE_SCHEDULER_DISABLED=${RULE_SCHEDULER_DISABLED}
     expose:
       - "4000"
     depends_on:

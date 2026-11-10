@@ -14,6 +14,9 @@ function createService() {
     flagEnvironment: {
       deleteMany: jest.fn(),
     },
+    targetingRule: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
     configVersion: {
       deleteMany: jest.fn().mockResolvedValue({ count: 1 }),
     },

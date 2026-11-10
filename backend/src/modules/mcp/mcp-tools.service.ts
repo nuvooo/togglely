@@ -199,11 +199,13 @@ export class McpToolsService {
     const divergent = findDivergentStates(states)
     const [enabledRules, openExperiments] = await Promise.all([
       this.prisma.targetingRule.findMany({
-        where: {
-          flagEnvId: { in: flag.flagEnvironments.map((fe) => fe.id) },
-          enabled: true,
+        where: { flagId: flag.id, enabled: true },
+        select: {
+          environmentIds: true,
+          environmentsExcluded: true,
+          brandIds: true,
+          brandsExcluded: true,
         },
-        select: { flagEnvId: true },
       }),
       this.prisma.experiment.findMany({
         where: {
@@ -214,7 +216,6 @@ export class McpToolsService {
       }),
     ])
     const blockers = describeDeleteBlockers(
-      flag.flagEnvironments,
       enabledRules,
       openExperiments,
       environments,

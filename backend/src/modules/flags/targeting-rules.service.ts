@@ -4,43 +4,59 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common'
-import { FlagType } from '@prisma/client'
+import { FlagType, RuleOperator } from '@prisma/client'
 import { isObjectId } from '../../shared/access/access.service'
 import { PrismaService } from '../../shared/prisma.service'
 import { AuditLogsService } from '../audit-logs/audit-logs.service'
 import { writeAudit } from '../audit-logs/write-audit'
 import { ChangeEventsService } from '../change-events/change-events.service'
+import { groupConditions } from '../sdk/condition-groups'
 import { isRegexPatternAllowed } from '../sdk/evaluation.service'
-import { getDefaultFlagValue } from '../sdk/sdk.helpers'
+import { nextBoundaryAfter } from '../sdk/rule-schedule'
+import { RuleScope, scopedEnvironmentIds } from '../sdk/rule-scope'
 import {
+  ConditionGroupDto,
   CreateTargetingRuleDto,
+  RULE_CONDITIONS_MAX,
   RuleConditionDto,
   UpdateTargetingRuleDto,
 } from './dto/targeting-rule.dto'
 
 const RULE_INCLUDE = {
-  conditions: { orderBy: { createdAt: 'asc' as const } },
-  flagEnvironment: { select: { environmentId: true, brandId: true } },
+  // createMany shares one createdAt; the id keeps the insertion order
+  conditions: {
+    orderBy: [{ createdAt: 'asc' as const }, { id: 'asc' as const }],
+  },
 }
 
-type RuleWithRelations = {
+type RuleWithRelations = RuleScope & {
   id: string
   name: string | null
-  operator: string
+  operator: RuleOperator
+  groupOperators?: RuleOperator[]
   serveValue: string
   priority: number
   isDefault: boolean
   enabled: boolean
+  activeFrom?: Date | null
+  activeUntil?: Date | null
   createdAt: Date
   updatedAt: Date
-  flagEnvironment: { environmentId: string; brandId: string | null }
   conditions: {
     id: string
     attribute: string
     operator: string
     value: string
+    groupIndex?: number | null
   }[]
 }
+
+const toConditionResponse = (c: RuleWithRelations['conditions'][number]) => ({
+  id: c.id,
+  attribute: c.attribute,
+  operator: c.operator,
+  value: c.value,
+})
 
 interface FlagRef {
   id: string
@@ -49,11 +65,18 @@ interface FlagRef {
   organizationId: string
 }
 
+interface ScopeFields {
+  environmentIds?: string[]
+  environmentsExcluded?: boolean
+  brandIds?: string[]
+  brandsExcluded?: boolean
+}
+
 /**
- * CRUD for targeting rules. Rules belong to the environment-level
- * FlagEnvironment (brandId = null) or to a brand override. A brand without
- * own rules inherits the environment rules (see SdkService).
- * Access checks are done by the controller.
+ * CRUD for targeting rules. Rules are flag-wide; each rule's scope
+ * (environments and brands, "one of" or "none of", empty = all) decides
+ * where it applies, see ruleAppliesTo. Access checks are done by the
+ * controller; scope ids are checked against the flag's project here.
  */
 @Injectable()
 export class TargetingRulesService {
@@ -65,39 +88,10 @@ export class TargetingRulesService {
     private readonly changes: ChangeEventsService
   ) {}
 
-  /**
-   * Environment rules, or the rules of a brand (needs environmentId). A
-   * brand without own rules gets the environment rules with
-   * `inherited: true`.
-   */
-  async findAll(flagId: string, environmentId?: string, brandId?: string) {
-    if (brandId && environmentId) {
-      const own = await this.findRules(flagId, environmentId, brandId)
-      if (own.length > 0) return { rules: own, inherited: false }
-      return {
-        rules: await this.findRules(flagId, environmentId, null),
-        inherited: true,
-      }
-    }
-    return {
-      rules: await this.findRules(flagId, environmentId, null),
-      inherited: false,
-    }
-  }
-
-  private async findRules(
-    flagId: string,
-    environmentId: string | undefined,
-    brandId: string | null
-  ) {
+  /** All rules of the flag in priority order. */
+  async findAll(flagId: string) {
     const rules = await this.prisma.targetingRule.findMany({
-      where: {
-        flagEnvironment: {
-          flagId,
-          brandId,
-          ...(environmentId ? { environmentId } : {}),
-        },
-      },
+      where: { flagId },
       include: RULE_INCLUDE,
       orderBy: { priority: 'asc' },
     })
@@ -107,26 +101,36 @@ export class TargetingRulesService {
   async create(flag: FlagRef, dto: CreateTargetingRuleDto, userId: string) {
     const flagType = await this.getFlagType(flag.id)
     this.validateServeValue(flagType, dto.serveValue)
-    this.validateConditions(dto.conditions)
-
-    const flagEnv = dto.brandId
-      ? await this.getOrCreateBrandFlagEnvironment(
-          flag.id,
-          dto.environmentId,
-          dto.brandId,
-          flagType
-        )
-      : await this.getOrCreateFlagEnvironment(
-          flag.id,
-          dto.environmentId,
-          flagType
-        )
+    const groups = this.conditionData(dto, 'AND')
+    if (!groups) {
+      throw new BadRequestException('At least one condition is required')
+    }
+    const window = {
+      activeFrom: null,
+      activeUntil: null,
+      nextBoundaryAt: null,
+      ...this.windowData(dto),
+    }
+    const scope = {
+      environmentIds: [] as string[],
+      environmentsExcluded: false,
+      brandIds: [] as string[],
+      brandsExcluded: false,
+      ...(await this.scopeData(flag, {
+        ...dto,
+        // Legacy shorthand of clients that created rules per environment
+        environmentIds:
+          dto.environmentIds ??
+          (dto.environmentId ? [dto.environmentId] : undefined),
+        brandIds: dto.brandIds ?? (dto.brandId ? [dto.brandId] : undefined),
+      })),
+    }
 
     const priority =
       dto.priority ??
       ((
         await this.prisma.targetingRule.findFirst({
-          where: { flagEnvId: flagEnv.id },
+          where: { flagId: flag.id },
           orderBy: { priority: 'desc' },
           select: { priority: true },
         })
@@ -134,21 +138,23 @@ export class TargetingRulesService {
 
     const rule = await this.prisma.targetingRule.create({
       data: {
-        flagEnvId: flagEnv.id,
+        flagId: flag.id,
+        ...scope,
         name: dto.name ?? null,
-        operator: dto.operator ?? 'AND',
+        operator: groups.operator,
+        groupOperators: groups.groupOperators,
         serveValue: dto.serveValue,
         priority,
         enabled: dto.enabled ?? true,
-        conditions: { create: dto.conditions.map((c) => this.toCondition(c)) },
+        ...window,
+        conditions: { create: groups.conditions },
       },
       include: RULE_INCLUDE,
     })
-    this.recordRulesChanged(flag, rule.flagEnvironment.environmentId)
+    this.recordRulesChanged(flag, [rule])
 
     await this.audit('targeting_rule.created', flag, rule.id, userId, {
-      environmentId: dto.environmentId,
-      ...(dto.brandId ? { brandId: dto.brandId } : {}),
+      ...scope,
       serveValue: rule.serveValue,
     })
 
@@ -166,31 +172,42 @@ export class TargetingRulesService {
     if (dto.serveValue !== undefined) {
       this.validateServeValue(await this.getFlagType(flag.id), dto.serveValue)
     }
-    if (dto.conditions) {
-      this.validateConditions(dto.conditions)
-    }
+    const groups = this.conditionData(dto, existing.operator)
+    // Rules with one group keep rule and group operator in sync, so clients
+    // that only know `operator` keep working
+    const groupOperators =
+      groups?.groupOperators ??
+      (dto.operator && existing.groupOperators.length <= 1
+        ? [dto.operator]
+        : undefined)
+    const window = this.windowData(dto, existing)
+    const scope = await this.scopeData(flag, dto)
 
     const rule = await this.prisma.$transaction(async (tx) => {
-      if (dto.conditions) {
+      if (groups) {
         await tx.ruleCondition.deleteMany({ where: { ruleId } })
         await tx.ruleCondition.createMany({
-          data: dto.conditions.map((c) => ({ ruleId, ...this.toCondition(c) })),
+          data: groups.conditions.map((c) => ({ ruleId, ...c })),
         })
       }
       return tx.targetingRule.update({
         where: { id: ruleId },
         data: {
           name: dto.name,
-          operator: dto.operator,
+          operator: groups?.operator ?? dto.operator,
+          groupOperators,
           serveValue: dto.serveValue,
           priority: dto.priority,
           enabled: dto.enabled,
+          ...scope,
+          ...window,
         },
         include: RULE_INCLUDE,
       })
     })
 
-    this.recordRulesChanged(flag, rule.flagEnvironment.environmentId)
+    // Old and new scope: SDK results can change in both
+    this.recordRulesChanged(flag, [existing, rule])
 
     await this.audit('targeting_rule.updated', flag, ruleId, userId, dto, {
       serveValue: existing.serveValue,
@@ -206,7 +223,7 @@ export class TargetingRulesService {
       this.prisma.ruleCondition.deleteMany({ where: { ruleId } }),
       this.prisma.targetingRule.delete({ where: { id: ruleId } }),
     ])
-    this.recordRulesChanged(flag, existing.flagEnvironment.environmentId)
+    this.recordRulesChanged(flag, [existing])
     await this.audit(
       'targeting_rule.deleted',
       flag,
@@ -221,53 +238,11 @@ export class TargetingRulesService {
     )
   }
 
-  /**
-   * Deletes all own rules of a brand override; the brand then inherits the
-   * environment rules again. The override values (enabled, default) stay.
-   */
-  async resetBrandRules(
-    flag: FlagRef,
-    environmentId: string,
-    brandId: string,
-    userId: string
-  ) {
-    const brandEnv = await this.prisma.flagEnvironment.findFirst({
-      where: { flagId: flag.id, environmentId, brandId },
-      select: { id: true },
-    })
-    const ruleIds = brandEnv
-      ? (
-          await this.prisma.targetingRule.findMany({
-            where: { flagEnvId: brandEnv.id },
-            select: { id: true },
-          })
-        ).map((r) => r.id)
-      : []
-    if (!brandEnv || ruleIds.length === 0) return { deleted: 0 }
-
-    await this.prisma.$transaction([
-      this.prisma.ruleCondition.deleteMany({
-        where: { ruleId: { in: ruleIds } },
-      }),
-      this.prisma.targetingRule.deleteMany({
-        where: { flagEnvId: brandEnv.id },
-      }),
-    ])
-    this.recordRulesChanged(flag, environmentId)
-    await this.audit('targeting_rule.brand_reset', flag, brandEnv.id, userId, {
-      environmentId,
-      brandId,
-      deletedRules: ruleIds.length,
-    })
-    return { deleted: ruleIds.length }
-  }
-
   /** Loads a rule and ensures it belongs to the given flag. */
   private async findRuleOfFlag(flagId: string, ruleId: string) {
     const rule = isObjectId(ruleId)
       ? await this.prisma.targetingRule.findFirst({
-          where: { id: ruleId, flagEnvironment: { flagId } },
-          include: { flagEnvironment: { select: { environmentId: true } } },
+          where: { id: ruleId, flagId },
         })
       : null
     if (!rule) throw new NotFoundException('Targeting rule not found')
@@ -283,59 +258,37 @@ export class TargetingRulesService {
     return flag.flagType
   }
 
-  private async getOrCreateFlagEnvironment(
-    flagId: string,
-    environmentId: string,
-    flagType: FlagType
-  ) {
-    const existing = await this.prisma.flagEnvironment.findFirst({
-      where: { flagId, environmentId, brandId: null },
-      select: { id: true },
-    })
-    if (existing) return existing
-
-    return this.prisma.flagEnvironment.create({
-      data: {
-        flagId,
-        environmentId,
-        brandId: null,
-        enabled: false,
-        defaultValue: getDefaultFlagValue(flagType),
-      },
-      select: { id: true },
-    })
-  }
-
   /**
-   * Brand override row; created on the first brand rule with the current
-   * environment values, so the brand keeps behaving the same.
+   * Scope fields of a write. Environment and brand ids must belong to the
+   * flag's project (unknown ids: 404, like other cross-project ids).
    */
-  private async getOrCreateBrandFlagEnvironment(
-    flagId: string,
-    environmentId: string,
-    brandId: string,
-    flagType: FlagType
-  ) {
-    const existing = await this.prisma.flagEnvironment.findFirst({
-      where: { flagId, environmentId, brandId },
-      select: { id: true },
-    })
-    if (existing) return existing
-
-    const envDefault = await this.prisma.flagEnvironment.findFirst({
-      where: { flagId, environmentId, brandId: null },
-      select: { enabled: true, defaultValue: true },
-    })
-    return this.prisma.flagEnvironment.create({
-      data: {
-        flagId,
-        environmentId,
-        brandId,
-        enabled: envDefault?.enabled ?? false,
-        defaultValue: envDefault?.defaultValue ?? getDefaultFlagValue(flagType),
-      },
-      select: { id: true },
-    })
+  private async scopeData(flag: FlagRef, dto: ScopeFields) {
+    const data: ScopeFields = {}
+    if (dto.environmentIds !== undefined) {
+      const ids = [...new Set(dto.environmentIds)]
+      const found = await this.prisma.environment.count({
+        where: { id: { in: ids }, projectId: flag.projectId },
+      })
+      if (found !== ids.length) {
+        throw new NotFoundException('Environment not found')
+      }
+      data.environmentIds = ids
+    }
+    if (dto.brandIds !== undefined) {
+      const ids = [...new Set(dto.brandIds)]
+      const found = await this.prisma.brand.count({
+        where: { id: { in: ids }, projectId: flag.projectId },
+      })
+      if (found !== ids.length) throw new NotFoundException('Brand not found')
+      data.brandIds = ids
+    }
+    if (dto.environmentsExcluded !== undefined) {
+      data.environmentsExcluded = dto.environmentsExcluded
+    }
+    if (dto.brandsExcluded !== undefined) {
+      data.brandsExcluded = dto.brandsExcluded
+    }
+    return data
   }
 
   /** The served value must be valid for the flag type. */
@@ -388,37 +341,122 @@ export class TargetingRulesService {
     }
   }
 
-  private toCondition(c: RuleConditionDto) {
-    return { attribute: c.attribute, operator: c.operator, value: c.value }
+  private toCondition(c: RuleConditionDto, groupIndex: number) {
+    return {
+      attribute: c.attribute,
+      operator: c.operator,
+      value: c.value,
+      groupIndex,
+    }
+  }
+
+  /**
+   * Conditions to store (with their group) and the operators, from either
+   * flat `conditions` (one group combined with `operator`) or `groups`
+   * (`operator` combines the groups). Null when the DTO sets neither.
+   */
+  private conditionData(
+    dto: {
+      operator?: RuleOperator
+      conditions?: RuleConditionDto[]
+      groups?: ConditionGroupDto[]
+    },
+    defaultOperator: RuleOperator
+  ) {
+    if (dto.conditions && dto.groups) {
+      throw new BadRequestException('Use either conditions or groups, not both')
+    }
+    const operator = dto.operator ?? defaultOperator
+    if (dto.groups) {
+      const all = dto.groups.flatMap((g) => g.conditions)
+      if (all.length > RULE_CONDITIONS_MAX) {
+        throw new BadRequestException(
+          `At most ${RULE_CONDITIONS_MAX} conditions are allowed`
+        )
+      }
+      this.validateConditions(all)
+      return {
+        operator,
+        groupOperators: dto.groups.map((g) => g.operator),
+        conditions: dto.groups.flatMap((g, index) =>
+          g.conditions.map((c) => this.toCondition(c, index))
+        ),
+      }
+    }
+    if (dto.conditions) {
+      this.validateConditions(dto.conditions)
+      return {
+        operator,
+        groupOperators: [operator],
+        conditions: dto.conditions.map((c) => this.toCondition(c, 0)),
+      }
+    }
+    return null
   }
 
   private toResponse(rule: RuleWithRelations) {
     return {
       id: rule.id,
-      environmentId: rule.flagEnvironment.environmentId,
-      brandId: rule.flagEnvironment.brandId,
+      environmentIds: rule.environmentIds ?? [],
+      environmentsExcluded: rule.environmentsExcluded ?? false,
+      brandIds: rule.brandIds ?? [],
+      brandsExcluded: rule.brandsExcluded ?? false,
       name: rule.name,
       operator: rule.operator,
       serveValue: rule.serveValue,
       priority: rule.priority,
       isDefault: rule.isDefault,
       enabled: rule.enabled,
-      conditions: rule.conditions.map((c) => ({
-        id: c.id,
-        attribute: c.attribute,
-        operator: c.operator,
-        value: c.value,
+      activeFrom: rule.activeFrom?.toISOString() ?? null,
+      activeUntil: rule.activeUntil?.toISOString() ?? null,
+      conditions: rule.conditions.map(toConditionResponse),
+      groups: groupConditions(rule).map((group) => ({
+        operator: group.operator,
+        conditions: group.conditions.map(toConditionResponse),
       })),
       createdAt: rule.createdAt,
       updatedAt: rule.updatedAt,
     }
   }
 
-  private recordRulesChanged(flag: FlagRef, environmentId: string) {
+  /**
+   * Window fields for a write: the effective window (stored values unless
+   * the DTO sets or clears them) must not end before it starts. Returns
+   * nothing when the DTO does not touch the window.
+   */
+  private windowData(
+    dto: { activeFrom?: string | null; activeUntil?: string | null },
+    stored: { activeFrom?: Date | null; activeUntil?: Date | null } = {}
+  ) {
+    if (dto.activeFrom === undefined && dto.activeUntil === undefined) {
+      return {}
+    }
+    const toDate = (
+      value: string | null | undefined,
+      current?: Date | null
+    ): Date | null =>
+      value === undefined ? (current ?? null) : value ? new Date(value) : null
+    const activeFrom = toDate(dto.activeFrom, stored.activeFrom)
+    const activeUntil = toDate(dto.activeUntil, stored.activeUntil)
+    if (activeFrom && activeUntil && activeFrom >= activeUntil) {
+      throw new BadRequestException('activeFrom must be before activeUntil')
+    }
+    return {
+      activeFrom,
+      activeUntil,
+      nextBoundaryAt: nextBoundaryAfter(
+        { activeFrom, activeUntil },
+        new Date()
+      ),
+    }
+  }
+
+  /** Announces the change in every environment the rules (can) apply to. */
+  private recordRulesChanged(flag: FlagRef, rules: RuleScope[]) {
     void this.changes.recordChange({
       organizationId: flag.organizationId,
       projectId: flag.projectId,
-      environmentIds: [environmentId],
+      environmentIds: scopedEnvironmentIds(rules),
       changes: [{ flagKey: flag.key, action: 'rules_changed' }],
     })
   }
