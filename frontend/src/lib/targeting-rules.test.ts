@@ -2,13 +2,16 @@ import { describe, expect, it } from 'vitest'
 import {
   formatCondition,
   formatConditions,
+  formatRuleGroups,
   fromLocalInputValue,
   nextPriority,
   normalizeConditionValue,
+  ruleGroups,
   ruleScheduleStatus,
   sortRulesByPriority,
   type TargetingRule,
   toLocalInputValue,
+  validateGroups,
   validateRuleInput,
   validateServeValue,
   validateWindow,
@@ -178,5 +181,56 @@ describe('ruleScheduleStatus', () => {
     expect(
       ruleScheduleStatus({ activeUntil: '2026-11-28T12:00:00.000Z' }, now)
     ).toEqual({ kind: 'expired', at: '2026-11-28T12:00:00.000Z' })
+  })
+})
+
+describe('condition groups', () => {
+  const c = (id: string, value: string) => ({
+    id,
+    attribute: 'country',
+    operator: 'EQUALS' as const,
+    value,
+  })
+
+  it('uses the groups of the API response', () => {
+    const groups = [
+      { operator: 'AND' as const, conditions: [c('1', 'DE')] },
+      { operator: 'OR' as const, conditions: [c('2', 'AT'), c('3', 'CH')] },
+    ]
+    expect(
+      ruleGroups({ operator: 'OR', conditions: [], groups })
+    ).toEqual(groups)
+  })
+
+  it('falls back to one group for older API versions', () => {
+    expect(ruleGroups({ operator: 'OR', conditions: [c('1', 'DE')] })).toEqual(
+      [{ operator: 'OR', conditions: [c('1', 'DE')] }]
+    )
+    expect(ruleGroups({ operator: 'AND', conditions: [] })).toEqual([])
+  })
+
+  it('formats groups with parentheses only when there are several', () => {
+    expect(
+      formatRuleGroups('AND', [
+        { operator: 'OR', conditions: [c('1', 'DE'), c('2', 'AT')] },
+      ])
+    ).toBe('country EQUALS DE OR country EQUALS AT')
+    expect(
+      formatRuleGroups('OR', [
+        { operator: 'AND', conditions: [c('1', 'DE')] },
+        { operator: 'OR', conditions: [c('2', 'AT'), c('3', 'CH')] },
+      ])
+    ).toBe(
+      '(country EQUALS DE) OR (country EQUALS AT OR country EQUALS CH)'
+    )
+  })
+
+  it('validates group count and empty groups', () => {
+    const one = { operator: 'AND' as const, conditions: [c('1', 'DE')] }
+    expect(validateGroups([one, one])).toBeNull()
+    expect(validateGroups([one, { operator: 'OR', conditions: [] }])).toMatch(
+      /Group 2/
+    )
+    expect(validateGroups(Array(11).fill(one))).toMatch(/10 groups/)
   })
 })

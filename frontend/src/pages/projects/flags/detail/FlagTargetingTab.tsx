@@ -1,4 +1,4 @@
-import { Info, Pencil, Plus, Trash2, Users, X } from 'lucide-react'
+import { Info, Pencil, Plus, Trash2, Users } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -14,43 +14,30 @@ import api from '@/lib/api'
 import { getErrorMessage } from '@/lib/errors'
 import { handleForbidden, notifyWriteError } from '@/lib/permissions'
 import {
-  CONDITION_OPERATORS,
-  type ConditionOperator,
   formatCondition,
   fromLocalInputValue,
-  isListOperator,
-  MAX_CONDITIONS,
   nextPriority,
   normalizeConditionValue,
   type RuleMatchOperator,
+  ruleGroups,
   ruleScheduleStatus,
   sortRulesByPriority,
   type TargetingRule,
   toLocalInputValue,
+  validateGroups,
   validateRuleInput,
   validateWindow,
 } from '@/lib/targeting-rules'
+import {
+  emptyGroup,
+  fieldClass,
+  type GroupDraft,
+  groupsFromRule,
+  RuleConditionsEditor,
+} from './RuleConditionsEditor'
 import type { EnvironmentState, FlagType } from './types'
 
-interface ConditionDraft {
-  key: number
-  attribute: string
-  operator: ConditionOperator
-  value: string
-}
-
-let conditionKeyCounter = 0
-const emptyCondition = (): ConditionDraft => ({
-  key: ++conditionKeyCounter,
-  attribute: '',
-  operator: 'EQUALS',
-  value: '',
-})
-
 const defaultServeValue = (type: FlagType) => (type === 'BOOLEAN' ? 'true' : '')
-
-const fieldClass =
-  'block w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50'
 
 export interface TargetingBrand {
   id: string
@@ -101,10 +88,9 @@ export function FlagTargetingTab({
   const [formError, setFormError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [ruleName, setRuleName] = useState('')
-  const [matchOperator, setMatchOperator] = useState<RuleMatchOperator>('AND')
-  const [conditions, setConditions] = useState<ConditionDraft[]>(() => [
-    emptyCondition(),
-  ])
+  /** Combines the condition groups (with more than one group). */
+  const [ruleOperator, setRuleOperator] = useState<RuleMatchOperator>('AND')
+  const [groups, setGroups] = useState<GroupDraft[]>(() => [emptyGroup()])
   const [serveValue, setServeValue] = useState(() =>
     defaultServeValue(flagType)
   )
@@ -166,8 +152,8 @@ export function FlagTargetingTab({
 
   const resetForm = () => {
     setRuleName('')
-    setMatchOperator('AND')
-    setConditions([emptyCondition()])
+    setRuleOperator('AND')
+    setGroups([emptyGroup()])
     setServeValue(defaultServeValue(flagType))
     setActiveFrom('')
     setActiveUntil('')
@@ -175,24 +161,11 @@ export function FlagTargetingTab({
     setEditingRule(null)
   }
 
-  const updateCondition = (key: number, patch: Partial<ConditionDraft>) => {
-    setConditions((prev) =>
-      prev.map((c) => (c.key === key ? { ...c, ...patch } : c))
-    )
-  }
-
   const startEdit = (rule: TargetingRule) => {
     setEditingRule(rule)
     setRuleName(rule.name ?? '')
-    setMatchOperator(rule.operator)
-    setConditions(
-      rule.conditions.map((c) => ({
-        key: ++conditionKeyCounter,
-        attribute: c.attribute,
-        operator: c.operator,
-        value: c.value,
-      }))
-    )
+    setRuleOperator(rule.operator)
+    setGroups(groupsFromRule(rule))
     setServeValue(rule.serveValue)
     setActiveFrom(toLocalInputValue(rule.activeFrom))
     setActiveUntil(toLocalInputValue(rule.activeUntil))
@@ -204,15 +177,23 @@ export function FlagTargetingTab({
     e.preventDefault()
     if (!environmentId) return
 
-    const fields = {
-      operator: matchOperator,
-      serveValue,
-      conditions: conditions.map((c) => ({
+    const groupInputs = groups.map((g) => ({
+      operator: g.operator,
+      conditions: g.conditions.map((c) => ({
         attribute: c.attribute.trim(),
         operator: c.operator,
         value: normalizeConditionValue(c.operator, c.value),
       })),
-    }
+    }))
+    // One group goes as flat conditions (as before), several as `groups`
+    const fields =
+      groupInputs.length === 1
+        ? {
+            operator: groupInputs[0].operator,
+            serveValue,
+            conditions: groupInputs[0].conditions,
+          }
+        : { operator: ruleOperator, serveValue, groups: groupInputs }
     const name = ruleName.trim()
     const window = {
       activeFrom: fromLocalInputValue(activeFrom),
@@ -220,10 +201,14 @@ export function FlagTargetingTab({
     }
 
     const validationError =
+      validateGroups(groupInputs) ??
       validateRuleInput(flagType, {
-        ...fields,
+        operator: fields.operator,
+        serveValue,
+        conditions: groupInputs.flatMap((g) => g.conditions),
         name: name || undefined,
-      }) ?? validateWindow(window.activeFrom, window.activeUntil)
+      }) ??
+      validateWindow(window.activeFrom, window.activeUntil)
     if (validationError) {
       setFormError(validationError)
       return
@@ -397,6 +382,7 @@ export function FlagTargetingTab({
         {sortRulesByPriority(rules).map((rule, index) => {
           const name = rule.name || t('flag-detail.targeting.unnamed')
           const schedule = ruleScheduleStatus(rule)
+          const groupsOfRule = ruleGroups(rule)
           return (
             <li
               key={rule.id}
@@ -414,7 +400,11 @@ export function FlagTargetingTab({
                         ? t('flag-detail.targeting.active')
                         : t('flag-detail.targeting.inactive')}
                     </Badge>
-                    <Badge variant="outline">{matchLabel(rule.operator)}</Badge>
+                    {groupsOfRule.length <= 1 && (
+                      <Badge variant="outline">
+                        {matchLabel(groupsOfRule[0]?.operator ?? rule.operator)}
+                      </Badge>
+                    )}
                     {schedule && (
                       <Badge
                         variant={
@@ -426,21 +416,42 @@ export function FlagTargetingTab({
                     )}
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-1.5 text-sm">
-                    {rule.conditions.map((condition, cIndex) => (
-                      <span
-                        key={condition.id ?? cIndex}
-                        className="inline-flex items-center gap-1.5"
-                      >
-                        {cIndex > 0 && (
-                          <span className="text-xs font-semibold text-primary">
-                            {rule.operator}
-                          </span>
-                        )}
-                        <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
-                          {formatCondition(condition)}
-                        </code>
-                      </span>
-                    ))}
+                    {groupsOfRule.map((group, gIndex) => {
+                      const grouped = groupsOfRule.length > 1
+                      return (
+                        <span
+                          key={group.conditions.map((c) => c.id).join('-')}
+                          className="inline-flex flex-wrap items-center gap-1.5"
+                        >
+                          {gIndex > 0 && (
+                            <span className="text-xs font-semibold text-primary">
+                              {rule.operator}
+                            </span>
+                          )}
+                          {grouped && (
+                            <span className="text-muted-foreground">(</span>
+                          )}
+                          {group.conditions.map((condition, cIndex) => (
+                            <span
+                              key={condition.id ?? cIndex}
+                              className="inline-flex items-center gap-1.5"
+                            >
+                              {cIndex > 0 && (
+                                <span className="text-xs font-semibold text-primary">
+                                  {group.operator}
+                                </span>
+                              )}
+                              <code className="rounded bg-muted px-1.5 py-0.5 font-mono text-xs">
+                                {formatCondition(condition)}
+                              </code>
+                            </span>
+                          ))}
+                          {grouped && (
+                            <span className="text-muted-foreground">)</span>
+                          )}
+                        </span>
+                      )
+                    })}
                   </div>
                   <p className="mt-2 text-sm text-muted-foreground">
                     {t('flag-detail.targeting.serve')}{' '}
@@ -643,133 +654,14 @@ export function FlagTargetingTab({
                 className="mt-1"
               />
             </div>
-            <div>
-              <label htmlFor="rule-match" className="block text-sm font-medium">
-                {t('flag-detail.targeting.match')}
-              </label>
-              <select
-                id="rule-match"
-                value={matchOperator}
-                onChange={(e) =>
-                  setMatchOperator(e.target.value as RuleMatchOperator)
-                }
-                className={`${fieldClass} mt-1`}
-              >
-                <option value="AND">
-                  {t('flag-detail.targeting.match-all')}
-                </option>
-                <option value="OR">
-                  {t('flag-detail.targeting.match-any')}
-                </option>
-              </select>
-            </div>
           </div>
 
-          <div className="space-y-2">
-            <span className="block text-sm font-medium">
-              {t('flag-detail.targeting.conditions')}
-            </span>
-            {conditions.map((condition, index) => (
-              <div key={condition.key}>
-                <div className="flex flex-col gap-2 sm:flex-row sm:items-start">
-                  {index > 0 && (
-                    <span className="self-center text-xs font-semibold text-primary sm:w-10 sm:text-center">
-                      {matchOperator}
-                    </span>
-                  )}
-                  {index === 0 && conditions.length > 1 && (
-                    <span className="hidden sm:block sm:w-10" />
-                  )}
-                  <Input
-                    aria-label={t('flag-detail.targeting.condition-attribute', {
-                      n: index + 1,
-                    })}
-                    value={condition.attribute}
-                    onChange={(e) =>
-                      updateCondition(condition.key, {
-                        attribute: e.target.value,
-                      })
-                    }
-                    placeholder={t(
-                      'flag-detail.targeting.attribute-placeholder'
-                    )}
-                    maxLength={100}
-                    required
-                    className="sm:flex-1"
-                  />
-                  <select
-                    aria-label={t('flag-detail.targeting.condition-operator', {
-                      n: index + 1,
-                    })}
-                    value={condition.operator}
-                    onChange={(e) =>
-                      updateCondition(condition.key, {
-                        operator: e.target.value as ConditionOperator,
-                      })
-                    }
-                    className={`${fieldClass} sm:w-44`}
-                  >
-                    {CONDITION_OPERATORS.map((op) => (
-                      <option key={op.value} value={op.value}>
-                        {op.label}
-                      </option>
-                    ))}
-                  </select>
-                  <Input
-                    aria-label={t('flag-detail.targeting.condition-value', {
-                      n: index + 1,
-                    })}
-                    value={condition.value}
-                    onChange={(e) =>
-                      updateCondition(condition.key, { value: e.target.value })
-                    }
-                    placeholder={
-                      isListOperator(condition.operator)
-                        ? 'DE, AT, CH'
-                        : t('flag-detail.targeting.value-placeholder')
-                    }
-                    maxLength={1000}
-                    required
-                    className="sm:flex-1"
-                  />
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="icon"
-                    className="h-9 w-9 shrink-0 self-center text-muted-foreground hover:text-destructive"
-                    onClick={() =>
-                      setConditions((prev) =>
-                        prev.filter((c) => c.key !== condition.key)
-                      )
-                    }
-                    disabled={conditions.length <= 1}
-                    aria-label={t('flag-detail.targeting.remove-condition', {
-                      n: index + 1,
-                    })}
-                  >
-                    <X className="h-4 w-4" />
-                  </Button>
-                </div>
-                {isListOperator(condition.operator) && (
-                  <p className="mt-1 text-xs text-muted-foreground sm:ml-12">
-                    {t('flag-detail.targeting.list-hint')}
-                  </p>
-                )}
-              </div>
-            ))}
-            <Button
-              type="button"
-              variant="link"
-              className="h-auto px-0"
-              onClick={() =>
-                setConditions((prev) => [...prev, emptyCondition()])
-              }
-              disabled={conditions.length >= MAX_CONDITIONS}
-            >
-              <Plus className="mr-1 h-4 w-4" />
-              {t('flag-detail.targeting.add-condition')}
-            </Button>
-          </div>
+          <RuleConditionsEditor
+            groups={groups}
+            ruleOperator={ruleOperator}
+            onGroupsChange={setGroups}
+            onRuleOperatorChange={setRuleOperator}
+          />
 
           <div>
             <label

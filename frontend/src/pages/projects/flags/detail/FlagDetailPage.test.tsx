@@ -837,6 +837,124 @@ describe('Flag detail page', () => {
       })
     })
 
+    describe('condition groups', () => {
+      const cond = (id: string, attribute: string, value: string) => ({
+        id,
+        attribute,
+        operator: 'EQUALS',
+        value,
+      })
+      const groupedRule = () =>
+        rule({
+          name: 'DE or beta',
+          operator: 'OR',
+          conditions: [
+            cond('c1', 'country', 'DE'),
+            cond('c2', 'plan', 'pro'),
+            cond('c3', 'beta', 'yes'),
+          ],
+          groups: [
+            { operator: 'AND', conditions: [cond('c1', 'country', 'DE')] },
+            {
+              operator: 'OR',
+              conditions: [
+                cond('c2', 'plan', 'pro'),
+                cond('c3', 'beta', 'yes'),
+              ],
+            },
+          ],
+        })
+
+      it('creates a rule with condition groups', async () => {
+        mocks.post.mockResolvedValue({ data: { rule: groupedRule() } })
+        const user = userEvent.setup()
+        renderPage('?tab=targeting')
+        await user.click(
+          await screen.findByRole('button', { name: 'Add rule' })
+        )
+        await user.type(screen.getByLabelText('Condition 1 attribute'), 'country')
+        await user.type(screen.getByLabelText('Condition 1 value'), 'DE')
+        await user.click(screen.getByRole('button', { name: 'Add group' }))
+
+        await user.selectOptions(screen.getByLabelText('Group 2 match'), 'OR')
+        await user.type(screen.getByLabelText('Condition 2 attribute'), 'plan')
+        await user.type(screen.getByLabelText('Condition 2 value'), 'pro')
+        await user.click(
+          screen.getByRole('button', { name: 'Add condition to group 2' })
+        )
+        await user.type(screen.getByLabelText('Condition 3 attribute'), 'beta')
+        await user.type(screen.getByLabelText('Condition 3 value'), 'yes')
+        await user.selectOptions(screen.getByLabelText('Combine groups'), 'AND')
+
+        const form = screen
+          .getByLabelText('Condition 1 value')
+          .closest('form') as HTMLFormElement
+        await user.click(within(form).getByRole('button', { name: 'Add rule' }))
+
+        await waitFor(() => expect(mocks.post).toHaveBeenCalled())
+        const body = mocks.post.mock.calls[0][1]
+        expect(body).toMatchObject({
+          operator: 'AND',
+          groups: [
+            {
+              operator: 'AND',
+              conditions: [
+                { attribute: 'country', operator: 'EQUALS', value: 'DE' },
+              ],
+            },
+            {
+              operator: 'OR',
+              conditions: [
+                { attribute: 'plan', operator: 'EQUALS', value: 'pro' },
+                { attribute: 'beta', operator: 'EQUALS', value: 'yes' },
+              ],
+            },
+          ],
+        })
+        expect(body).not.toHaveProperty('conditions')
+      })
+
+      it('shows grouped rules with parentheses', async () => {
+        state.rules = [groupedRule()]
+        renderPage('?tab=targeting')
+        const name = await screen.findByText('DE or beta')
+        const item = name.closest('li') as HTMLElement
+        expect(item.textContent?.replace(/\s+/g, ' ')).toMatch(
+          /\( ?country EQUALS DE ?\) ?OR ?\( ?plan EQUALS pro ?OR ?beta EQUALS yes ?\)/
+        )
+      })
+
+      it('prefills groups on edit and saves a single group flat again', async () => {
+        state.rules = [groupedRule()]
+        mocks.patch.mockResolvedValue({ data: { rule: rule() } })
+        const user = userEvent.setup()
+        renderPage('?tab=targeting')
+        await user.click(
+          await screen.findByRole('button', { name: 'Edit rule "DE or beta"' })
+        )
+        expect(screen.getByLabelText('Combine groups')).toHaveValue('OR')
+        expect(screen.getByLabelText('Group 2 match')).toHaveValue('OR')
+        expect(screen.getByLabelText('Condition 3 value')).toHaveValue('yes')
+
+        await user.click(screen.getByRole('button', { name: 'Remove group 2' }))
+        expect(screen.queryByLabelText('Combine groups')).not.toBeInTheDocument()
+        await user.click(screen.getByRole('button', { name: 'Save' }))
+
+        await waitFor(() =>
+          expect(mocks.patch).toHaveBeenCalledWith(
+            `/feature-flags/${FLAG}/targeting-rules/r1`,
+            expect.objectContaining({
+              operator: 'AND',
+              conditions: [
+                { attribute: 'country', operator: 'EQUALS', value: 'DE' },
+              ],
+            })
+          )
+        )
+        expect(mocks.patch.mock.calls[0][1]).not.toHaveProperty('groups')
+      })
+    })
+
     it('has no brand selection in single projects', async () => {
       state.rules = [rule()]
       renderPage('?tab=targeting')

@@ -38,9 +38,21 @@ export interface TargetingRule {
   /** Optional time window (ISO); missing on older API versions. */
   activeFrom?: string | null
   activeUntil?: string | null
+  /** All conditions, flat (see `groups` for their grouping). */
   conditions: TargetingCondition[]
+  /**
+   * Condition groups; `operator` combines them. Missing on older API
+   * versions, see ruleGroups.
+   */
+  groups?: TargetingRuleGroup[]
   createdAt: string
   updatedAt: string
+}
+
+/** Conditions combined with the group operator (AND: all, OR: any). */
+export interface TargetingRuleGroup {
+  operator: RuleMatchOperator
+  conditions: TargetingCondition[]
 }
 
 export interface ConditionInput {
@@ -109,6 +121,42 @@ export function formatConditions(
   operator: RuleMatchOperator
 ): string {
   return conditions.map(formatCondition).join(` ${operator} `)
+}
+
+export const MAX_GROUPS = 10
+
+/** Condition groups of a rule; older APIs have one implicit group. */
+export function ruleGroups(
+  rule: Pick<TargetingRule, 'operator' | 'conditions' | 'groups'>
+): TargetingRuleGroup[] {
+  if (rule.groups && rule.groups.length > 0) return rule.groups
+  if (rule.conditions.length === 0) return []
+  return [{ operator: rule.operator, conditions: rule.conditions }]
+}
+
+/** "(a AND b) OR (c)"; a single group without parentheses. */
+export function formatRuleGroups(
+  operator: RuleMatchOperator,
+  groups: { operator: RuleMatchOperator; conditions: ConditionInput[] }[]
+): string {
+  if (groups.length === 1) {
+    return formatConditions(groups[0].conditions, groups[0].operator)
+  }
+  return groups
+    .map((g) => `(${formatConditions(g.conditions, g.operator)})`)
+    .join(` ${operator} `)
+}
+
+/** Client-side mirror of the backend group limits. */
+export function validateGroups(
+  groups: { operator: RuleMatchOperator; conditions: unknown[] }[]
+): string | null {
+  if (groups.length > MAX_GROUPS) {
+    return `At most ${MAX_GROUPS} groups are allowed`
+  }
+  const empty = groups.findIndex((g) => g.conditions.length === 0)
+  if (empty >= 0) return `Group ${empty + 1} needs at least one condition`
+  return null
 }
 
 export function sortRulesByPriority(rules: TargetingRule[]): TargetingRule[] {
