@@ -96,3 +96,13 @@ Targeting-Regeln sollen sich in der Oberfläche bearbeiten lassen, Brands sollen
 - Beliebig tiefe Verschachtelung von Bedingungen.
 - Zeitfenster für ganze Flags/Umgebungen.
 - Regel-Reihenfolge per Drag & Drop (Priorität bleibt wie heute automatisch).
+
+## Nachtrag 2026-11-10: Bedingungen als Baum (wie Home Assistant)
+
+Ersetzt die eine Gruppenebene aus Paket 4 (Entscheidung des Nutzers: voll wie Home Assistant).
+
+- **Modell:** `TargetingRule.conditionTree` (JSON). Knoten: `AND`/`OR`/`NOT` mit `children`, Blatt `condition` (`attribute`, `operator`, `value`). Wurzel ist `AND` oder `OR`. `NOT` trifft zu, wenn **keines** seiner Kinder zutrifft (wie Home Assistant).
+- **Grenzen:** max. 20 Bedingungen, Tiefe max. 5, jeder Block ≥ 1 Kind; Eingabe wird serverseitig vollständig validiert und neu aufgebaut (nur bekannte Felder).
+- **Alte Regeln:** ohne `conditionTree` werden beim Lesen aus `RuleCondition`/`groupOperators` in einen gleichwertigen Baum übersetzt (Auswertung und API); keine Datenmigration. Schreibvorgänge speichern den Baum und entfernen die alten `RuleCondition`-Zeilen der Regel.
+- **API:** neu `conditionTree`; `conditions` (flach) und `groups` werden weiter angenommen und in einen Baum übersetzt. Antwort: `conditionTree` und flaches `conditions` (alle Blätter).
+- **Editor:** oben „Alle müssen / mindestens eine muss zutreffen“, darunter Karten für Bedingungen und Blöcke; in jedem Block „+ Bedingung / + UND / + ODER / + NICHT“. Regelliste zeigt die Logik mit Klammern.
