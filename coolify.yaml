@@ -66,8 +66,8 @@ environment:
     description: "Comma-separated list of allowed CORS origins (e.g., https://app.togglely.de,https://www.mein-shop.de)"
     
   - name: VITE_API_URL
-    default: "http://backend:4000/api"
-    description: "API URL for Frontend (use https://api.deine-domain.de/api in production)"
+    default: "/api"
+    description: "API URL the browser calls, baked in at build time. Keep /api (proxied by the frontend nginx); only set a full URL for a separate API domain"
 
 # Port configuration
 ports:

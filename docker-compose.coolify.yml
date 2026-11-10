@@ -90,7 +90,10 @@ services:
       dockerfile: Dockerfile
     container_name: togglely-frontend
     environment:
-      - VITE_API_URL=${VITE_API_URL:-http://backend:4000}
+      # Same-origin default: the frontend nginx proxies /api to the backend.
+      # Coolify also passes this as a build arg and Vite bakes it into the
+      # bundle, so it must be a URL the browser can reach (never backend:4000).
+      - VITE_API_URL=${VITE_API_URL:-/api}
     ports:
       - "${FRONTEND_PORT:-3000}:80"
     depends_on:
