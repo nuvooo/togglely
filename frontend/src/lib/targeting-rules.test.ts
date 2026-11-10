@@ -2,12 +2,16 @@ import { describe, expect, it } from 'vitest'
 import {
   formatCondition,
   formatConditions,
+  fromLocalInputValue,
   nextPriority,
   normalizeConditionValue,
+  ruleScheduleStatus,
   sortRulesByPriority,
   type TargetingRule,
+  toLocalInputValue,
   validateRuleInput,
   validateServeValue,
+  validateWindow,
 } from './targeting-rules'
 
 const rule = (id: string, priority: number): TargetingRule => ({
@@ -112,5 +116,67 @@ describe('normalizeConditionValue', () => {
 
   it('keeps other values unchanged', () => {
     expect(normalizeConditionValue('EQUALS', ' DE ')).toBe(' DE ')
+  })
+})
+
+describe('datetime-local conversion', () => {
+  it('round-trips a local input value through ISO', () => {
+    const iso = fromLocalInputValue('2026-11-27T08:30')
+    expect(iso).toBe(new Date(2026, 10, 27, 8, 30).toISOString())
+    expect(toLocalInputValue(iso)).toBe('2026-11-27T08:30')
+  })
+
+  it('maps empty values to null and back', () => {
+    expect(fromLocalInputValue('')).toBeNull()
+    expect(toLocalInputValue(null)).toBe('')
+    expect(toLocalInputValue(undefined)).toBe('')
+  })
+})
+
+describe('validateWindow', () => {
+  it('accepts open or ordered windows', () => {
+    expect(validateWindow(null, null)).toBeNull()
+    expect(validateWindow('2026-11-27T00:00:00.000Z', null)).toBeNull()
+    expect(
+      validateWindow('2026-11-27T00:00:00.000Z', '2026-11-30T00:00:00.000Z')
+    ).toBeNull()
+  })
+
+  it('rejects windows that end before they start', () => {
+    expect(
+      validateWindow('2026-11-30T00:00:00.000Z', '2026-11-27T00:00:00.000Z')
+    ).toMatch(/before/)
+    expect(
+      validateWindow('2026-11-27T00:00:00.000Z', '2026-11-27T00:00:00.000Z')
+    ).toMatch(/before/)
+  })
+})
+
+describe('ruleScheduleStatus', () => {
+  const now = new Date('2026-11-28T12:00:00.000Z')
+  const FROM = '2026-11-27T00:00:00.000Z'
+  const UNTIL = '2026-11-30T00:00:00.000Z'
+
+  it('is null without a window', () => {
+    expect(ruleScheduleStatus({}, now)).toBeNull()
+    expect(ruleScheduleStatus({ activeFrom: FROM }, now)).toBeNull()
+  })
+
+  it('reports a window that has not started yet', () => {
+    expect(
+      ruleScheduleStatus({ activeFrom: '2026-12-01T00:00:00.000Z' }, now)
+    ).toEqual({ kind: 'scheduled', at: '2026-12-01T00:00:00.000Z' })
+  })
+
+  it('reports the end of a running window', () => {
+    expect(
+      ruleScheduleStatus({ activeFrom: FROM, activeUntil: UNTIL }, now)
+    ).toEqual({ kind: 'active-until', at: UNTIL })
+  })
+
+  it('reports an expired window', () => {
+    expect(
+      ruleScheduleStatus({ activeUntil: '2026-11-28T12:00:00.000Z' }, now)
+    ).toEqual({ kind: 'expired', at: '2026-11-28T12:00:00.000Z' })
   })
 })

@@ -35,6 +35,9 @@ export interface TargetingRule {
   priority: number
   isDefault: boolean
   enabled: boolean
+  /** Optional time window (ISO); missing on older API versions. */
+  activeFrom?: string | null
+  activeUntil?: string | null
   conditions: TargetingCondition[]
   createdAt: string
   updatedAt: string
@@ -116,6 +119,56 @@ export function sortRulesByPriority(rules: TargetingRule[]): TargetingRule[] {
 export function nextPriority(rules: Pick<TargetingRule, 'priority'>[]): number {
   if (rules.length === 0) return 0
   return Math.max(...rules.map((r) => r.priority)) + 1
+}
+
+const pad = (n: number) => String(n).padStart(2, '0')
+
+/** ISO timestamp → value of an `<input type="datetime-local">` (local time). */
+export function toLocalInputValue(iso: string | null | undefined): string {
+  if (!iso) return ''
+  const d = new Date(iso)
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+/** `datetime-local` value (local time) → ISO timestamp, '' → null. */
+export function fromLocalInputValue(value: string): string | null {
+  return value ? new Date(value).toISOString() : null
+}
+
+/** Client-side mirror of the backend check: a window must end after it starts. */
+export function validateWindow(
+  activeFrom: string | null,
+  activeUntil: string | null
+): string | null {
+  if (activeFrom && activeUntil && activeFrom >= activeUntil) {
+    return '"Active from" must be before "Active until"'
+  }
+  return null
+}
+
+export type RuleScheduleStatus = {
+  kind: 'scheduled' | 'active-until' | 'expired'
+  /** ISO timestamp the status refers to. */
+  at: string
+}
+
+/**
+ * Status of a rule's time window for the rule list (window is
+ * activeFrom <= now < activeUntil); null when nothing is worth showing.
+ */
+export function ruleScheduleStatus(
+  rule: Pick<TargetingRule, 'activeFrom' | 'activeUntil'>,
+  now: Date = new Date()
+): RuleScheduleStatus | null {
+  const { activeFrom, activeUntil } = rule
+  if (activeUntil && now >= new Date(activeUntil)) {
+    return { kind: 'expired', at: activeUntil }
+  }
+  if (activeFrom && now < new Date(activeFrom)) {
+    return { kind: 'scheduled', at: activeFrom }
+  }
+  if (activeUntil) return { kind: 'active-until', at: activeUntil }
+  return null
 }
 
 /** Returns an error message, or null if the serve value fits the flag type. */

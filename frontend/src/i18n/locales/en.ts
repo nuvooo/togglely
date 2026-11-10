@@ -1169,6 +1169,13 @@ export const en = {
   'flag-detail.targeting.updated': 'Targeting rule updated',
   'flag-detail.targeting.edit-label': 'Edit rule "{{name}}"',
   'flag-detail.targeting.edit-title': 'Edit rule',
+  'flag-detail.targeting.active-from': 'Active from',
+  'flag-detail.targeting.active-until': 'Active until',
+  'flag-detail.targeting.window-hint':
+    'Your local time. Empty = no limit. SDK clients pick up the switch within about 30 seconds.',
+  'flag-detail.targeting.schedule-scheduled': 'Scheduled from {{date}}',
+  'flag-detail.targeting.schedule-active-until': 'Active until {{date}}',
+  'flag-detail.targeting.schedule-expired': 'Expired',
   'flag-detail.targeting.brand': 'Brand',
   'flag-detail.targeting.brand-all': 'All brands (environment)',
   'flag-detail.targeting.inherited-info':

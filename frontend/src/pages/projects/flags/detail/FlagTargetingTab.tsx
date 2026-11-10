@@ -17,14 +17,18 @@ import {
   CONDITION_OPERATORS,
   type ConditionOperator,
   formatCondition,
+  fromLocalInputValue,
   isListOperator,
   MAX_CONDITIONS,
   nextPriority,
   normalizeConditionValue,
   type RuleMatchOperator,
+  ruleScheduleStatus,
   sortRulesByPriority,
   type TargetingRule,
+  toLocalInputValue,
   validateRuleInput,
+  validateWindow,
 } from '@/lib/targeting-rules'
 import type { EnvironmentState, FlagType } from './types'
 
@@ -80,7 +84,7 @@ export function FlagTargetingTab({
   onBrandRulesChanged,
   readOnly = false,
 }: FlagTargetingTabProps) {
-  const { t } = useTranslation()
+  const { t, i18n } = useTranslation()
   const readOnlyTitle = readOnly ? t('common.read-only') : undefined
   /** Bumped per load; rules of another flag/environment arriving late are dropped. */
   const loadId = useRef(0)
@@ -104,6 +108,9 @@ export function FlagTargetingTab({
   const [serveValue, setServeValue] = useState(() =>
     defaultServeValue(flagType)
   )
+  /** Time window as `datetime-local` values (local time), '' = open. */
+  const [activeFrom, setActiveFrom] = useState('')
+  const [activeUntil, setActiveUntil] = useState('')
   const [ruleToDelete, setRuleToDelete] = useState<TargetingRule | null>(null)
   /** Rule currently being edited; null = the form creates a new rule. */
   const [editingRule, setEditingRule] = useState<TargetingRule | null>(null)
@@ -162,6 +169,8 @@ export function FlagTargetingTab({
     setMatchOperator('AND')
     setConditions([emptyCondition()])
     setServeValue(defaultServeValue(flagType))
+    setActiveFrom('')
+    setActiveUntil('')
     setFormError(null)
     setEditingRule(null)
   }
@@ -185,6 +194,8 @@ export function FlagTargetingTab({
       }))
     )
     setServeValue(rule.serveValue)
+    setActiveFrom(toLocalInputValue(rule.activeFrom))
+    setActiveUntil(toLocalInputValue(rule.activeUntil))
     setFormError(null)
     setShowForm(true)
   }
@@ -203,11 +214,16 @@ export function FlagTargetingTab({
       })),
     }
     const name = ruleName.trim()
+    const window = {
+      activeFrom: fromLocalInputValue(activeFrom),
+      activeUntil: fromLocalInputValue(activeUntil),
+    }
 
-    const validationError = validateRuleInput(flagType, {
-      ...fields,
-      name: name || undefined,
-    })
+    const validationError =
+      validateRuleInput(flagType, {
+        ...fields,
+        name: name || undefined,
+      }) ?? validateWindow(window.activeFrom, window.activeUntil)
     if (validationError) {
       setFormError(validationError)
       return
@@ -218,10 +234,10 @@ export function FlagTargetingTab({
     try {
       if (editingRule) {
         const ruleId = editingRule.id
-        // An empty name clears it (the list then shows "unnamed")
+        // Empty name / window fields clear them (null on the API)
         const response = await api.patch(
           `/feature-flags/${flagId}/targeting-rules/${ruleId}`,
-          { name, ...fields }
+          { name, ...fields, ...window }
         )
         const updated: TargetingRule = response.data.rule
         setRules((prev) => prev.map((r) => (r.id === ruleId ? updated : r)))
@@ -234,6 +250,8 @@ export function FlagTargetingTab({
             ...(brandId ? { brandId } : {}),
             name: name || undefined,
             ...fields,
+            ...(window.activeFrom ? { activeFrom: window.activeFrom } : {}),
+            ...(window.activeUntil ? { activeUntil: window.activeUntil } : {}),
             // The first own brand rule starts a new list
             priority: inherited ? 0 : nextPriority(rules),
             enabled: true,
@@ -328,6 +346,20 @@ export function FlagTargetingTab({
   const rulesEditable = !readOnly && !inherited
   const selectedBrand = brands.find((b) => b.id === brandId)
 
+  const scheduleLabel = ({
+    kind,
+    at,
+  }: NonNullable<ReturnType<typeof ruleScheduleStatus>>) => {
+    if (kind === 'expired') return t('flag-detail.targeting.schedule-expired')
+    const date = new Date(at).toLocaleString(i18n.language, {
+      dateStyle: 'medium',
+      timeStyle: 'short',
+    })
+    return kind === 'scheduled'
+      ? t('flag-detail.targeting.schedule-scheduled', { date })
+      : t('flag-detail.targeting.schedule-active-until', { date })
+  }
+
   const matchLabel = (operator: RuleMatchOperator) =>
     operator === 'OR'
       ? t('flag-detail.targeting.match-any')
@@ -364,6 +396,7 @@ export function FlagTargetingTab({
       <ol className="divide-y overflow-hidden rounded-lg border bg-card">
         {sortRulesByPriority(rules).map((rule, index) => {
           const name = rule.name || t('flag-detail.targeting.unnamed')
+          const schedule = ruleScheduleStatus(rule)
           return (
             <li
               key={rule.id}
@@ -382,6 +415,15 @@ export function FlagTargetingTab({
                         : t('flag-detail.targeting.inactive')}
                     </Badge>
                     <Badge variant="outline">{matchLabel(rule.operator)}</Badge>
+                    {schedule && (
+                      <Badge
+                        variant={
+                          schedule.kind === 'expired' ? 'neutral' : 'warning'
+                        }
+                      >
+                        {scheduleLabel(schedule)}
+                      </Badge>
+                    )}
                   </div>
                   <div className="mt-2 flex flex-wrap items-center gap-1.5 text-sm">
                     {rule.conditions.map((condition, cIndex) => (
@@ -772,6 +814,50 @@ export function FlagTargetingTab({
                 className="mt-1"
               />
             )}
+          </div>
+
+          <div className="space-y-1">
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
+              <div>
+                <label
+                  htmlFor="rule-active-from"
+                  className="block text-sm font-medium"
+                >
+                  {t('flag-detail.targeting.active-from')}{' '}
+                  <span className="text-muted-foreground">
+                    ({t('common.optional')})
+                  </span>
+                </label>
+                <Input
+                  id="rule-active-from"
+                  type="datetime-local"
+                  value={activeFrom}
+                  onChange={(e) => setActiveFrom(e.target.value)}
+                  className="mt-1"
+                />
+              </div>
+              <div>
+                <label
+                  htmlFor="rule-active-until"
+                  className="block text-sm font-medium"
+                >
+                  {t('flag-detail.targeting.active-until')}{' '}
+                  <span className="text-muted-foreground">
+                    ({t('common.optional')})
+                  </span>
+                </label>
+                <Input
+                  id="rule-active-until"
+                  type="datetime-local"
+                  value={activeUntil}
+                  onChange={(e) => setActiveUntil(e.target.value)}
+                  className="mt-1"
+                />
+              </div>
+            </div>
+            <p className="text-xs text-muted-foreground">
+              {t('flag-detail.targeting.window-hint')}
+            </p>
           </div>
 
           {formError && (

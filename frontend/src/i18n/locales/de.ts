@@ -1172,6 +1172,13 @@ export const de = {
   'flag-detail.targeting.updated': 'Targeting-Regel aktualisiert',
   'flag-detail.targeting.edit-label': 'Regel „{{name}}“ bearbeiten',
   'flag-detail.targeting.edit-title': 'Regel bearbeiten',
+  'flag-detail.targeting.active-from': 'Aktiv ab',
+  'flag-detail.targeting.active-until': 'Aktiv bis',
+  'flag-detail.targeting.window-hint':
+    'Deine lokale Zeit. Leer = keine Begrenzung. SDK-Clients bekommen den Wechsel innerhalb von etwa 30 Sekunden mit.',
+  'flag-detail.targeting.schedule-scheduled': 'Geplant ab {{date}}',
+  'flag-detail.targeting.schedule-active-until': 'Aktiv bis {{date}}',
+  'flag-detail.targeting.schedule-expired': 'Abgelaufen',
   'flag-detail.targeting.brand': 'Brand',
   'flag-detail.targeting.brand-all': 'Alle Brands (Umgebung)',
   'flag-detail.targeting.inherited-info':
