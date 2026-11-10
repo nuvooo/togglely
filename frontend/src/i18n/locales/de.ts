@@ -1172,6 +1172,18 @@ export const de = {
   'flag-detail.targeting.updated': 'Targeting-Regel aktualisiert',
   'flag-detail.targeting.edit-label': 'Regel „{{name}}“ bearbeiten',
   'flag-detail.targeting.edit-title': 'Regel bearbeiten',
+  'flag-detail.targeting.brand': 'Brand',
+  'flag-detail.targeting.brand-all': 'Alle Brands (Umgebung)',
+  'flag-detail.targeting.inherited-info':
+    'Diese Brand nutzt die Regeln der Umgebung. Wenn du hier eine Regel hinzufügst, bekommt {{brand}} eigene Regeln; An/Aus und Standardwert werden dann als Brand-Override übernommen.',
+  'flag-detail.targeting.own-brand-rules':
+    '{{brand}} hat in dieser Umgebung eigene Regeln; die Regeln der Umgebung gelten hier nicht.',
+  'flag-detail.targeting.reset-brand': 'Umgebungsregeln verwenden',
+  'flag-detail.targeting.reset-brand-title': 'Umgebungsregeln verwenden?',
+  'flag-detail.targeting.reset-brand-description':
+    'Alle eigenen Regeln von {{brand}} in dieser Umgebung werden gelöscht. Die Brand nutzt danach wieder die Regeln der Umgebung.',
+  'flag-detail.targeting.reset-brand-confirm': 'Zurücksetzen',
+  'flag-detail.targeting.reset-brand-done': 'Die Brand nutzt wieder die Regeln der Umgebung',
   'flag-detail.targeting.deleted': 'Targeting-Regel gelöscht',
   'flag-detail.targeting.no-environments': 'Dieses Flag hat noch keine Umgebungen.',
   'flag-detail.targeting.load-error': 'Die Targeting-Regeln konnten nicht geladen werden.',

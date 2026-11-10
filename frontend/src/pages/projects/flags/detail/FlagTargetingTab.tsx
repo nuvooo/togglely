@@ -48,19 +48,36 @@ const defaultServeValue = (type: FlagType) => (type === 'BOOLEAN' ? 'true' : '')
 const fieldClass =
   'block w-full rounded-md border border-input bg-background px-3 py-2 text-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring disabled:opacity-50'
 
+export interface TargetingBrand {
+  id: string
+  name: string
+}
+
+const NO_BRANDS: TargetingBrand[] = []
+
 interface FlagTargetingTabProps {
   flagId: string
   flagType: FlagType
   environments: EnvironmentState[]
+  /** MULTI projects: brands that can get own rules. */
+  brands?: TargetingBrand[]
+  /** Brand rules were created or reset (a brand override may be new). */
+  onBrandRulesChanged?: () => void
   /** No write permission (VIEWER): rules can be read only. */
   readOnly?: boolean
 }
 
-/** Targeting rules of one flag, per environment (list, create, edit, toggle, delete). */
+/**
+ * Targeting rules of one flag, per environment and optionally per brand
+ * (list, create, edit, toggle, delete). A brand without own rules shows the
+ * inherited environment rules read-only.
+ */
 export function FlagTargetingTab({
   flagId,
   flagType,
   environments,
+  brands = NO_BRANDS,
+  onBrandRulesChanged,
   readOnly = false,
 }: FlagTargetingTabProps) {
   const { t } = useTranslation()
@@ -68,6 +85,11 @@ export function FlagTargetingTab({
   /** Bumped per load; rules of another flag/environment arriving late are dropped. */
   const loadId = useRef(0)
   const [environmentId, setEnvironmentId] = useState(environments[0]?.id ?? '')
+  /** '' = rules of the environment (all brands). */
+  const [brandId, setBrandId] = useState('')
+  /** The selected brand has no own rules; `rules` are the environment's. */
+  const [inherited, setInherited] = useState(false)
+  const [confirmReset, setConfirmReset] = useState(false)
   const [rules, setRules] = useState<TargetingRule[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -95,6 +117,13 @@ export function FlagTargetingTab({
     )
   }, [environments])
 
+  // Brands can disappear (e.g. after a reload of the brand values).
+  useEffect(() => {
+    setBrandId((current) =>
+      current === '' || brands.some((b) => b.id === current) ? current : ''
+    )
+  }, [brands])
+
   const loadRules = useCallback(async () => {
     const id = ++loadId.current
     const current = () => id === loadId.current
@@ -108,19 +137,21 @@ export function FlagTargetingTab({
       const response = await api.get(
         `/feature-flags/${flagId}/targeting-rules`,
         {
-          params: { environmentId },
+          params: brandId ? { environmentId, brandId } : { environmentId },
         }
       )
       if (!current()) return
       setRules(response.data.rules ?? [])
+      setInherited(Boolean(brandId && response.data.inherited))
     } catch (err) {
       if (!current()) return
       setRules([])
+      setInherited(false)
       setError(getErrorMessage(err))
     } finally {
       if (current()) setLoading(false)
     }
-  }, [flagId, environmentId])
+  }, [flagId, environmentId, brandId])
 
   useEffect(() => {
     void loadRules()
@@ -200,13 +231,18 @@ export function FlagTargetingTab({
           `/feature-flags/${flagId}/targeting-rules`,
           {
             environmentId,
+            ...(brandId ? { brandId } : {}),
             name: name || undefined,
             ...fields,
-            priority: nextPriority(rules),
+            // The first own brand rule starts a new list
+            priority: inherited ? 0 : nextPriority(rules),
             enabled: true,
           }
         )
-        setRules((prev) => [...prev, response.data.rule])
+        const created: TargetingRule = response.data.rule
+        setRules((prev) => (inherited ? [created] : [...prev, created]))
+        setInherited(false)
+        if (brandId) onBrandRulesChanged?.()
         toast.success(t('flag-detail.targeting.created'))
       }
       resetForm()
@@ -224,7 +260,10 @@ export function FlagTargetingTab({
     const ruleId = ruleToDelete.id
     try {
       await api.delete(`/feature-flags/${flagId}/targeting-rules/${ruleId}`)
-      setRules((prev) => prev.filter((r) => r.id !== ruleId))
+      const remaining = rules.filter((r) => r.id !== ruleId)
+      setRules(remaining)
+      // Without own rules the brand inherits the environment rules again
+      if (brandId && remaining.length === 0) void loadRules()
       if (editingRule?.id === ruleId) {
         resetForm()
         setShowForm(false)
@@ -255,6 +294,39 @@ export function FlagTargetingTab({
       notifyWriteError(err, t)
     }
   }
+
+  const handleResetBrand = async () => {
+    try {
+      await api.delete(`/feature-flags/${flagId}/targeting-rules`, {
+        params: { environmentId, brandId },
+      })
+      if (editingRule) {
+        resetForm()
+        setShowForm(false)
+      }
+      toast.success(t('flag-detail.targeting.reset-brand-done'))
+      onBrandRulesChanged?.()
+      void loadRules()
+    } catch (err) {
+      // The confirm dialog stays open and shows the message.
+      handleForbidden(err, t)
+      throw err
+    }
+  }
+
+  /** Environment or brand changed: an open edit form belongs to the old scope. */
+  const leaveScope = () => {
+    if (editingRule) {
+      resetForm()
+      setShowForm(false)
+    } else {
+      setFormError(null)
+    }
+  }
+
+  /** Inherited rules are shown read-only; they are changed on the environment. */
+  const rulesEditable = !readOnly && !inherited
+  const selectedBrand = brands.find((b) => b.id === brandId)
 
   const matchLabel = (operator: RuleMatchOperator) =>
     operator === 'OR'
@@ -340,14 +412,14 @@ export function FlagTargetingTab({
                 <span title={readOnlyTitle} className="inline-flex">
                   <Switch
                     checked={rule.enabled}
-                    disabled={readOnly}
+                    disabled={!rulesEditable}
                     onCheckedChange={() => void handleToggleRule(rule)}
                     aria-label={t('flag-detail.targeting.toggle-label', {
                       name,
                     })}
                   />
                 </span>
-                {!readOnly && (
+                {rulesEditable && (
                   <>
                     <Button
                       variant="ghost"
@@ -405,13 +477,7 @@ export function FlagTargetingTab({
               value={environmentId}
               onChange={(e) => {
                 setEnvironmentId(e.target.value)
-                // The edited rule belongs to the previous environment
-                if (editingRule) {
-                  resetForm()
-                  setShowForm(false)
-                } else {
-                  setFormError(null)
-                }
+                leaveScope()
               }}
               disabled={environments.length === 0}
               className={`${fieldClass} mt-1 w-auto`}
@@ -423,6 +489,33 @@ export function FlagTargetingTab({
               ))}
             </select>
           </div>
+          {brands.length > 0 && (
+            <div>
+              <label
+                htmlFor="rules-brand"
+                className="block text-xs font-medium text-muted-foreground"
+              >
+                {t('flag-detail.targeting.brand')}
+              </label>
+              <select
+                id="rules-brand"
+                value={brandId}
+                onChange={(e) => {
+                  setBrandId(e.target.value)
+                  leaveScope()
+                }}
+                disabled={environments.length === 0}
+                className={`${fieldClass} mt-1 w-auto`}
+              >
+                <option value="">{t('flag-detail.targeting.brand-all')}</option>
+                {brands.map((brand) => (
+                  <option key={brand.id} value={brand.id}>
+                    {brand.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+          )}
           {!readOnly && (
             <Button
               onClick={() => {
@@ -456,6 +549,30 @@ export function FlagTargetingTab({
           </p>
         </div>
       </div>
+
+      {brandId && !loading && !error && (inherited || !readOnly) && (
+        <div className="flex flex-col gap-3 rounded-lg border border-dashed p-4 text-sm sm:flex-row sm:items-center sm:justify-between">
+          <p className="text-muted-foreground">
+            {inherited
+              ? t('flag-detail.targeting.inherited-info', {
+                  brand: selectedBrand?.name ?? '',
+                })
+              : t('flag-detail.targeting.own-brand-rules', {
+                  brand: selectedBrand?.name ?? '',
+                })}
+          </p>
+          {!inherited && !readOnly && (
+            <Button
+              variant="outline"
+              size="sm"
+              className="shrink-0"
+              onClick={() => setConfirmReset(true)}
+            >
+              {t('flag-detail.targeting.reset-brand')}
+            </Button>
+          )}
+        </div>
+      )}
 
       {showForm && !readOnly && (
         <form
@@ -699,6 +816,17 @@ export function FlagTargetingTab({
         })}
         confirmLabel={t('common.delete')}
         onConfirm={handleDeleteRule}
+      />
+
+      <ConfirmDialog
+        open={confirmReset}
+        onOpenChange={setConfirmReset}
+        title={t('flag-detail.targeting.reset-brand-title')}
+        description={t('flag-detail.targeting.reset-brand-description', {
+          brand: selectedBrand?.name ?? '',
+        })}
+        confirmLabel={t('flag-detail.targeting.reset-brand-confirm')}
+        onConfirm={handleResetBrand}
       />
     </div>
   )

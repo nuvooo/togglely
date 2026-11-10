@@ -1,5 +1,5 @@
 import { Copy, Flag, Pencil, Trash2 } from 'lucide-react'
-import { useCallback, useEffect, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { Link, useNavigate, useParams, useSearchParams } from 'react-router-dom'
 import { toast } from 'sonner'
@@ -21,7 +21,7 @@ import { FlagBrandsTab } from './FlagBrandsTab'
 import { FlagEnvironmentsTab } from './FlagEnvironmentsTab'
 import { FlagHistoryTab } from './FlagHistoryTab'
 import { FlagMeta } from './FlagMeta'
-import { FlagTargetingTab } from './FlagTargetingTab'
+import { FlagTargetingTab, type TargetingBrand } from './FlagTargetingTab'
 import {
   type BrandEnvironment,
   type EnvironmentState,
@@ -175,6 +175,19 @@ export default function FlagDetailPage() {
       if (id === brandLoadId.current) setBrandError(getErrorMessage(error))
     }
   }, [flagId, projectId])
+
+  /** MULTI: brands for the targeting tab (same list in every environment). */
+  const targetingBrands = useMemo<TargetingBrand[]>(() => {
+    const byId = new Map<string, TargetingBrand>()
+    for (const env of brandEnvironments ?? []) {
+      for (const brand of env.brands) {
+        if (!byId.has(brand.brandId)) {
+          byId.set(brand.brandId, { id: brand.brandId, name: brand.brandName })
+        }
+      }
+    }
+    return [...byId.values()]
+  }, [brandEnvironments])
 
   const loadedFlagId = flag?.id
   useEffect(() => {
@@ -437,6 +450,8 @@ export default function FlagDetailPage() {
             flagId={flag.id}
             flagType={flag.type}
             environments={environments}
+            brands={isMulti ? targetingBrands : undefined}
+            onBrandRulesChanged={() => void loadBrandValues()}
             readOnly={!canEdit}
           />
         </TabsContent>
