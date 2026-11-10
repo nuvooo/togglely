@@ -1,4 +1,4 @@
-import { Info, Plus, Trash2, Users, X } from 'lucide-react'
+import { Info, Pencil, Plus, Trash2, Users, X } from 'lucide-react'
 import { useCallback, useEffect, useRef, useState } from 'react'
 import { useTranslation } from 'react-i18next'
 import { toast } from 'sonner'
@@ -56,7 +56,7 @@ interface FlagTargetingTabProps {
   readOnly?: boolean
 }
 
-/** Targeting rules of one flag, per environment (list, create, toggle, delete). */
+/** Targeting rules of one flag, per environment (list, create, edit, toggle, delete). */
 export function FlagTargetingTab({
   flagId,
   flagType,
@@ -83,6 +83,8 @@ export function FlagTargetingTab({
     defaultServeValue(flagType)
   )
   const [ruleToDelete, setRuleToDelete] = useState<TargetingRule | null>(null)
+  /** Rule currently being edited; null = the form creates a new rule. */
+  const [editingRule, setEditingRule] = useState<TargetingRule | null>(null)
 
   // Keep the selection valid when the environments change.
   useEffect(() => {
@@ -130,6 +132,7 @@ export function FlagTargetingTab({
     setConditions([emptyCondition()])
     setServeValue(defaultServeValue(flagType))
     setFormError(null)
+    setEditingRule(null)
   }
 
   const updateCondition = (key: number, patch: Partial<ConditionDraft>) => {
@@ -138,25 +141,42 @@ export function FlagTargetingTab({
     )
   }
 
-  const handleAddRule = async (e: React.FormEvent) => {
+  const startEdit = (rule: TargetingRule) => {
+    setEditingRule(rule)
+    setRuleName(rule.name ?? '')
+    setMatchOperator(rule.operator)
+    setConditions(
+      rule.conditions.map((c) => ({
+        key: ++conditionKeyCounter,
+        attribute: c.attribute,
+        operator: c.operator,
+        value: c.value,
+      }))
+    )
+    setServeValue(rule.serveValue)
+    setFormError(null)
+    setShowForm(true)
+  }
+
+  const handleSubmitRule = async (e: React.FormEvent) => {
     e.preventDefault()
     if (!environmentId) return
 
-    const payload = {
-      environmentId,
-      name: ruleName.trim() || undefined,
+    const fields = {
       operator: matchOperator,
       serveValue,
-      priority: nextPriority(rules),
-      enabled: true,
       conditions: conditions.map((c) => ({
         attribute: c.attribute.trim(),
         operator: c.operator,
         value: normalizeConditionValue(c.operator, c.value),
       })),
     }
+    const name = ruleName.trim()
 
-    const validationError = validateRuleInput(flagType, payload)
+    const validationError = validateRuleInput(flagType, {
+      ...fields,
+      name: name || undefined,
+    })
     if (validationError) {
       setFormError(validationError)
       return
@@ -165,14 +185,32 @@ export function FlagTargetingTab({
     setSaving(true)
     setFormError(null)
     try {
-      const response = await api.post(
-        `/feature-flags/${flagId}/targeting-rules`,
-        payload
-      )
-      setRules((prev) => [...prev, response.data.rule])
+      if (editingRule) {
+        const ruleId = editingRule.id
+        // An empty name clears it (the list then shows "unnamed")
+        const response = await api.patch(
+          `/feature-flags/${flagId}/targeting-rules/${ruleId}`,
+          { name, ...fields }
+        )
+        const updated: TargetingRule = response.data.rule
+        setRules((prev) => prev.map((r) => (r.id === ruleId ? updated : r)))
+        toast.success(t('flag-detail.targeting.updated'))
+      } else {
+        const response = await api.post(
+          `/feature-flags/${flagId}/targeting-rules`,
+          {
+            environmentId,
+            name: name || undefined,
+            ...fields,
+            priority: nextPriority(rules),
+            enabled: true,
+          }
+        )
+        setRules((prev) => [...prev, response.data.rule])
+        toast.success(t('flag-detail.targeting.created'))
+      }
       resetForm()
       setShowForm(false)
-      toast.success(t('flag-detail.targeting.created'))
     } catch (err) {
       handleForbidden(err, t)
       setFormError(getErrorMessage(err))
@@ -187,6 +225,10 @@ export function FlagTargetingTab({
     try {
       await api.delete(`/feature-flags/${flagId}/targeting-rules/${ruleId}`)
       setRules((prev) => prev.filter((r) => r.id !== ruleId))
+      if (editingRule?.id === ruleId) {
+        resetForm()
+        setShowForm(false)
+      }
       toast.success(t('flag-detail.targeting.deleted'))
     } catch (err) {
       // The confirm dialog stays open and shows the message.
@@ -306,17 +348,30 @@ export function FlagTargetingTab({
                   />
                 </span>
                 {!readOnly && (
-                  <Button
-                    variant="ghost"
-                    size="icon"
-                    className="h-8 w-8 text-muted-foreground hover:text-destructive"
-                    onClick={() => setRuleToDelete(rule)}
-                    aria-label={t('flag-detail.targeting.delete-label', {
-                      name,
-                    })}
-                  >
-                    <Trash2 className="h-4 w-4" />
-                  </Button>
+                  <>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-foreground"
+                      onClick={() => startEdit(rule)}
+                      aria-label={t('flag-detail.targeting.edit-label', {
+                        name,
+                      })}
+                    >
+                      <Pencil className="h-4 w-4" />
+                    </Button>
+                    <Button
+                      variant="ghost"
+                      size="icon"
+                      className="h-8 w-8 text-muted-foreground hover:text-destructive"
+                      onClick={() => setRuleToDelete(rule)}
+                      aria-label={t('flag-detail.targeting.delete-label', {
+                        name,
+                      })}
+                    >
+                      <Trash2 className="h-4 w-4" />
+                    </Button>
+                  </>
                 )}
               </div>
             </li>
@@ -350,7 +405,13 @@ export function FlagTargetingTab({
               value={environmentId}
               onChange={(e) => {
                 setEnvironmentId(e.target.value)
-                setFormError(null)
+                // The edited rule belongs to the previous environment
+                if (editingRule) {
+                  resetForm()
+                  setShowForm(false)
+                } else {
+                  setFormError(null)
+                }
               }}
               disabled={environments.length === 0}
               className={`${fieldClass} mt-1 w-auto`}
@@ -365,6 +426,12 @@ export function FlagTargetingTab({
           {!readOnly && (
             <Button
               onClick={() => {
+                // While editing, switch to an empty create form
+                if (editingRule) {
+                  resetForm()
+                  setShowForm(true)
+                  return
+                }
                 if (showForm) resetForm()
                 setShowForm(!showForm)
               }}
@@ -392,9 +459,14 @@ export function FlagTargetingTab({
 
       {showForm && !readOnly && (
         <form
-          onSubmit={handleAddRule}
+          onSubmit={handleSubmitRule}
           className="space-y-4 rounded-lg border bg-card p-4"
         >
+          {editingRule && (
+            <h3 className="text-sm font-semibold">
+              {t('flag-detail.targeting.edit-title')}
+            </h3>
+          )}
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div>
               <label htmlFor="rule-name" className="block text-sm font-medium">
@@ -608,7 +680,9 @@ export function FlagTargetingTab({
             <Button type="submit" disabled={saving}>
               {saving
                 ? t('flag-detail.saving')
-                : t('flag-detail.targeting.add')}
+                : editingRule
+                  ? t('common.save')
+                  : t('flag-detail.targeting.add')}
             </Button>
           </div>
         </form>
