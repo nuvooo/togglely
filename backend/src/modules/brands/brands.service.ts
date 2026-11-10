@@ -7,6 +7,7 @@ import { writeAudit } from '../audit-logs/write-audit'
 import { ChangeEventsService } from '../change-events/change-events.service'
 import { ChangeAction } from '../change-events/change-events.types'
 import { ENVIRONMENT_ORDER_BY } from '../environments/environment-order'
+import { removeFromRuleScopes } from '../flags/rule-scope-cleanup'
 import { getDefaultFlagValue } from '../sdk/sdk.helpers'
 
 /**
@@ -131,6 +132,7 @@ export class BrandsService {
   async delete(brandId: string) {
     // Delete all flag environments for this brand first (cascading delete for MongoDB)
     await this.prisma.flagEnvironment.deleteMany({ where: { brandId } })
+    await removeFromRuleScopes(this.prisma, 'brand', brandId)
     const brand = await this.prisma.brand.delete({ where: { id: brandId } })
     await this.recordBrandChanged(brand.projectId)
   }
@@ -254,21 +256,8 @@ export class BrandsService {
       return { brandId, flagId, environmentId, inherited: true, deleted: false }
     }
 
-    await this.prisma.$transaction(async (tx) => {
-      const rules = await tx.targetingRule.findMany({
-        where: { flagEnvId: existing.id },
-        select: { id: true },
-      })
-      if (rules.length > 0) {
-        await tx.ruleCondition.deleteMany({
-          where: { ruleId: { in: rules.map((r) => r.id) } },
-        })
-        await tx.targetingRule.deleteMany({
-          where: { flagEnvId: existing.id },
-        })
-      }
-      await tx.flagEnvironment.delete({ where: { id: existing.id } })
-    })
+    // Targeting rules are flag-wide and not tied to this row
+    await this.prisma.flagEnvironment.delete({ where: { id: existing.id } })
     this.recordFlagChanged(flag, environmentId, 'updated')
 
     if (userId) {

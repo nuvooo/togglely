@@ -611,11 +611,11 @@ describe('BrandsService change events', () => {
     expect(changes.recordChange).not.toHaveBeenCalled()
   })
 
-  it('resetOverride records nothing when the transaction fails', async () => {
+  it('resetOverride records nothing when the delete fails', async () => {
     const { service, prisma, changes } = createService()
     prisma.featureFlag.findUnique.mockResolvedValue(mockFlag)
     prisma.flagEnvironment.findFirst.mockResolvedValue({ id: 'fe-1' })
-    prisma.$transaction.mockRejectedValue(new Error('x'))
+    prisma.flagEnvironment.delete.mockRejectedValue(new Error('x'))
 
     await expect(
       service.resetOverride('brand-1', 'flag-1', 'env-1')

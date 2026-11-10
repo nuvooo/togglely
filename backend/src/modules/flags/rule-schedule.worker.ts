@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../../shared/prisma.service'
 import { ChangeEventsService } from '../change-events/change-events.service'
 import { nextBoundaryAfter } from '../sdk/rule-schedule'
+import { scopedEnvironmentIds } from '../sdk/rule-scope'
 
 export const RULE_SCHEDULE_INTERVAL_MS = 30_000
 export const RULE_SCHEDULE_BATCH_SIZE = 100
@@ -69,14 +70,9 @@ export class RuleScheduleWorker implements OnModuleInit, OnModuleDestroy {
         activeFrom: true,
         activeUntil: true,
         nextBoundaryAt: true,
-        flagEnvironment: {
-          select: {
-            environmentId: true,
-            flag: {
-              select: { key: true, projectId: true, organizationId: true },
-            },
-          },
-        },
+        environmentIds: true,
+        environmentsExcluded: true,
+        flag: { select: { key: true, projectId: true, organizationId: true } },
       },
       orderBy: { nextBoundaryAt: 'asc' },
       take: RULE_SCHEDULE_BATCH_SIZE,
@@ -90,13 +86,13 @@ export class RuleScheduleWorker implements OnModuleInit, OnModuleDestroy {
           data: { nextBoundaryAt: nextBoundaryAfter(rule, now) },
         })
         // Claimed by another instance (or the rule changed meanwhile)
-        if (count !== 1) continue
+        if (count !== 1 || !rule.flag) continue
 
-        const { environmentId, flag } = rule.flagEnvironment
+        const { flag } = rule
         await this.changes.recordChange({
           organizationId: flag.organizationId,
           projectId: flag.projectId,
-          environmentIds: [environmentId],
+          environmentIds: scopedEnvironmentIds([rule]),
           changes: [{ flagKey: flag.key, action: 'rules_changed' }],
         })
         announced++

@@ -44,6 +44,8 @@ export class RuleConditionDto {
 
 /** Max number of condition groups per rule. */
 export const RULE_GROUPS_MAX = 10
+/** Max number of environment or brand ids in a rule scope. */
+export const RULE_SCOPE_IDS_MAX = 100
 
 /** Conditions combined with the group operator (AND: all, OR: any). */
 export class ConditionGroupDto {
@@ -84,6 +86,30 @@ class TargetingRuleFieldsDto {
   @Type(() => ConditionGroupDto)
   groups?: ConditionGroupDto[]
 
+  /** Scope: environments the rule applies to; empty = all. */
+  @IsArray()
+  @IsOptional()
+  @ArrayMaxSize(RULE_SCOPE_IDS_MAX)
+  @IsMongoId({ each: true })
+  environmentIds?: string[]
+
+  /** true: the rule applies to all environments except environmentIds. */
+  @IsBoolean()
+  @IsOptional()
+  environmentsExcluded?: boolean
+
+  /** Scope: brands the rule applies to; empty = all. */
+  @IsArray()
+  @IsOptional()
+  @ArrayMaxSize(RULE_SCOPE_IDS_MAX)
+  @IsMongoId({ each: true })
+  brandIds?: string[]
+
+  /** true: the rule applies to all brands (and no brand) except brandIds. */
+  @IsBoolean()
+  @IsOptional()
+  brandsExcluded?: boolean
+
   @IsInt()
   @Min(0)
   @Max(10000)
@@ -106,10 +132,12 @@ class TargetingRuleFieldsDto {
 }
 
 export class CreateTargetingRuleDto extends TargetingRuleFieldsDto {
+  /** Legacy shorthand for `environmentIds: [environmentId]`. */
   @IsMongoId()
-  environmentId: string
+  @IsOptional()
+  environmentId?: string
 
-  /** Creates the rule for this brand (brand override) instead of the environment. */
+  /** Legacy shorthand for `brandIds: [brandId]`. */
   @IsMongoId()
   @IsOptional()
   brandId?: string

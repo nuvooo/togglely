@@ -229,12 +229,8 @@ describe('BrandsController.resetFlagOverride', () => {
       where: { id: 'fe-brand' },
     })
     expect(prisma.flagEnvironment.deleteMany).not.toHaveBeenCalled()
-    expect(prisma.targetingRule.deleteMany).toHaveBeenCalledWith({
-      where: { flagEnvId: 'fe-brand' },
-    })
-    expect(prisma.ruleCondition.deleteMany).toHaveBeenCalledWith({
-      where: { ruleId: { in: ['r1'] } },
-    })
+    // Targeting rules are flag-wide; resetting the brand row keeps them
+    expect(prisma.targetingRule.deleteMany).not.toHaveBeenCalled()
     expect(auditLogs.create).toHaveBeenCalledWith(
       expect.objectContaining({
         action: 'flag.brand_override_reset',

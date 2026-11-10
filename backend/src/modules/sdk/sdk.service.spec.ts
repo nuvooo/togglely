@@ -56,6 +56,9 @@ function createService() {
       findMany: jest.fn(),
       create: jest.fn(),
     },
+    targetingRule: {
+      findMany: jest.fn().mockResolvedValue([]),
+    },
     brand: {
       findFirst: jest.fn(),
     },
@@ -769,6 +772,114 @@ describe('SdkService', () => {
       expect(prisma.flagEnvironment.create.mock.calls[0][0].data.brandId).toBe(
         null
       )
+    })
+  })
+
+  describe('flag-wide targeting rules', () => {
+    const multiProject = { ...mockProject, type: 'MULTI' }
+    const stringFlag = { ...mockFlag, flagType: 'STRING' }
+    const row = {
+      id: 'fe-default',
+      flagId: 'flag-1',
+      environmentId: 'env-1',
+      brandId: null,
+      enabled: true,
+      defaultValue: 'default',
+    }
+    const scopedRule = (
+      serveValue: string,
+      priority: number,
+      scope: Record<string, unknown>
+    ) => ({
+      id: serveValue,
+      flagId: 'flag-1',
+      name: serveValue,
+      operator: 'AND',
+      serveValue,
+      isDefault: false,
+      enabled: true,
+      priority,
+      groupOperators: [],
+      environmentIds: [],
+      environmentsExcluded: false,
+      brandIds: [],
+      brandsExcluded: false,
+      conditions: [],
+      ...scope,
+    })
+
+    function setup(rules: unknown[], brand: string | null) {
+      const ctx = createService()
+      mockValidAccess(ctx.prisma, multiProject)
+      ctx.prisma.brand.findFirst.mockResolvedValue(
+        brand ? { id: brand, key: 'b' } : null
+      )
+      ctx.prisma.featureFlag.findFirst.mockResolvedValue(stringFlag)
+      ctx.prisma.featureFlag.findMany.mockResolvedValue([stringFlag])
+      ctx.prisma.flagEnvironment.findFirst.mockImplementation(
+        ({ where }: any) => Promise.resolve(where.brandId ? null : row)
+      )
+      ctx.prisma.flagEnvironment.findMany.mockResolvedValue([row])
+      ctx.prisma.targetingRule.findMany.mockResolvedValue(rules)
+      return ctx
+    }
+
+    const evaluate = (service: SdkService, brand?: string) =>
+      service.evaluateFlag('my-project', 'production', 'my-flag', 'k', brand)
+
+    it('loads the rules of the flag', async () => {
+      const { service, prisma } = setup([], null)
+      await evaluate(service)
+      expect(prisma.targetingRule.findMany).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { flagId: { in: ['flag-1'] } } })
+      )
+    })
+
+    it('skips rules for other environments', async () => {
+      const { service } = setup(
+        [
+          scopedRule('other-env', 0, { environmentIds: ['env-2'] }),
+          scopedRule('this-env', 1, { environmentIds: ['env-1'] }),
+        ],
+        null
+      )
+      expect((await evaluate(service)).value).toBe('this-env')
+    })
+
+    it('applies brand rules only to the listed brands', async () => {
+      const rules = [
+        scopedRule('acme', 0, { brandIds: ['brand-acme'] }),
+        scopedRule('everyone', 1, {}),
+      ]
+      const acme = setup(rules, 'brand-acme')
+      expect((await evaluate(acme.service, 'acme')).value).toBe('acme')
+      const noBrand = setup(rules, null)
+      expect((await evaluate(noBrand.service)).value).toBe('everyone')
+    })
+
+    it('honours excluded brands', async () => {
+      const rules = [
+        scopedRule('not-acme', 0, {
+          brandIds: ['brand-acme'],
+          brandsExcluded: true,
+        }),
+      ]
+      const acme = setup(rules, 'brand-acme')
+      expect((await evaluate(acme.service, 'acme')).value).toBe('default')
+      const globex = setup(rules, 'brand-globex')
+      expect((await evaluate(globex.service, 'globex')).value).toBe('not-acme')
+    })
+
+    it('getAllFlags applies the scoped rules per flag', async () => {
+      const { service } = setup(
+        [
+          scopedRule('other-env', 0, { environmentIds: ['env-2'] }),
+          scopedRule('this-env', 1, { environmentIds: ['env-1'] }),
+        ],
+        null
+      )
+      const flags = await service.getAllFlags('my-project', 'production', 'k')
+      expect(flags['my-flag'].value).toBe('this-env')
     })
   })
 

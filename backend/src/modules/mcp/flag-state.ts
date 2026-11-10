@@ -1,4 +1,5 @@
 import { FlagType } from '@prisma/client'
+import { RuleScope } from '../sdk/rule-scope'
 import { getDefaultFlagValue } from '../sdk/sdk.helpers'
 
 export interface FlagStateRow {
@@ -72,15 +73,10 @@ export function findDivergentStates(rows: FlagStateRow[]): FlagStateRow[] {
 
 /**
  * Human readable reasons that block deleting a flag: enabled targeting rules
- * (per environment/brand row) and experiments that have not ended.
+ * (with where they apply) and experiments that have not ended.
  */
 export function describeDeleteBlockers(
-  flagEnvironments: {
-    id: string
-    environmentId: string
-    brandId: string | null
-  }[],
-  enabledRules: { flagEnvId: string }[],
+  enabledRules: RuleScope[],
   openExperiments: { key: string; status: string }[],
   environments: { id: string; key: string }[],
   brands: { id: string; key: string }[]
@@ -88,14 +84,31 @@ export function describeDeleteBlockers(
   const blockers: string[] = []
   const envKeyById = new Map(environments.map((e) => [e.id, e.key]))
   const brandKeyById = new Map(brands.map((b) => [b.id, b.key]))
-  const ruleRows = new Set(enabledRules.map((r) => r.flagEnvId))
-  const locations = flagEnvironments
-    .filter((fe) => ruleRows.has(fe.id))
-    .map((fe) => {
-      const env = envKeyById.get(fe.environmentId) ?? fe.environmentId
-      if (!fe.brandId) return env
-      return `${env}/${brandKeyById.get(fe.brandId) ?? fe.brandId}`
-    })
+  // "dev, prod" / "all environments" / "all environments except prod"
+  const describe = (
+    ids: string[] | null | undefined,
+    excluded: boolean | null | undefined,
+    keys: Map<string, string>,
+    all: string
+  ) => {
+    const names = (ids ?? []).map((id) => keys.get(id) ?? id).join(', ')
+    if (!names) return all
+    return excluded ? `${all} except ${names}` : names
+  }
+  const locations = [
+    ...new Set(
+      enabledRules.map((rule) => {
+        const env = describe(
+          rule.environmentIds,
+          rule.environmentsExcluded,
+          envKeyById,
+          'all environments'
+        )
+        if (!rule.brandIds?.length) return env
+        return `${env}/${describe(rule.brandIds, rule.brandsExcluded, brandKeyById, 'all brands')}`
+      })
+    ),
+  ]
   if (locations.length > 0) {
     blockers.push(
       `enabled targeting rules in: ${locations.join(', ')} (disable or remove them first)`

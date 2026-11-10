@@ -333,12 +333,19 @@ describe('McpToolsService', () => {
 
     it('with confirm, uniform states and an enabled targeting rule refuses and does not delete', async () => {
       prisma.featureFlag.findFirst.mockResolvedValue(uniform)
-      prisma.targetingRule.findMany.mockResolvedValue([{ flagEnvId: 'fe2' }])
+      prisma.targetingRule.findMany.mockResolvedValue([
+        {
+          environmentIds: ['e2'],
+          environmentsExcluded: false,
+          brandIds: [],
+          brandsExcluded: false,
+        },
+      ])
       await expect(
         service.deleteFlag(ctx, { flagKey: 'my-flag', confirm: true })
       ).rejects.toThrow(/targeting rule.*prod/i)
       expect(prisma.targetingRule.findMany.mock.calls[0][0].where).toEqual({
-        flagEnvId: { in: ['fe1', 'fe2'] },
+        flagId: 'f1',
         enabled: true,
       })
       expect(flags.delete).not.toHaveBeenCalled()
@@ -361,7 +368,14 @@ describe('McpToolsService', () => {
 
     it('without confirm lists blockers and canDelete false', async () => {
       prisma.featureFlag.findFirst.mockResolvedValue(uniform)
-      prisma.targetingRule.findMany.mockResolvedValue([{ flagEnvId: 'fe1' }])
+      prisma.targetingRule.findMany.mockResolvedValue([
+        {
+          environmentIds: ['e1'],
+          environmentsExcluded: false,
+          brandIds: [],
+          brandsExcluded: false,
+        },
+      ])
       prisma.experiment.findMany.mockResolvedValue([
         { key: 'exp', status: 'PAUSED' },
       ])

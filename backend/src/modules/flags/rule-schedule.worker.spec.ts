@@ -9,10 +9,9 @@ const dueRule = (overrides: Record<string, unknown> = {}) => ({
   activeFrom: FROM,
   activeUntil: UNTIL,
   nextBoundaryAt: FROM,
-  flagEnvironment: {
-    environmentId: 'env1',
-    flag: { key: 'black-friday', projectId: 'p1', organizationId: 'o1' },
-  },
+  environmentIds: ['env1'],
+  environmentsExcluded: false,
+  flag: { key: 'black-friday', projectId: 'p1', organizationId: 'o1' },
   ...overrides,
 })
 
