@@ -19,6 +19,7 @@ import {
   nextPriority,
   normalizeConditionValue,
   type RuleMatchOperator,
+  type RuleScope,
   ruleGroups,
   ruleScheduleStatus,
   sortRulesByPriority,
@@ -35,52 +36,52 @@ import {
   groupsFromRule,
   RuleConditionsEditor,
 } from './RuleConditionsEditor'
+import {
+  EMPTY_SCOPE,
+  RuleScopeEditor,
+  type ScopeOption,
+} from './RuleScopeEditor'
 import type { EnvironmentState, FlagType } from './types'
 
 const defaultServeValue = (type: FlagType) => (type === 'BOOLEAN' ? 'true' : '')
 
-export interface TargetingBrand {
-  id: string
-  name: string
-}
+export type TargetingBrand = ScopeOption
 
 const NO_BRANDS: TargetingBrand[] = []
+
+const scopeOf = (rule: TargetingRule): RuleScope => ({
+  environmentIds: rule.environmentIds ?? [],
+  environmentsExcluded: rule.environmentsExcluded ?? false,
+  brandIds: rule.brandIds ?? [],
+  brandsExcluded: rule.brandsExcluded ?? false,
+})
 
 interface FlagTargetingTabProps {
   flagId: string
   flagType: FlagType
   environments: EnvironmentState[]
-  /** MULTI projects: brands that can get own rules. */
+  /** MULTI projects: brands a rule can be limited to. */
   brands?: TargetingBrand[]
-  /** Brand rules were created or reset (a brand override may be new). */
-  onBrandRulesChanged?: () => void
   /** No write permission (VIEWER): rules can be read only. */
   readOnly?: boolean
 }
 
 /**
- * Targeting rules of one flag, per environment and optionally per brand
- * (list, create, edit, toggle, delete). A brand without own rules shows the
- * inherited environment rules read-only.
+ * Targeting rules of one flag (list, create, edit, toggle, delete). Rules are
+ * flag-wide: each rule says where it applies (environments, brands) next to
+ * its conditions; the first matching rule wins.
  */
 export function FlagTargetingTab({
   flagId,
   flagType,
   environments,
   brands = NO_BRANDS,
-  onBrandRulesChanged,
   readOnly = false,
 }: FlagTargetingTabProps) {
   const { t, i18n } = useTranslation()
   const readOnlyTitle = readOnly ? t('common.read-only') : undefined
-  /** Bumped per load; rules of another flag/environment arriving late are dropped. */
+  /** Bumped per load; rules of another flag arriving late are dropped. */
   const loadId = useRef(0)
-  const [environmentId, setEnvironmentId] = useState(environments[0]?.id ?? '')
-  /** '' = rules of the environment (all brands). */
-  const [brandId, setBrandId] = useState('')
-  /** The selected brand has no own rules; `rules` are the environment's. */
-  const [inherited, setInherited] = useState(false)
-  const [confirmReset, setConfirmReset] = useState(false)
   const [rules, setRules] = useState<TargetingRule[]>([])
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState<string | null>(null)
@@ -88,6 +89,7 @@ export function FlagTargetingTab({
   const [formError, setFormError] = useState<string | null>(null)
   const [saving, setSaving] = useState(false)
   const [ruleName, setRuleName] = useState('')
+  const [scope, setScope] = useState<RuleScope>(EMPTY_SCOPE)
   /** Combines the condition groups (with more than one group). */
   const [ruleOperator, setRuleOperator] = useState<RuleMatchOperator>('AND')
   const [groups, setGroups] = useState<GroupDraft[]>(() => [emptyGroup()])
@@ -101,50 +103,23 @@ export function FlagTargetingTab({
   /** Rule currently being edited; null = the form creates a new rule. */
   const [editingRule, setEditingRule] = useState<TargetingRule | null>(null)
 
-  // Keep the selection valid when the environments change.
-  useEffect(() => {
-    setEnvironmentId((current) =>
-      environments.some((e) => e.id === current)
-        ? current
-        : (environments[0]?.id ?? '')
-    )
-  }, [environments])
-
-  // Brands can disappear (e.g. after a reload of the brand values).
-  useEffect(() => {
-    setBrandId((current) =>
-      current === '' || brands.some((b) => b.id === current) ? current : ''
-    )
-  }, [brands])
-
   const loadRules = useCallback(async () => {
     const id = ++loadId.current
     const current = () => id === loadId.current
-    if (!environmentId) {
-      setRules([])
-      return
-    }
     setLoading(true)
     setError(null)
     try {
-      const response = await api.get(
-        `/feature-flags/${flagId}/targeting-rules`,
-        {
-          params: brandId ? { environmentId, brandId } : { environmentId },
-        }
-      )
+      const response = await api.get(`/feature-flags/${flagId}/targeting-rules`)
       if (!current()) return
       setRules(response.data.rules ?? [])
-      setInherited(Boolean(brandId && response.data.inherited))
     } catch (err) {
       if (!current()) return
       setRules([])
-      setInherited(false)
       setError(getErrorMessage(err))
     } finally {
       if (current()) setLoading(false)
     }
-  }, [flagId, environmentId, brandId])
+  }, [flagId])
 
   useEffect(() => {
     void loadRules()
@@ -152,6 +127,7 @@ export function FlagTargetingTab({
 
   const resetForm = () => {
     setRuleName('')
+    setScope(EMPTY_SCOPE)
     setRuleOperator('AND')
     setGroups([emptyGroup()])
     setServeValue(defaultServeValue(flagType))
@@ -164,6 +140,7 @@ export function FlagTargetingTab({
   const startEdit = (rule: TargetingRule) => {
     setEditingRule(rule)
     setRuleName(rule.name ?? '')
+    setScope(scopeOf(rule))
     setRuleOperator(rule.operator)
     setGroups(groupsFromRule(rule))
     setServeValue(rule.serveValue)
@@ -175,7 +152,6 @@ export function FlagTargetingTab({
 
   const handleSubmitRule = async (e: React.FormEvent) => {
     e.preventDefault()
-    if (!environmentId) return
 
     const groupInputs = groups.map((g) => ({
       operator: g.operator,
@@ -222,7 +198,7 @@ export function FlagTargetingTab({
         // Empty name / window fields clear them (null on the API)
         const response = await api.patch(
           `/feature-flags/${flagId}/targeting-rules/${ruleId}`,
-          { name, ...fields, ...window }
+          { name, ...scope, ...fields, ...window }
         )
         const updated: TargetingRule = response.data.rule
         setRules((prev) => prev.map((r) => (r.id === ruleId ? updated : r)))
@@ -231,21 +207,16 @@ export function FlagTargetingTab({
         const response = await api.post(
           `/feature-flags/${flagId}/targeting-rules`,
           {
-            environmentId,
-            ...(brandId ? { brandId } : {}),
             name: name || undefined,
+            ...scope,
             ...fields,
             ...(window.activeFrom ? { activeFrom: window.activeFrom } : {}),
             ...(window.activeUntil ? { activeUntil: window.activeUntil } : {}),
-            // The first own brand rule starts a new list
-            priority: inherited ? 0 : nextPriority(rules),
+            priority: nextPriority(rules),
             enabled: true,
           }
         )
-        const created: TargetingRule = response.data.rule
-        setRules((prev) => (inherited ? [created] : [...prev, created]))
-        setInherited(false)
-        if (brandId) onBrandRulesChanged?.()
+        setRules((prev) => [...prev, response.data.rule])
         toast.success(t('flag-detail.targeting.created'))
       }
       resetForm()
@@ -263,10 +234,7 @@ export function FlagTargetingTab({
     const ruleId = ruleToDelete.id
     try {
       await api.delete(`/feature-flags/${flagId}/targeting-rules/${ruleId}`)
-      const remaining = rules.filter((r) => r.id !== ruleId)
-      setRules(remaining)
-      // Without own rules the brand inherits the environment rules again
-      if (brandId && remaining.length === 0) void loadRules()
+      setRules((prev) => prev.filter((r) => r.id !== ruleId))
       if (editingRule?.id === ruleId) {
         resetForm()
         setShowForm(false)
@@ -298,39 +266,6 @@ export function FlagTargetingTab({
     }
   }
 
-  const handleResetBrand = async () => {
-    try {
-      await api.delete(`/feature-flags/${flagId}/targeting-rules`, {
-        params: { environmentId, brandId },
-      })
-      if (editingRule) {
-        resetForm()
-        setShowForm(false)
-      }
-      toast.success(t('flag-detail.targeting.reset-brand-done'))
-      onBrandRulesChanged?.()
-      void loadRules()
-    } catch (err) {
-      // The confirm dialog stays open and shows the message.
-      handleForbidden(err, t)
-      throw err
-    }
-  }
-
-  /** Environment or brand changed: an open edit form belongs to the old scope. */
-  const leaveScope = () => {
-    if (editingRule) {
-      resetForm()
-      setShowForm(false)
-    } else {
-      setFormError(null)
-    }
-  }
-
-  /** Inherited rules are shown read-only; they are changed on the environment. */
-  const rulesEditable = !readOnly && !inherited
-  const selectedBrand = brands.find((b) => b.id === brandId)
-
   const scheduleLabel = ({
     kind,
     at,
@@ -350,10 +285,24 @@ export function FlagTargetingTab({
       ? t('flag-detail.targeting.match-any')
       : t('flag-detail.targeting.match-all')
 
+  /** "Dev, Prod" / "All environments" / "All environments except Prod" */
+  const scopeLabel = (
+    ids: string[],
+    excluded: boolean,
+    options: ScopeOption[],
+    all: string
+  ) => {
+    if (ids.length === 0) return all
+    const names = ids
+      .map((id) => options.find((o) => o.id === id)?.name ?? id)
+      .join(', ')
+    return excluded
+      ? t('flag-detail.targeting.scope-except', { all, names })
+      : names
+  }
+
   let list: React.ReactNode
-  if (environments.length === 0) {
-    list = <EmptyState title={t('flag-detail.targeting.no-environments')} />
-  } else if (loading) {
+  if (loading) {
     list = (
       <div className="space-y-3 rounded-lg border bg-card p-6" aria-busy="true">
         <Skeleton className="h-6 w-full" />
@@ -383,6 +332,7 @@ export function FlagTargetingTab({
           const name = rule.name || t('flag-detail.targeting.unnamed')
           const schedule = ruleScheduleStatus(rule)
           const groupsOfRule = ruleGroups(rule)
+          const ruleScope = scopeOf(rule)
           return (
             <li
               key={rule.id}
@@ -412,6 +362,26 @@ export function FlagTargetingTab({
                         }
                       >
                         {scheduleLabel(schedule)}
+                      </Badge>
+                    )}
+                  </div>
+                  <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
+                    <Badge variant="secondary">
+                      {scopeLabel(
+                        ruleScope.environmentIds,
+                        ruleScope.environmentsExcluded,
+                        environments,
+                        t('flag-detail.targeting.scope-all-environments')
+                      )}
+                    </Badge>
+                    {brands.length > 0 && (
+                      <Badge variant="secondary">
+                        {scopeLabel(
+                          ruleScope.brandIds,
+                          ruleScope.brandsExcluded,
+                          brands,
+                          t('flag-detail.targeting.scope-all-brands')
+                        )}
                       </Badge>
                     )}
                   </div>
@@ -465,14 +435,14 @@ export function FlagTargetingTab({
                 <span title={readOnlyTitle} className="inline-flex">
                   <Switch
                     checked={rule.enabled}
-                    disabled={!rulesEditable}
+                    disabled={readOnly}
                     onCheckedChange={() => void handleToggleRule(rule)}
                     aria-label={t('flag-detail.targeting.toggle-label', {
                       name,
                     })}
                   />
                 </span>
-                {rulesEditable && (
+                {!readOnly && (
                   <>
                     <Button
                       variant="ghost"
@@ -517,77 +487,23 @@ export function FlagTargetingTab({
             {t('flag-detail.targeting.description')}
           </p>
         </div>
-        <div className="flex items-end gap-3">
-          <div>
-            <label
-              htmlFor="rules-environment"
-              className="block text-xs font-medium text-muted-foreground"
-            >
-              {t('flag-detail.targeting.environment')}
-            </label>
-            <select
-              id="rules-environment"
-              value={environmentId}
-              onChange={(e) => {
-                setEnvironmentId(e.target.value)
-                leaveScope()
-              }}
-              disabled={environments.length === 0}
-              className={`${fieldClass} mt-1 w-auto`}
-            >
-              {environments.map((env) => (
-                <option key={env.id} value={env.id}>
-                  {env.name}
-                </option>
-              ))}
-            </select>
-          </div>
-          {brands.length > 0 && (
-            <div>
-              <label
-                htmlFor="rules-brand"
-                className="block text-xs font-medium text-muted-foreground"
-              >
-                {t('flag-detail.targeting.brand')}
-              </label>
-              <select
-                id="rules-brand"
-                value={brandId}
-                onChange={(e) => {
-                  setBrandId(e.target.value)
-                  leaveScope()
-                }}
-                disabled={environments.length === 0}
-                className={`${fieldClass} mt-1 w-auto`}
-              >
-                <option value="">{t('flag-detail.targeting.brand-all')}</option>
-                {brands.map((brand) => (
-                  <option key={brand.id} value={brand.id}>
-                    {brand.name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-          {!readOnly && (
-            <Button
-              onClick={() => {
-                // While editing, switch to an empty create form
-                if (editingRule) {
-                  resetForm()
-                  setShowForm(true)
-                  return
-                }
-                if (showForm) resetForm()
-                setShowForm(!showForm)
-              }}
-              disabled={!environmentId}
-            >
-              <Plus className="mr-1.5 h-4 w-4" />
-              {t('flag-detail.targeting.add')}
-            </Button>
-          )}
-        </div>
+        {!readOnly && (
+          <Button
+            onClick={() => {
+              // While editing, switch to an empty create form
+              if (editingRule) {
+                resetForm()
+                setShowForm(true)
+                return
+              }
+              if (showForm) resetForm()
+              setShowForm(!showForm)
+            }}
+          >
+            <Plus className="mr-1.5 h-4 w-4" />
+            {t('flag-detail.targeting.add')}
+          </Button>
+        )}
       </div>
 
       <div className="flex gap-3 rounded-lg border bg-muted/50 p-4 text-sm text-muted-foreground">
@@ -602,30 +518,6 @@ export function FlagTargetingTab({
           </p>
         </div>
       </div>
-
-      {brandId && !loading && !error && (inherited || !readOnly) && (
-        <div className="flex flex-col gap-3 rounded-lg border border-dashed p-4 text-sm sm:flex-row sm:items-center sm:justify-between">
-          <p className="text-muted-foreground">
-            {inherited
-              ? t('flag-detail.targeting.inherited-info', {
-                  brand: selectedBrand?.name ?? '',
-                })
-              : t('flag-detail.targeting.own-brand-rules', {
-                  brand: selectedBrand?.name ?? '',
-                })}
-          </p>
-          {!inherited && !readOnly && (
-            <Button
-              variant="outline"
-              size="sm"
-              className="shrink-0"
-              onClick={() => setConfirmReset(true)}
-            >
-              {t('flag-detail.targeting.reset-brand')}
-            </Button>
-          )}
-        </div>
-      )}
 
       {showForm && !readOnly && (
         <form
@@ -655,6 +547,13 @@ export function FlagTargetingTab({
               />
             </div>
           </div>
+
+          <RuleScopeEditor
+            environments={environments}
+            brands={brands}
+            scope={scope}
+            onChange={setScope}
+          />
 
           <RuleConditionsEditor
             groups={groups}
@@ -794,17 +693,6 @@ export function FlagTargetingTab({
         })}
         confirmLabel={t('common.delete')}
         onConfirm={handleDeleteRule}
-      />
-
-      <ConfirmDialog
-        open={confirmReset}
-        onOpenChange={setConfirmReset}
-        title={t('flag-detail.targeting.reset-brand-title')}
-        description={t('flag-detail.targeting.reset-brand-description', {
-          brand: selectedBrand?.name ?? '',
-        })}
-        confirmLabel={t('flag-detail.targeting.reset-brand-confirm')}
-        onConfirm={handleResetBrand}
       />
     </div>
   )

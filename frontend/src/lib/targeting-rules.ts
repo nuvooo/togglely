@@ -25,10 +25,19 @@ export interface TargetingCondition {
   value: string
 }
 
-export interface TargetingRule {
+/**
+ * Where a flag-wide rule applies; empty lists mean "all", *Excluded turns
+ * "one of" into "none of".
+ */
+export interface RuleScope {
+  environmentIds: string[]
+  environmentsExcluded: boolean
+  brandIds: string[]
+  brandsExcluded: boolean
+}
+
+export interface TargetingRule extends Partial<RuleScope> {
   id: string
-  environmentId: string
-  brandId: string | null
   name: string | null
   operator: RuleMatchOperator
   serveValue: string
@@ -62,7 +71,6 @@ export interface ConditionInput {
 }
 
 export interface CreateTargetingRuleInput {
-  environmentId: string
   name?: string
   operator: RuleMatchOperator
   serveValue: string
@@ -248,7 +256,7 @@ export function validateServeValue(
 /** Client-side mirror of the backend validation. Server stays authoritative. */
 export function validateRuleInput(
   flagType: FlagType,
-  input: Omit<CreateTargetingRuleInput, 'environmentId' | 'priority'>
+  input: Omit<CreateTargetingRuleInput, 'priority'>
 ): string | null {
   if (input.name && input.name.length > MAX_RULE_NAME_LENGTH) {
     return `Rule name must be at most ${MAX_RULE_NAME_LENGTH} characters`

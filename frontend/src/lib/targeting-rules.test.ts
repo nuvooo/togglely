@@ -19,8 +19,8 @@ import {
 
 const rule = (id: string, priority: number): TargetingRule => ({
   id,
-  environmentId: 'env',
-  brandId: null,
+  environmentIds: ['env'],
+  brandIds: [],
   name: null,
   operator: 'AND',
   serveValue: 'true',
