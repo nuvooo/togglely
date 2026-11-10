@@ -9,6 +9,7 @@ import {
   IsEnum,
   IsInt,
   IsMongoId,
+  IsObject,
   IsOptional,
   IsString,
   Matches,
@@ -85,6 +86,16 @@ class TargetingRuleFieldsDto {
   @ValidateNested({ each: true })
   @Type(() => ConditionGroupDto)
   groups?: ConditionGroupDto[]
+
+  /**
+   * Conditions as a tree of AND / OR / NOT blocks, e.g.
+   * { type: 'AND', children: [{ type: 'condition', attribute, operator,
+   * value }, { type: 'NOT', children: [...] }] }. Alternative to
+   * `conditions` and `groups`; validated in depth by parseConditionTree.
+   */
+  @IsObject()
+  @IsOptional()
+  conditionTree?: Record<string, unknown>
 
   /** Scope: environments the rule applies to; empty = all. */
   @IsArray()

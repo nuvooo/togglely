@@ -231,13 +231,14 @@ describe('TargetingRulesService behaviour', () => {
           flagId: FLAG,
           operator: 'AND',
           enabled: true,
-          conditions: {
-            create: [
+          conditionTree: {
+            type: 'AND',
+            children: [
               {
+                type: 'condition',
                 attribute: 'country',
                 operator: 'EQUALS',
                 value: 'DE',
-                groupIndex: 0,
               },
             ],
           },
@@ -345,20 +346,28 @@ describe('TargetingRulesService behaviour', () => {
       },
       req
     )
+    // The tree replaces the legacy condition rows
     expect(prisma.ruleCondition.deleteMany).toHaveBeenCalledWith({
       where: { ruleId: RULE },
     })
-    expect(prisma.ruleCondition.createMany).toHaveBeenCalledWith({
-      data: [
-        {
-          ruleId: RULE,
-          attribute: 'plan',
-          operator: 'IN',
-          value: 'pro,team',
-          groupIndex: 0,
-        },
-      ],
-    })
+    expect(prisma.ruleCondition.createMany).not.toHaveBeenCalled()
+    expect(prisma.targetingRule.update).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({
+          conditionTree: {
+            type: 'AND',
+            children: [
+              {
+                type: 'condition',
+                attribute: 'plan',
+                operator: 'IN',
+                value: 'pro,team',
+              },
+            ],
+          },
+        }),
+      })
+    )
   })
 })
 
@@ -632,32 +641,59 @@ describe('Targeting rule time windows', () => {
   })
 })
 
-describe('Targeting rule condition groups', () => {
+describe('Targeting rule condition tree', () => {
   const de = { attribute: 'country', operator: 'EQUALS' as const, value: 'DE' }
   const pro = { attribute: 'plan', operator: 'EQUALS' as const, value: 'pro' }
   const beta = { attribute: 'beta', operator: 'EQUALS' as const, value: 'yes' }
-  const groupsDto = {
-    operator: 'AND' as const,
-    conditions: undefined,
-    groups: [
-      { operator: 'AND' as const, conditions: [de] },
-      { operator: 'OR' as const, conditions: [pro, beta] },
+  const leaf = (c: typeof de) => ({ type: 'condition', ...c })
+  // country = DE AND (plan = pro OR NOT (beta = yes))
+  const tree = {
+    type: 'AND',
+    children: [
+      leaf(de),
+      {
+        type: 'OR',
+        children: [leaf(pro), { type: 'NOT', children: [leaf(beta)] }],
+      },
     ],
   }
 
-  it('stores groups as groupIndex and groupOperators', async () => {
+  it('stores a condition tree', async () => {
     const { controller, req, prisma } = setup('MEMBER')
-    await controller.create(FLAG, createDto(groupsDto), req)
+    await controller.create(
+      FLAG,
+      createDto({ conditions: undefined, conditionTree: tree }),
+      req
+    )
+    expect(prisma.targetingRule.create).toHaveBeenCalledWith(
+      expect.objectContaining({
+        data: expect.objectContaining({ operator: 'AND', conditionTree: tree }),
+      })
+    )
+  })
+
+  it('turns groups into blocks (single conditions stay leaves)', async () => {
+    const { controller, req, prisma } = setup('MEMBER')
+    await controller.create(
+      FLAG,
+      createDto({
+        operator: 'OR',
+        conditions: undefined,
+        groups: [
+          { operator: 'AND', conditions: [de] },
+          { operator: 'OR', conditions: [pro, beta] },
+        ],
+      }),
+      req
+    )
     expect(prisma.targetingRule.create).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
-          operator: 'AND',
-          groupOperators: ['AND', 'OR'],
-          conditions: {
-            create: [
-              { ...de, groupIndex: 0 },
-              { ...pro, groupIndex: 1 },
-              { ...beta, groupIndex: 1 },
+          conditionTree: {
+            type: 'OR',
+            children: [
+              leaf(de),
+              { type: 'OR', children: [leaf(pro), leaf(beta)] },
             ],
           },
         }),
@@ -665,97 +701,90 @@ describe('Targeting rule condition groups', () => {
     )
   })
 
-  it('stores flat conditions as one group', async () => {
-    const { controller, req, prisma } = setup('MEMBER')
-    await controller.create(FLAG, createDto({ operator: 'OR' }), req)
-    expect(prisma.targetingRule.create).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          operator: 'OR',
-          groupOperators: ['OR'],
-          conditions: { create: [{ ...de, groupIndex: 0 }] },
-        }),
-      })
-    )
-  })
-
   it.each([
-    ['both conditions and groups', { ...groupsDto, conditions: [de] }],
-    ['neither conditions nor groups', { conditions: undefined }],
     [
-      'more than 20 conditions over all groups',
+      'two condition formats at once',
+      { conditionTree: tree, conditions: [de] },
+    ],
+    ['no conditions at all', { conditions: undefined }],
+    [
+      'an invalid tree',
+      { conditions: undefined, conditionTree: { type: 'NOT', children: [] } },
+    ],
+    [
+      'an unsafe regex deep in the tree',
       {
         conditions: undefined,
-        groups: [
-          { operator: 'AND' as const, conditions: Array(11).fill(de) },
-          { operator: 'AND' as const, conditions: Array(10).fill(pro) },
-        ],
+        conditionTree: {
+          type: 'AND',
+          children: [
+            {
+              type: 'NOT',
+              children: [
+                {
+                  type: 'condition',
+                  attribute: 'email',
+                  operator: 'MATCHES_REGEX',
+                  value: '(a+)+$',
+                },
+              ],
+            },
+          ],
+        },
       },
     ],
   ])('rejects %s', async (_, overrides) => {
     const { controller, req, prisma } = setup('MEMBER')
     await expect(
-      controller.create(FLAG, createDto(overrides), req)
+      controller.create(FLAG, createDto(overrides as any), req)
     ).rejects.toBeInstanceOf(BadRequestException)
     expect(prisma.targetingRule.create).not.toHaveBeenCalled()
   })
 
-  it('replaces the conditions with groups on update', async () => {
+  it('an operator-only update changes how the root of a stored tree combines', async () => {
     const { controller, req, prisma } = setup('MEMBER')
-    await controller.update(
-      FLAG,
-      RULE,
-      { operator: 'OR', groups: groupsDto.groups },
-      req
+    prisma.targetingRule.findFirst.mockResolvedValue(
+      storedRule({ conditionTree: tree })
     )
-    expect(prisma.ruleCondition.deleteMany).toHaveBeenCalledWith({
-      where: { ruleId: RULE },
-    })
-    expect(prisma.ruleCondition.createMany).toHaveBeenCalledWith({
-      data: [
-        { ruleId: RULE, ...de, groupIndex: 0 },
-        { ruleId: RULE, ...pro, groupIndex: 1 },
-        { ruleId: RULE, ...beta, groupIndex: 1 },
-      ],
-    })
+    await controller.update(FLAG, RULE, { operator: 'OR' }, req)
     expect(prisma.targetingRule.update).toHaveBeenCalledWith(
       expect.objectContaining({
         data: expect.objectContaining({
           operator: 'OR',
-          groupOperators: ['AND', 'OR'],
+          conditionTree: { ...tree, type: 'OR' },
         }),
       })
     )
+    expect(prisma.ruleCondition.deleteMany).not.toHaveBeenCalled()
   })
 
-  it('an operator-only update of a single-group rule changes its group operator', async () => {
+  it('an operator-only update of an old flat rule keeps its group operator in sync', async () => {
     const { controller, req, prisma } = setup('MEMBER')
     prisma.targetingRule.findFirst.mockResolvedValue(
       storedRule({ groupOperators: ['AND'] })
     )
     await controller.update(FLAG, RULE, { operator: 'OR' }, req)
-    expect(prisma.targetingRule.update).toHaveBeenCalledWith(
-      expect.objectContaining({
-        data: expect.objectContaining({
-          operator: 'OR',
-          groupOperators: ['OR'],
-        }),
-      })
-    )
-  })
-
-  it('an operator-only update of a grouped rule only changes how groups combine', async () => {
-    const { controller, req, prisma } = setup('MEMBER')
-    prisma.targetingRule.findFirst.mockResolvedValue(
-      storedRule({ groupOperators: ['AND', 'OR'] })
-    )
-    await controller.update(FLAG, RULE, { operator: 'OR' }, req)
     const { data } = prisma.targetingRule.update.mock.calls[0][0]
     expect(data.operator).toBe('OR')
-    expect(data.groupOperators).toBeUndefined()
+    expect(data.groupOperators).toEqual(['OR'])
+    expect(data.conditionTree).toBeUndefined()
   })
 
-  it('returns the groups of a rule', async () => {
+  it('returns the stored tree and all conditions flat', async () => {
+    const { controller, req, prisma } = setup('VIEWER')
+    prisma.targetingRule.findMany.mockResolvedValue([
+      storedRule({ conditionTree: tree, conditions: [] }),
+    ])
+    const { rules } = await controller.findAll(FLAG, req)
+    expect(rules[0].conditionTree).toEqual(tree)
+    expect(rules[0].conditions).toEqual([
+      { id: '0', ...de },
+      { id: '1', ...pro },
+      { id: '2', ...beta },
+    ])
+  })
+
+  it('returns an old grouped rule as the equivalent tree', async () => {
     const { controller, req, prisma } = setup('VIEWER')
     prisma.targetingRule.findMany.mockResolvedValue([
       storedRule({
@@ -769,24 +798,10 @@ describe('Targeting rule condition groups', () => {
       }),
     ])
     const { rules } = await controller.findAll(FLAG, req)
-    expect(rules[0].groups).toEqual([
-      { operator: 'AND', conditions: [{ id: 'c1', ...de }] },
-      {
-        operator: 'OR',
-        conditions: [
-          { id: 'c2', ...pro },
-          { id: 'c3', ...beta },
-        ],
-      },
-    ])
-  })
-
-  it('returns a rule saved before groups existed as one group', async () => {
-    const { controller, req } = setup('VIEWER')
-    const { rules } = await controller.findAll(FLAG, req)
-    expect(rules[0].groups).toEqual([
-      { operator: 'AND', conditions: [{ id: 'c1', ...de }] },
-    ])
+    expect(rules[0].conditionTree).toEqual({
+      type: 'AND',
+      children: [leaf(de), { type: 'OR', children: [leaf(pro), leaf(beta)] }],
+    })
   })
 })
 

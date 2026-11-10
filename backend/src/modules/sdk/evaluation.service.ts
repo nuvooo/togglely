@@ -1,6 +1,6 @@
 import { Injectable, Logger } from '@nestjs/common'
 import { ConditionOperator, RuleOperator } from '@prisma/client'
-import { groupConditions } from './condition-groups'
+import { evaluateTree, ruleTree } from './condition-tree'
 import { isRuleActiveAt } from './rule-schedule'
 
 export interface ToggleContext {
@@ -21,6 +21,8 @@ export interface TargetingRuleWithConditions {
   priority: number
   /** Operators of the condition groups, see groupConditions */
   groupOperators?: RuleOperator[] | null
+  /** Condition tree (AND/OR/NOT); older rules use conditions + groups */
+  conditionTree?: unknown
   /** Optional time window, see isRuleActiveAt */
   activeFrom?: Date | null
   activeUntil?: Date | null
@@ -126,30 +128,17 @@ export class EvaluationService {
   }
 
   /**
-   * Check if a single rule matches the given context. Each condition group
-   * combines its conditions with its operator (AND: all, OR: at least one);
-   * the rule operator combines the groups the same way. A rule without
-   * groups is one group with the rule operator.
+   * Check if a single rule matches the given context: its condition tree
+   * (AND / OR / NOT blocks, see evaluateTree). Rules saved before trees
+   * existed are read as the equivalent tree (see ruleTree); a rule without
+   * conditions matches.
    */
   matchesRule(
     rule: TargetingRuleWithConditions,
     context: ToggleContext
   ): boolean {
-    const groups = groupConditions(rule)
-    if (groups.length === 0) {
-      return true
-    }
-
-    const combine = <T>(
-      operator: RuleOperator,
-      items: T[],
-      test: (item: T) => boolean
-    ) => (operator === 'AND' ? items.every(test) : items.some(test))
-
-    return combine(rule.operator, groups, (group) =>
-      combine(group.operator, group.conditions, (c) =>
-        this.matchesCondition(c, context)
-      )
+    return evaluateTree(ruleTree(rule), (leaf) =>
+      this.matchesCondition({ id: '', ...leaf }, context)
     )
   }
 

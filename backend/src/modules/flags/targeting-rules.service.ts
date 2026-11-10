@@ -4,20 +4,30 @@ import {
   Logger,
   NotFoundException,
 } from '@nestjs/common'
-import { FlagType, RuleOperator } from '@prisma/client'
+import {
+  ConditionOperator,
+  FlagType,
+  Prisma,
+  RuleOperator,
+} from '@prisma/client'
 import { isObjectId } from '../../shared/access/access.service'
 import { PrismaService } from '../../shared/prisma.service'
 import { AuditLogsService } from '../audit-logs/audit-logs.service'
 import { writeAudit } from '../audit-logs/write-audit'
 import { ChangeEventsService } from '../change-events/change-events.service'
-import { groupConditions } from '../sdk/condition-groups'
+import {
+  ConditionTree,
+  ConditionTreeError,
+  parseConditionTree,
+  ruleTree,
+  treeLeaves,
+} from '../sdk/condition-tree'
 import { isRegexPatternAllowed } from '../sdk/evaluation.service'
 import { nextBoundaryAfter } from '../sdk/rule-schedule'
 import { RuleScope, scopedEnvironmentIds } from '../sdk/rule-scope'
 import {
   ConditionGroupDto,
   CreateTargetingRuleDto,
-  RULE_CONDITIONS_MAX,
   RuleConditionDto,
   UpdateTargetingRuleDto,
 } from './dto/targeting-rule.dto'
@@ -45,18 +55,12 @@ type RuleWithRelations = RuleScope & {
   conditions: {
     id: string
     attribute: string
-    operator: string
+    operator: ConditionOperator
     value: string
     groupIndex?: number | null
   }[]
+  conditionTree?: Prisma.JsonValue | null
 }
-
-const toConditionResponse = (c: RuleWithRelations['conditions'][number]) => ({
-  id: c.id,
-  attribute: c.attribute,
-  operator: c.operator,
-  value: c.value,
-})
 
 interface FlagRef {
   id: string
@@ -101,8 +105,8 @@ export class TargetingRulesService {
   async create(flag: FlagRef, dto: CreateTargetingRuleDto, userId: string) {
     const flagType = await this.getFlagType(flag.id)
     this.validateServeValue(flagType, dto.serveValue)
-    const groups = this.conditionData(dto, 'AND')
-    if (!groups) {
+    const tree = this.conditionData(dto, 'AND')
+    if (!tree) {
       throw new BadRequestException('At least one condition is required')
     }
     const window = {
@@ -141,13 +145,12 @@ export class TargetingRulesService {
         flagId: flag.id,
         ...scope,
         name: dto.name ?? null,
-        operator: groups.operator,
-        groupOperators: groups.groupOperators,
+        operator: tree.type,
+        conditionTree: tree as unknown as Prisma.InputJsonObject,
         serveValue: dto.serveValue,
         priority,
         enabled: dto.enabled ?? true,
         ...window,
-        conditions: { create: groups.conditions },
       },
       include: RULE_INCLUDE,
     })
@@ -172,30 +175,38 @@ export class TargetingRulesService {
     if (dto.serveValue !== undefined) {
       this.validateServeValue(await this.getFlagType(flag.id), dto.serveValue)
     }
-    const groups = this.conditionData(dto, existing.operator)
-    // Rules with one group keep rule and group operator in sync, so clients
-    // that only know `operator` keep working
-    const groupOperators =
-      groups?.groupOperators ??
-      (dto.operator && existing.groupOperators.length <= 1
+    const newTree = this.conditionData(dto, existing.operator)
+    // An operator-only update (older clients) changes how the root combines
+    const tree =
+      newTree ??
+      (dto.operator && existing.conditionTree
+        ? {
+            ...(existing.conditionTree as unknown as ConditionTree),
+            type: dto.operator,
+          }
+        : null)
+    // Rules without a tree keep rule and group operator in sync, as before
+    const legacyGroupOperators =
+      !tree && dto.operator && existing.groupOperators.length <= 1
         ? [dto.operator]
-        : undefined)
+        : undefined
     const window = this.windowData(dto, existing)
     const scope = await this.scopeData(flag, dto)
 
     const rule = await this.prisma.$transaction(async (tx) => {
-      if (groups) {
-        await tx.ruleCondition.deleteMany({ where: { ruleId } })
-        await tx.ruleCondition.createMany({
-          data: groups.conditions.map((c) => ({ ruleId, ...c })),
-        })
-      }
+      // The tree replaces the legacy condition rows
+      if (newTree) await tx.ruleCondition.deleteMany({ where: { ruleId } })
       return tx.targetingRule.update({
         where: { id: ruleId },
         data: {
           name: dto.name,
-          operator: groups?.operator ?? dto.operator,
-          groupOperators,
+          operator: tree?.type ?? dto.operator,
+          ...(tree
+            ? {
+                conditionTree: tree as unknown as Prisma.InputJsonObject,
+                groupOperators: [],
+              }
+            : { groupOperators: legacyGroupOperators }),
           serveValue: dto.serveValue,
           priority: dto.priority,
           enabled: dto.enabled,
@@ -341,60 +352,62 @@ export class TargetingRulesService {
     }
   }
 
-  private toCondition(c: RuleConditionDto, groupIndex: number) {
-    return {
-      attribute: c.attribute,
-      operator: c.operator,
-      value: c.value,
-      groupIndex,
-    }
-  }
-
   /**
-   * Conditions to store (with their group) and the operators, from either
-   * flat `conditions` (one group combined with `operator`) or `groups`
-   * (`operator` combines the groups). Null when the DTO sets neither.
+   * The condition tree to store, from `conditionTree`, `groups` (blocks
+   * combined with `operator`) or flat `conditions` (one block with
+   * `operator`). Validated in depth; null when the DTO sets none of them.
    */
   private conditionData(
     dto: {
       operator?: RuleOperator
       conditions?: RuleConditionDto[]
       groups?: ConditionGroupDto[]
+      conditionTree?: Record<string, unknown>
     },
     defaultOperator: RuleOperator
-  ) {
-    if (dto.conditions && dto.groups) {
-      throw new BadRequestException('Use either conditions or groups, not both')
+  ): ConditionTree | null {
+    const given = [dto.conditions, dto.groups, dto.conditionTree].filter(
+      (v) => v !== undefined
+    )
+    if (given.length > 1) {
+      throw new BadRequestException(
+        'Use only one of conditions, groups or conditionTree'
+      )
     }
     const operator = dto.operator ?? defaultOperator
-    if (dto.groups) {
-      const all = dto.groups.flatMap((g) => g.conditions)
-      if (all.length > RULE_CONDITIONS_MAX) {
-        throw new BadRequestException(
-          `At most ${RULE_CONDITIONS_MAX} conditions are allowed`
-        )
-      }
-      this.validateConditions(all)
-      return {
-        operator,
-        groupOperators: dto.groups.map((g) => g.operator),
-        conditions: dto.groups.flatMap((g, index) =>
-          g.conditions.map((c) => this.toCondition(c, index))
+    const leaf = (c: RuleConditionDto) => ({ type: 'condition', ...c })
+    let input: unknown
+    if (dto.conditionTree) {
+      input = dto.conditionTree
+    } else if (dto.groups) {
+      input = {
+        type: operator,
+        children: dto.groups.map((g) =>
+          g.conditions.length === 1
+            ? leaf(g.conditions[0])
+            : { type: g.operator, children: g.conditions.map(leaf) }
         ),
       }
+    } else if (dto.conditions) {
+      input = { type: operator, children: dto.conditions.map(leaf) }
+    } else {
+      return null
     }
-    if (dto.conditions) {
-      this.validateConditions(dto.conditions)
-      return {
-        operator,
-        groupOperators: [operator],
-        conditions: dto.conditions.map((c) => this.toCondition(c, 0)),
+
+    try {
+      const tree = parseConditionTree(input)
+      this.validateConditions(treeLeaves(tree))
+      return tree
+    } catch (error) {
+      if (error instanceof ConditionTreeError) {
+        throw new BadRequestException(error.message)
       }
+      throw error
     }
-    return null
   }
 
   private toResponse(rule: RuleWithRelations) {
+    const tree = ruleTree(rule)
     return {
       id: rule.id,
       environmentIds: rule.environmentIds ?? [],
@@ -409,10 +422,13 @@ export class TargetingRulesService {
       enabled: rule.enabled,
       activeFrom: rule.activeFrom?.toISOString() ?? null,
       activeUntil: rule.activeUntil?.toISOString() ?? null,
-      conditions: rule.conditions.map(toConditionResponse),
-      groups: groupConditions(rule).map((group) => ({
-        operator: group.operator,
-        conditions: group.conditions.map(toConditionResponse),
+      conditionTree: tree,
+      // All conditions, flat (older clients)
+      conditions: treeLeaves(tree).map((leaf, i) => ({
+        id: String(i),
+        attribute: leaf.attribute,
+        operator: leaf.operator,
+        value: leaf.value,
       })),
       createdAt: rule.createdAt,
       updatedAt: rule.updatedAt,

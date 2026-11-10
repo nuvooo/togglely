@@ -232,6 +232,9 @@ model TargetingRule {
   // combines the conditions of group i (RuleCondition.groupIndex). Rules
   // without groupOperators are one group combined with `operator`.
   groupOperators       RuleOperator[]
+  // Conditions as a tree of AND/OR/NOT blocks (see condition-tree.ts).
+  // Older rules have none and use RuleCondition rows + groupOperators.
+  conditionTree        Json?
   // Optional time window: the rule applies while activeFrom <= now < activeUntil
   activeFrom           DateTime?
   activeUntil          DateTime?

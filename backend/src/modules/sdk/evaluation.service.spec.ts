@@ -456,6 +456,44 @@ describe('EvaluationService', () => {
     })
   })
 
+  describe('condition tree', () => {
+    const leaf = (attribute: string, value: string) => ({
+      type: 'condition',
+      attribute,
+      operator: 'EQUALS',
+      value,
+    })
+    // country = DE AND NOT (email = test, plan = free)
+    const rule: TargetingRuleWithConditions = {
+      id: 't',
+      name: 'tree',
+      operator: 'AND',
+      serveValue: 'on',
+      isDefault: false,
+      priority: 0,
+      conditions: [],
+      conditionTree: {
+        type: 'AND',
+        children: [
+          leaf('country', 'DE'),
+          {
+            type: 'NOT',
+            children: [leaf('email', 'test'), leaf('plan', 'free')],
+          },
+        ],
+      },
+    }
+
+    it.each([
+      [{ country: 'DE', plan: 'pro' }, true],
+      [{ country: 'DE', plan: 'free' }, false],
+      [{ country: 'DE', email: 'test' }, false],
+      [{ country: 'AT', plan: 'pro' }, false],
+    ])('stored tree with %j -> %s', (context, expected) => {
+      expect(service.matchesRule(rule, context)).toBe(expected)
+    })
+  })
+
   describe('condition groups', () => {
     const c = (attribute: string, value: string, groupIndex: number) => ({
       id: attribute + groupIndex,
