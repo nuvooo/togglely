@@ -9,7 +9,9 @@ RUN apt-get update && \
     rm -rf /var/lib/apt/lists/*
 
 COPY package*.json ./
-RUN npm ci --legacy-peer-deps
+# --include=dev: Coolify passes NODE_ENV=production as build arg, which
+# would otherwise skip devDependencies (@nestjs/cli) and break `nest build`
+RUN npm ci --include=dev --legacy-peer-deps
 
 COPY prisma ./prisma/
 RUN npx prisma generate
