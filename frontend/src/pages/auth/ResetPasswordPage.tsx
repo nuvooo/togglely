@@ -11,8 +11,8 @@ import {
   fieldErrorProps,
 } from '@/components/auth/AuthLayout'
 import { Button } from '@/components/ui/button'
-import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { PasswordInput } from '@/components/ui/password-input'
 import api from '@/lib/axios'
 import { getErrorMessage } from '@/lib/errors'
 import { passwordIssue } from '@/lib/password'
@@ -133,10 +133,9 @@ export default function ResetPasswordPage() {
           {error && <FormError id="reset-error">{error}</FormError>}
           <div className="space-y-2">
             <Label htmlFor="reset-password">{t('reset.password-label')}</Label>
-            <Input
+            <PasswordInput
               {...fieldErrorProps('reset-error', Boolean(error), 'reset-password-hint')}
               id="reset-password"
-              type="password"
               autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -151,10 +150,9 @@ export default function ResetPasswordPage() {
           </div>
           <div className="space-y-2">
             <Label htmlFor="reset-confirm">{t('reset.confirm-label')}</Label>
-            <Input
+            <PasswordInput
               {...fieldErrorProps('reset-error', Boolean(error))}
               id="reset-confirm"
-              type="password"
               autoComplete="new-password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}

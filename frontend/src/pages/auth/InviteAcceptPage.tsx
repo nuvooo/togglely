@@ -15,6 +15,7 @@ import { useLogout } from '@/components/shell/useLogout'
 import { Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
 import { Label } from '@/components/ui/label'
+import { PasswordInput } from '@/components/ui/password-input'
 import api from '@/lib/axios'
 import { getErrorMessage, getErrorStatus } from '@/lib/errors'
 import { passwordIssue } from '@/lib/password'
@@ -308,10 +309,9 @@ export default function InviteAcceptPage() {
 
           <div className="space-y-2">
             <Label htmlFor="invite-password">{t('invite.password')}</Label>
-            <Input
+            <PasswordInput
               {...fieldErrorProps('invite-error', Boolean(error), 'invite-password-hint')}
               id="invite-password"
-              type="password"
               autoComplete="new-password"
               value={password}
               onChange={(e) => setPassword(e.target.value)}
@@ -329,10 +329,9 @@ export default function InviteAcceptPage() {
             <Label htmlFor="invite-confirm">
               {t('invite.confirm-password')}
             </Label>
-            <Input
+            <PasswordInput
               {...fieldErrorProps('invite-error', Boolean(error))}
               id="invite-confirm"
-              type="password"
               autoComplete="new-password"
               value={confirmPassword}
               onChange={(e) => setConfirmPassword(e.target.value)}
