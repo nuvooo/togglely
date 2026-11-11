@@ -19,7 +19,7 @@
   "dependencies": {
     "@modelcontextprotocol/sdk": "^1.32.2",
     "@nestjs-modules/mailer": "^2.3.10",
-    "@nestjs/common": "^11.1.25",
+    "@nestjs/common": "^12.4.0",
     "@nestjs/config": "^4.0.4",
     "@nestjs/core": "^11.1.25",
     "@nestjs/platform-express": "^11.1.25",
