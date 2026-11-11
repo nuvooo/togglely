@@ -365,7 +365,7 @@ docker-compose -f docker-compose.yml up -d
 ### Manual Deployment
 
 1. Install MongoDB and Redis
-2. Install Node.js 20+
+2. Install Node.js 22+
 3. Build and start backend
 4. Build and serve frontend
 
