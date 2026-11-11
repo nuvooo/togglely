@@ -15,7 +15,7 @@ Togglely ist eine Self-Hosted Multi-Tenant Feature Toggle Management Platform.
 - **Frontend:** React 19, Vite 8, Tailwind 4, Zustand 5, i18next
 - **SDK:** Eigenes Repo: github.com/nuvooo/togglely-sdk (Core + React + Vue + Svelte + Vanilla)
 - **Website:** Eigenes Repo: github.com/nuvooo/togglely-website (Landingpage + Docs)
-- **DevOps:** Docker, Coolify, GitHub Actions, Prometheus + Grafana
+- **DevOps:** Docker, Coolify, GitHub Actions; Prometheus-kompatibler `/metrics`-Endpoint (geschuetzt per `METRICS_TOKEN`)
 
 ## Wichtige Regeln
 - `import type` NICHT verwenden im Backend (bricht NestJS DI)

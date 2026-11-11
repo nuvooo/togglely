@@ -323,68 +323,6 @@ describe('OrganizationsService', () => {
     })
   })
 
-  describe('addMember', () => {
-    it('adds a member with valid role', async () => {
-      const { service, prisma } = createService()
-      prisma.organization.findUnique.mockResolvedValue(mockOrg)
-      prisma.user.findUnique.mockResolvedValue(mockUser)
-      prisma.organizationMember.findFirst.mockResolvedValue(null)
-      prisma.organizationMember.create.mockResolvedValue({
-        user: mockUser,
-        role: 'MEMBER',
-      })
-
-      const result = await service.addMember(
-        'org-1',
-        'test@example.com',
-        'MEMBER'
-      )
-
-      expect(prisma.organizationMember.create).toHaveBeenCalled()
-    })
-
-    it('throws when organization not found', async () => {
-      const { service, prisma } = createService()
-      prisma.organization.findUnique.mockResolvedValue(null)
-
-      await expect(
-        service.addMember('org-1', 'test@example.com', 'MEMBER')
-      ).rejects.toBeInstanceOf(NotFoundException)
-    })
-
-    it('throws when user not found', async () => {
-      const { service, prisma } = createService()
-      prisma.organization.findUnique.mockResolvedValue(mockOrg)
-      prisma.user.findUnique.mockResolvedValue(null)
-
-      await expect(
-        service.addMember('org-1', 'unknown@example.com', 'MEMBER')
-      ).rejects.toBeInstanceOf(NotFoundException)
-    })
-
-    it('throws when user is already a member', async () => {
-      const { service, prisma } = createService()
-      prisma.organization.findUnique.mockResolvedValue(mockOrg)
-      prisma.user.findUnique.mockResolvedValue(mockUser)
-      prisma.organizationMember.findFirst.mockResolvedValue({ id: 'existing' })
-
-      await expect(
-        service.addMember('org-1', 'test@example.com', 'MEMBER')
-      ).rejects.toBeInstanceOf(ConflictException)
-    })
-
-    it('throws for invalid role', async () => {
-      const { service, prisma } = createService()
-      prisma.organization.findUnique.mockResolvedValue(mockOrg)
-      prisma.user.findUnique.mockResolvedValue(mockUser)
-      prisma.organizationMember.findFirst.mockResolvedValue(null)
-
-      await expect(
-        service.addMember('org-1', 'test@example.com', 'SUPERADMIN')
-      ).rejects.toBeInstanceOf(BadRequestException)
-    })
-  })
-
   describe('removeMember', () => {
     it('removes an existing member', async () => {
       const { service, prisma } = createService()
@@ -450,22 +388,6 @@ describe('OrganizationsService', () => {
         service.create('Test Org', 'taken', 'user-1')
       ).rejects.toBeInstanceOf(ConflictException)
       expect(prisma.organizationMember.create).not.toHaveBeenCalled()
-    })
-  })
-
-  describe('addMember (VIEWER role)', () => {
-    it('accepts the VIEWER role', async () => {
-      const { service, prisma } = createService()
-      prisma.organization.findUnique.mockResolvedValue(mockOrg)
-      prisma.user.findUnique.mockResolvedValue(mockUser)
-      prisma.organizationMember.findFirst.mockResolvedValue(null)
-      prisma.organizationMember.create.mockResolvedValue({})
-
-      await service.addMember('org-1', 'test@example.com', 'VIEWER')
-
-      expect(prisma.organizationMember.create.mock.calls[0][0].data.role).toBe(
-        'VIEWER'
-      )
     })
   })
 

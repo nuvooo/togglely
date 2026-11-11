@@ -22,21 +22,23 @@ FROM node:20-alpine AS production
 WORKDIR /app
 
 # Install Nginx for serving frontend
-RUN apk add --no-cache nginx
+RUN apk add --no-cache nginx su-exec
 
 # Copy backend
-COPY --from=backend-builder /app/backend/dist ./backend/dist
-COPY --from=backend-builder /app/backend/node_modules ./backend/node_modules
-COPY --from=backend-builder /app/backend/package*.json ./backend/
-COPY --from=backend-builder /app/backend/prisma ./backend/prisma
+# Owned by the unprivileged node user: the API never runs as root
+COPY --from=backend-builder --chown=node:node /app/backend/dist ./backend/dist
+COPY --from=backend-builder --chown=node:node /app/backend/node_modules ./backend/node_modules
+COPY --from=backend-builder --chown=node:node /app/backend/package*.json ./backend/
+COPY --from=backend-builder --chown=node:node /app/backend/prisma ./backend/prisma
 
 # Copy frontend build
 COPY --from=frontend-builder /app/frontend/dist /usr/share/nginx/html
 COPY nginx.conf /etc/nginx/conf.d/default.conf
 
-# Create startup script
+# Create startup script. nginx keeps its root master (port 80) with
+# unprivileged workers; the backend is dropped to the node user via su-exec.
 RUN echo '#!/bin/sh' > /app/start.sh && \
-    echo 'cd /app/backend && npx prisma generate && npx prisma db push && node dist/main & nginx -g "daemon off;"' >> /app/start.sh && \
+    echo 'cd /app/backend && su-exec node sh -c "npx prisma generate && npx prisma db push && exec node dist/main" & nginx -g "daemon off;"' >> /app/start.sh && \
     chmod +x /app/start.sh
 
 # Health check

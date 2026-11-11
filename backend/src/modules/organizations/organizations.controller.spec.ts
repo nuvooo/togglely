@@ -140,56 +140,6 @@ describe('OrganizationsController - access control', () => {
     })
   })
 
-  describe('addMember', () => {
-    it('rejects non-members and non-admins', async () => {
-      const { controller, req } = setup(DEFAULT_ROLES)
-      await expect(
-        controller.addMember(ORG, { email: 'new@example.com' }, req(OUTSIDER))
-      ).rejects.toBeInstanceOf(NotFoundException)
-      await expect(
-        controller.addMember(ORG, { email: 'new@example.com' }, req(MEMBER))
-      ).rejects.toBeInstanceOf(ForbiddenException)
-    })
-
-    it('prevents an ADMIN from granting OWNER or ADMIN', async () => {
-      const { controller, req, prisma } = setup(DEFAULT_ROLES)
-      for (const role of ['OWNER', 'ADMIN'] as const) {
-        await expect(
-          controller.addMember(
-            ORG,
-            { email: 'new@example.com', role },
-            req(ADMIN)
-          )
-        ).rejects.toBeInstanceOf(ForbiddenException)
-      }
-      expect(prisma.organizationMember.create).not.toHaveBeenCalled()
-    })
-
-    it('lets an ADMIN add a VIEWER', async () => {
-      const { controller, req, prisma } = setup(DEFAULT_ROLES)
-      await controller.addMember(
-        ORG,
-        { email: 'new@example.com', role: 'VIEWER' },
-        req(ADMIN)
-      )
-      expect(prisma.organizationMember.create.mock.calls[0][0].data.role).toBe(
-        'VIEWER'
-      )
-    })
-
-    it('lets an OWNER grant ADMIN', async () => {
-      const { controller, req, prisma } = setup(DEFAULT_ROLES)
-      await controller.addMember(
-        ORG,
-        { email: 'new@example.com', role: 'ADMIN' },
-        req(OWNER)
-      )
-      expect(prisma.organizationMember.create.mock.calls[0][0].data.role).toBe(
-        'ADMIN'
-      )
-    })
-  })
-
   describe('updateMember', () => {
     it('forbids changing your own role', async () => {
       const { controller, req } = setup(DEFAULT_ROLES)

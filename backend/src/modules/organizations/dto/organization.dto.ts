@@ -38,17 +38,6 @@ export class UpdateOrganizationDto {
   description?: string
 }
 
-export class AddMemberDto {
-  @NormalizeEmail()
-  @IsEmail()
-  @MaxLength(254)
-  email: string
-
-  @IsOptional()
-  @IsEnum(OrganizationRole)
-  role?: OrganizationRole
-}
-
 export class CreateInviteDto {
   /** Optional: without an email the invite is an open link. */
   @IsOptional()
