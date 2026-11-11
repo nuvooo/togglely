@@ -1,0 +1,17 @@
+# Keep secrets and local artefacts out of the build context of the root Dockerfile
+**/.env
+**/.env.*
+!**/.env.example
+!**/.env.staging.example
+**/node_modules
+**/dist
+**/coverage
+.git
+.github
+.claude
+.agents
+.superpowers
+.gstack
+docs
+monitoring
+*.log

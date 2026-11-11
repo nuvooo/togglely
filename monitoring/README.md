@@ -6,13 +6,16 @@ Prometheus + Grafana monitoring for the Togglely backend.
 
 ```bash
 cd monitoring
+export GRAFANA_ADMIN_PASSWORD="$(openssl rand -hex 16)"  # required, no default
 docker compose -f docker-compose.monitoring.yml up -d
 ```
 
 This starts:
 
 - **Prometheus** on [http://localhost:9090](http://localhost:9090)
-- **Grafana** on [http://localhost:3001](http://localhost:3001) (login: `admin` / `admin`)
+- **Grafana** on [http://localhost:3001](http://localhost:3001) (login: `admin` / the `GRAFANA_ADMIN_PASSWORD` you set)
+
+Both ports are bound to `127.0.0.1` only. Prometheus has no authentication, so expose either service remotely only through a reverse proxy with TLS and auth.
 
 Make sure the Togglely backend is running on port 4000 and exposes a `/metrics` endpoint.
 
