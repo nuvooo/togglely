@@ -7,7 +7,6 @@ import {
 import { Organization, OrganizationRole } from '@prisma/client'
 import { randomUUID } from 'crypto'
 import { PrismaService } from '../../shared/prisma.service'
-import { findUserByEmail } from '../../shared/users'
 import { deleteProjectChangeData } from '../change-events/project-cleanup'
 
 @Injectable()
@@ -232,38 +231,6 @@ export class OrganizationsService {
       role: m.role,
       joinedAt: m.createdAt,
     }))
-  }
-
-  async addMember(orgId: string, email: string, role: string) {
-    // Check if organization exists
-    const organization = await this.prisma.organization.findUnique({
-      where: { id: orgId },
-    })
-    if (!organization) throw new NotFoundException('Organization not found')
-
-    const user = await findUserByEmail(this.prisma, email)
-    if (!user) throw new NotFoundException('User not found')
-
-    const existing = await this.prisma.organizationMember.findFirst({
-      where: { organizationId: orgId, userId: user.id },
-    })
-
-    if (existing) {
-      throw new ConflictException('User is already a member')
-    }
-
-    return this.prisma.organizationMember.create({
-      data: {
-        userId: user.id,
-        organizationId: orgId,
-        role: this.parseOrganizationRole(role),
-      },
-      include: {
-        user: {
-          select: { id: true, email: true, firstName: true, lastName: true },
-        },
-      },
-    })
   }
 
   async getMember(orgId: string, userId: string) {

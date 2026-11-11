@@ -4,7 +4,6 @@ import { LoginDto } from '../../modules/auth/dto/login.dto'
 import { RegisterDto } from '../../modules/auth/dto/register.dto'
 import { ResendVerificationDto } from '../../modules/auth/dto/resend-verification.dto'
 import {
-  AddMemberDto,
   CreateInviteDto,
 } from '../../modules/organizations/dto/organization.dto'
 import { RequestPasswordResetDto } from '../../modules/password-reset/dto/password-reset.dto'
@@ -38,7 +37,6 @@ describe('email DTOs', () => {
   const dtos: Array<[string, new () => object, Record<string, unknown>]> = [
     ['SetupDto', SetupDto, {}],
     ['CreateInviteDto', CreateInviteDto, {}],
-    ['AddMemberDto', AddMemberDto, {}],
     ['InviteRegisterDto', InviteRegisterDto, {}],
     ['RegisterDto', RegisterDto, {}],
     ['LoginDto', LoginDto, {}],

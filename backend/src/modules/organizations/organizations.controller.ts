@@ -16,7 +16,6 @@ import { Throttle } from '@nestjs/throttler'
 import { AccessService, isObjectId } from '../../shared/access/access.service'
 import { AuthGuard } from '../../shared/auth.guard'
 import {
-  AddMemberDto,
   CreateInviteDto,
   CreateOrganizationDto,
   UpdateMemberRoleDto,
@@ -79,19 +78,10 @@ export class OrganizationsController {
     return { members }
   }
 
-  @Post(':id/members')
-  async addMember(
-    @Param('id') id: string,
-    @Body() body: AddMemberDto,
-    @Req() req: any
-  ) {
-    const actor = await this.access.assertOrgRole(req.user.userId, id, 'ADMIN')
-    const role = body.role ?? 'MEMBER'
-    assertCanGrantRole(actor.role, role)
-
-    const member = await this.orgsService.addMember(id, body.email, role)
-    return { member }
-  }
+  // There is deliberately no direct "add existing user by email" endpoint:
+  // membership must be accepted by the account owner through an invite.
+  // A consent-less add would let any org owner pull a foreign account into
+  // their org and then issue a password reset link for it.
 
   @Delete(':id/members/:userId')
   async removeMember(
