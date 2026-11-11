@@ -6,6 +6,7 @@ services:
   mongodb:
     image: mongo:7
     container_name: togglely-mongodb
+    restart: unless-stopped
     command: ["--replSet", "rs0", "--bind_ip_all", "--port", "27017"]
     environment:
       MONGO_INITDB_DATABASE: togglely
@@ -14,7 +15,10 @@ services:
     # No published port: MongoDB runs without authentication and must only be
     # reachable on the internal network.
     healthcheck:
-      test: echo "try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb:27017'}]}) }" | mongosh --port 27017 --quiet
+      # Healthy only once this node is the writable primary: right after
+      # rs.initiate() (and after every restart) there is a short election
+      # window in which the backend's schema sync would fail.
+      test: echo "try { rs.status() } catch (err) { rs.initiate({_id:'rs0',members:[{_id:0,host:'mongodb:27017'}]}) }; if (!db.hello().isWritablePrimary) quit(1)" | mongosh --port 27017 --quiet
       interval: 5s
       timeout: 30s
       retries: 30
@@ -26,6 +30,7 @@ services:
   redis:
     image: redis:7-alpine
     container_name: togglely-redis
+    restart: unless-stopped
     volumes:
       - redis_data:/data
     # No published port: internal network only.
@@ -42,6 +47,9 @@ services:
       context: ./backend
       dockerfile: Dockerfile
     container_name: togglely-backend
+    # Recover from a failed start (e.g. database not ready for the schema
+    # sync) instead of staying down until the next deploy
+    restart: unless-stopped
     environment:
       NODE_ENV: ${NODE_ENV:-production}
       DATABASE_URL: ${DATABASE_URL:-mongodb://mongodb:27017/togglely?replicaSet=rs0}
@@ -85,12 +93,16 @@ services:
       timeout: 10s
       retries: 3
       start_period: 40s
+      # Probe quickly while starting, so the frontend is not held back for a
+      # full 30s interval
+      start_interval: 2s
 
   frontend:
     build:
       context: ./frontend
       dockerfile: Dockerfile
     container_name: togglely-frontend
+    restart: unless-stopped
     environment:
       # Same-origin default: the frontend nginx proxies /api to the backend.
       # Coolify also passes this as a build arg and Vite bakes it into the
@@ -99,7 +111,8 @@ services:
     ports:
       - "${FRONTEND_PORT:-3000}:80"
     depends_on:
-      - backend
+      backend:
+        condition: service_healthy
     networks:
       - togglely-network
 
