@@ -42,6 +42,10 @@ updates:
       # TypeScript majors break the build; migrate manually
       - dependency-name: "typescript"
         update-types: ["version-update:semver-major"]
+      # NestJS 12 is ESM-only and its tooling needs TypeScript 6; the packages
+      # only work when bumped together, so majors need a manual migration
+      - dependency-name: "@nestjs/*"
+        update-types: ["version-update:semver-major"]
     groups:
       minor-patch:
         update-types:

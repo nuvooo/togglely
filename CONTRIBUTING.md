@@ -18,7 +18,7 @@ For SDK contributions, please head to the [togglely-sdk](https://github.com/nuvo
 
 ### Prerequisites
 
-- Node.js 20+
+- Node.js 22+
 - Docker & Docker Compose
 - Git
 
